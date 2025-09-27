@@ -1,0 +1,38 @@
+[package]
+name = "cardano-network"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Cardano P2P networking protocols and peer management"
+keywords = ["cardano", "networking", "p2p", "protocols", "chainsync"]
+
+[dependencies]
+# Async runtime and networking
+tokio.workspace = true
+tokio-util.workspace = true
+futures.workspace = true
+socket2.workspace = true
+mio.workspace = true
+
+# Serialization
+serde.workspace = true
+minicbor.workspace = true
+hex = "0.4"
+bytes = "1.5"
+
+# Internal dependencies
+cardano-crypto = { path = "../cardano-crypto" }
+cardano-ledger = { path = "../cardano-ledger" }
+cardano-consensus = { path = "../cardano-consensus" }
+
+# Error handling and logging
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+tokio-test = "0.4"

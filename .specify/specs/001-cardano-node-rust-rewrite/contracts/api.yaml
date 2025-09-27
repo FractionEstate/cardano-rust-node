@@ -1,0 +1,621 @@
+openapi: 3.0.3
+info:
+  title: Cardano Node Rust API
+  description: REST API for Cardano Node blockchain operations
+  version: 8.7.3
+  contact:
+    name: Cardano Rust Team
+    url: https://github.com/cardano-rust/cardano-node-rust
+
+servers:
+  - url: http://localhost:3001
+    description: Local development server
+  - url: https://api.cardano-node-rust.org
+    description: Production server
+
+security:
+  - BearerAuth: []
+
+paths:
+  /api/v1/chain/tip:
+    get:
+      summary: Get current chain tip
+      description: Returns the hash and metadata of the current blockchain tip
+      operationId: getChainTip
+      responses:
+        '200':
+          description: Current chain tip information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChainTip'
+        '503':
+          description: Node not synced
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/blocks/{blockHash}:
+    get:
+      summary: Get block by hash
+      description: Retrieves a specific block and its transactions
+      operationId: getBlock
+      parameters:
+        - name: blockHash
+          in: path
+          required: true
+          schema:
+            type: string
+            format: hex
+            minLength: 64
+            maxLength: 64
+          description: Blake2b-256 hash of the block
+      responses:
+        '200':
+          description: Block data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Block'
+        '404':
+          description: Block not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/transactions/{txId}:
+    get:
+      summary: Get transaction by ID
+      description: Retrieves a specific transaction with its inputs and outputs
+      operationId: getTransaction
+      parameters:
+        - name: txId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: hex
+            minLength: 64
+            maxLength: 64
+          description: Blake2b-256 hash of the transaction
+      responses:
+        '200':
+          description: Transaction data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '404':
+          description: Transaction not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/transactions:
+    post:
+      summary: Submit transaction
+      description: Submits a signed transaction to the mempool
+      operationId: submitTransaction
+      requestBody:
+        required: true
+        content:
+          application/cbor:
+            schema:
+              type: string
+              format: binary
+              description: CBOR-encoded signed transaction
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Transaction'
+      responses:
+        '202':
+          description: Transaction accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionSubmission'
+        '400':
+          description: Invalid transaction
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/addresses/{address}/utxos:
+    get:
+      summary: Get UTXOs for address
+      description: Returns all unspent transaction outputs for a given address
+      operationId: getAddressUtxos
+      parameters:
+        - name: address
+          in: path
+          required: true
+          schema:
+            type: string
+            description: Bech32 or Byron-encoded address
+        - name: asset
+          in: query
+          schema:
+            type: string
+            description: Filter by specific asset (policy_id.asset_name)
+      responses:
+        '200':
+          description: UTXO list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Utxo'
+        '400':
+          description: Invalid address format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/stake-pools:
+    get:
+      summary: List active stake pools
+      description: Returns information about all registered stake pools
+      operationId: getStakePools
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: Stake pool list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pools:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/StakePool'
+                  total:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+
+  /api/v1/epochs/{epochNo}:
+    get:
+      summary: Get epoch information
+      description: Returns protocol parameters and stake distribution for an epoch
+      operationId: getEpoch
+      parameters:
+        - name: epochNo
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+          description: Epoch number
+      responses:
+        '200':
+          description: Epoch information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Epoch'
+        '404':
+          description: Epoch not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    ChainTip:
+      type: object
+      required:
+        - hash
+        - slot
+        - blockHeight
+        - epoch
+      properties:
+        hash:
+          type: string
+          format: hex
+          description: Block hash
+        slot:
+          type: integer
+          format: int64
+          description: Absolute slot number
+        blockHeight:
+          type: integer
+          format: int64
+          description: Block height from genesis
+        epoch:
+          type: integer
+          description: Current epoch
+        syncProgress:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+          description: Sync progress (0-1)
+
+    Block:
+      type: object
+      required:
+        - hash
+        - header
+        - transactions
+      properties:
+        hash:
+          type: string
+          format: hex
+          description: Block hash
+        header:
+          $ref: '#/components/schemas/BlockHeader'
+        transactions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Transaction'
+        size:
+          type: integer
+          description: Block size in bytes
+
+    BlockHeader:
+      type: object
+      required:
+        - slot
+        - prevHash
+        - issuerVkey
+        - vrfVkey
+        - blockBodyHash
+      properties:
+        slot:
+          type: integer
+          format: int64
+        prevHash:
+          type: string
+          format: hex
+          nullable: true
+        issuerVkey:
+          type: string
+          format: hex
+        vrfVkey:
+          type: string
+          format: hex
+        blockBodyHash:
+          type: string
+          format: hex
+        protocolVersion:
+          $ref: '#/components/schemas/ProtocolVersion'
+
+    Transaction:
+      type: object
+      required:
+        - id
+        - inputs
+        - outputs
+        - fee
+      properties:
+        id:
+          type: string
+          format: hex
+          description: Transaction hash
+        inputs:
+          type: array
+          items:
+            $ref: '#/components/schemas/TransactionInput'
+        outputs:
+          type: array
+          items:
+            $ref: '#/components/schemas/TransactionOutput'
+        fee:
+          type: integer
+          format: int64
+          description: Fee in lovelace
+        ttl:
+          type: integer
+          format: int64
+          nullable: true
+        certificates:
+          type: array
+          items:
+            $ref: '#/components/schemas/Certificate'
+        withdrawals:
+          type: object
+          additionalProperties:
+            type: integer
+            format: int64
+
+    TransactionInput:
+      type: object
+      required:
+        - transactionId
+        - index
+      properties:
+        transactionId:
+          type: string
+          format: hex
+        index:
+          type: integer
+          format: int32
+
+    TransactionOutput:
+      type: object
+      required:
+        - address
+        - amount
+      properties:
+        address:
+          type: string
+          description: Bech32 or Byron address
+        amount:
+          $ref: '#/components/schemas/Value'
+        datum:
+          $ref: '#/components/schemas/Datum'
+        scriptRef:
+          $ref: '#/components/schemas/ScriptRef'
+
+    Utxo:
+      type: object
+      required:
+        - txHash
+        - outputIndex
+        - address
+        - amount
+      properties:
+        txHash:
+          type: string
+          format: hex
+        outputIndex:
+          type: integer
+          format: int32
+        address:
+          type: string
+        amount:
+          $ref: '#/components/schemas/Value'
+        datum:
+          $ref: '#/components/schemas/Datum'
+        scriptRef:
+          $ref: '#/components/schemas/ScriptRef'
+
+    Value:
+      type: object
+      required:
+        - lovelace
+      properties:
+        lovelace:
+          type: integer
+          format: int64
+          description: ADA amount in lovelace
+        assets:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties:
+              type: integer
+              format: int64
+          description: Native assets by policy_id and asset_name
+
+    StakePool:
+      type: object
+      required:
+        - poolId
+        - vrfKeyHash
+        - pledge
+        - cost
+        - margin
+        - rewardAccount
+      properties:
+        poolId:
+          type: string
+          format: hex
+        vrfKeyHash:
+          type: string
+          format: hex
+        pledge:
+          type: integer
+          format: int64
+        cost:
+          type: integer
+          format: int64
+        margin:
+          type: number
+          format: double
+        rewardAccount:
+          type: string
+        owners:
+          type: array
+          items:
+            type: string
+            format: hex
+        relays:
+          type: array
+          items:
+            $ref: '#/components/schemas/Relay'
+        metadata:
+          $ref: '#/components/schemas/PoolMetadata'
+
+    Epoch:
+      type: object
+      required:
+        - epochNo
+        - startTime
+        - endTime
+        - protocolParams
+      properties:
+        epochNo:
+          type: integer
+        startTime:
+          type: string
+          format: date-time
+        endTime:
+          type: string
+          format: date-time
+        protocolParams:
+          $ref: '#/components/schemas/ProtocolParameters'
+        stakeDistribution:
+          type: object
+          additionalProperties:
+            type: integer
+            format: int64
+
+    ProtocolVersion:
+      type: object
+      required:
+        - major
+        - minor
+      properties:
+        major:
+          type: integer
+        minor:
+          type: integer
+
+    ProtocolParameters:
+      type: object
+      required:
+        - minFeeA
+        - minFeeB
+        - maxBlockSize
+        - maxTxSize
+        - keyDeposit
+        - poolDeposit
+      properties:
+        minFeeA:
+          type: integer
+        minFeeB:
+          type: integer
+        maxBlockSize:
+          type: integer
+        maxTxSize:
+          type: integer
+        keyDeposit:
+          type: integer
+          format: int64
+        poolDeposit:
+          type: integer
+          format: int64
+        minUtxo:
+          type: integer
+          format: int64
+        decentralisation:
+          type: number
+          format: double
+
+    Certificate:
+      type: object
+      discriminator:
+        propertyName: type
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          enum:
+            - stakeRegistration
+            - stakeDeregistration
+            - stakeDelegation
+            - poolRegistration
+            - poolRetirement
+
+    Datum:
+      type: object
+      discriminator:
+        propertyName: type
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          enum: [hash, inline]
+
+    ScriptRef:
+      type: object
+      required:
+        - scriptType
+        - script
+      properties:
+        scriptType:
+          type: string
+          enum: [nativeScript, plutusV1, plutusV2, plutusV3]
+        script:
+          type: string
+          format: hex
+
+    Relay:
+      type: object
+      discriminator:
+        propertyName: type
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          enum: [ipv4, ipv6, hostname]
+
+    PoolMetadata:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 50
+        description:
+          type: string
+          maxLength: 255
+        ticker:
+          type: string
+          maxLength: 5
+        homepage:
+          type: string
+          format: uri
+
+    TransactionSubmission:
+      type: object
+      required:
+        - txId
+        - status
+      properties:
+        txId:
+          type: string
+          format: hex
+        status:
+          type: string
+          enum: [accepted, pending, invalid]
+        message:
+          type: string
+
+    Error:
+      type: object
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          description: Error code
+        message:
+          type: string
+          description: Human-readable error message
+        details:
+          type: object
+          description: Additional error context

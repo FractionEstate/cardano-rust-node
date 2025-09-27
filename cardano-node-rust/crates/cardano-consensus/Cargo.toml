@@ -1,0 +1,36 @@
+[package]
+name = "cardano-consensus"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Cardano Ouroboros consensus protocol implementation"
+keywords = ["cardano", "consensus", "ouroboros", "blockchain", "protocol"]
+
+[dependencies]
+# Async runtime
+tokio.workspace = true
+tokio-util.workspace = true
+futures.workspace = true
+
+# Serialization
+serde.workspace = true
+minicbor.workspace = true
+
+# Internal dependencies
+cardano-crypto = { path = "../cardano-crypto" }
+cardano-ledger = { path = "../cardano-ledger" }
+
+# Error handling and logging
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+
+# Time handling for slots
+chrono = "0.4"
+
+[dev-dependencies]
+proptest.workspace = true
+tokio-test = "0.4"

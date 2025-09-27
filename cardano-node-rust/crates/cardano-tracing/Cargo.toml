@@ -1,0 +1,26 @@
+[package]
+name = "cardano-tracing"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Cardano node logging, metrics, and observability"
+keywords = ["cardano", "tracing", "logging", "metrics", "observability"]
+
+[dependencies]
+# Tracing and logging
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Error handling
+thiserror.workspace = true
+anyhow.workspace = true
+
+# Async runtime
+tokio.workspace = true

@@ -1,0 +1,30 @@
+[package]
+name = "cardano-testnet"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Cardano testnet utilities and test frameworks"
+keywords = ["cardano", "testnet", "testing", "utilities"]
+
+[dependencies]
+# Internal dependencies
+cardano-node = { path = "../cardano-node" }
+cardano-ledger = { path = "../cardano-ledger" }
+cardano-crypto = { path = "../cardano-crypto" }
+
+# Testing framework
+proptest.workspace = true
+
+# Async runtime
+tokio.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Error handling
+thiserror.workspace = true
+anyhow.workspace = true

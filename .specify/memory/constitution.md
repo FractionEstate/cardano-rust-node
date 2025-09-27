@@ -1,50 +1,48 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+# Cardano Node Rust Rewrite Constitution
 
 ## Core Principles
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+### I. Functional Parity & Correctness (CRITICAL)
+Every component must maintain 100% functional compatibility with the original Haskell implementation. All cryptographic operations must produce identical results. Protocol compliance is non-negotiable - no deviations from Cardano consensus rules. Consensus safety is paramount over performance optimizations.
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+### II. Modular Architecture (MANDATORY)
+Follow the original Cardano Node's modular design: separate consensus, networking, ledger, and node layers. Each module must be independently testable and replaceable. Clear interfaces between components with minimal coupling. Rust crates must mirror the Haskell package structure for maintainability.
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+### III. Memory Safety & Performance (CORE VALUE)
+Leverage Rust's memory safety without garbage collection overhead. Zero-cost abstractions where possible. Performance must meet or exceed Haskell version. Memory usage must be predictable and bounded. Use async/await for I/O without blocking threads.
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+### IV. Cryptographic Security (NON-NEGOTIABLE)
+All cryptographic implementations must use battle-tested libraries. Ed25519, VRF, and hash functions must produce identical outputs. Key derivation and signing must be constant-time. Extensive property-based testing for crypto operations. Security audits required for crypto modules.
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+### V. Protocol Compliance & Interoperability
+Must fully implement Ouroboros consensus protocol. Compatible with existing Cardano network and other node implementations. All CBOR serialization must match byte-for-byte with Haskell version. Support all eras (Byron, Shelley, Allegra, Mary, Alonzo, Babbage, Conway).
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+## Security Requirements
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+Consensus safety: Never violate Cardano consensus rules under any circumstances. Chain validation must be identical to Haskell implementation. Fork choice rules must be precisely implemented. No tolerance for consensus divergence even under edge cases.
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+Network security: Maintain compatibility with existing P2P network protocol. Proper handling of malformed messages and adversarial peers. Rate limiting and DoS protection. Secure connection establishment and maintenance.
 
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+Operational security: Safe handling of signing keys and sensitive material. Proper file permissions and secure storage. Audit trails for all critical operations. Graceful degradation under resource constraints.
+
+## Performance Standards
+
+Throughput requirements: Block processing speed must match or exceed current Haskell node. Transaction validation throughput >= 1000 tx/sec. Mempool operations must be highly concurrent. Database operations must be optimized for UTXO model.
+
+Resource constraints: Memory usage must be bounded and predictable. CPU usage optimized for multi-core systems. Network bandwidth usage must be efficient. Startup time should be minimized for better UX.
+
+Scalability targets: Support for UTXO-HD (when available) integration. Efficient handling of large blocks and transactions. Graceful performance under high network load. Preparation for future protocol upgrades.
+
+## Development Workflow
+
+Testing strategy (NON-NEGOTIABLE): Property-based testing for all core logic using QuickCheck equivalents. Integration tests against real Cardano networks. Consensus compatibility tests with reference implementation. Performance benchmarking against Haskell version. Crypto correctness verification.
+
+Code quality gates: All code must pass Rust compiler warnings as errors. Clippy lints must be addressed. Documentation required for all public APIs. Code coverage minimum 80% for core modules. Regular security and performance reviews.
+
+Compatibility validation: Continuous integration testing against Cardano testnets. Regression testing against known blockchain states. Cross-validation of serialization with Haskell node. Protocol conformance testing with other implementations.
 
 ## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
 
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
+Constitution supersedes all other practices. Any deviation from functional parity or protocol compliance must be documented, justified, and approved by the core team. Performance optimizations cannot compromise correctness or security. Use CLAUDE.md for runtime development guidance.
 
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+**Version**: 1.0.0 | **Ratified**: 2025-01-27 | **Last Amended**: 2025-01-27

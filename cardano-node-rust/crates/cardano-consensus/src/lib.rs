@@ -1,0 +1,99 @@
+//! Cardano Ouroboros Consensus Protocol
+//!
+//! This crate implements the Ouroboros family of consensus protocols used in Cardano.
+//! It provides:
+//! - Chain selection rules (longest valid chain)
+//! - Block production and validation
+//! - Slot leadership calculation
+//! - Fork choice decisions
+//! - Multi-era protocol support
+//!
+//! The implementation must maintain complete compatibility with the Haskell
+//! consensus layer to ensure network consensus safety.
+
+pub mod ouroboros;
+pub mod chain_selection;
+pub mod block_production;
+pub mod validation;
+pub mod slots;
+
+pub use ouroboros::{
+    ProtocolParameters, SlotNo, EpochNo, BlockNo, ChainQuality,
+    OuroborosState, SlotLeadershipCalculator, KesManager, ChainDensityCalculator,
+    EpochTransition, PoolId, VrfVkey, KesVkey, OperationalCertificate, StakePool,
+    StakeDistribution, SlotLeadershipTest
+};
+pub use chain_selection::{
+    ChainSelector, ChainSelectionConfig, VrfTiebreakerFlavor, ChainCandidate,
+    ChainTip, BlockSummary, SelectionChainQuality, ChainOrdering
+};
+pub use block_production::{
+    BlockProducer, VrfKey, KesKey, OperationalCertificate as BlockProductionOperationalCertificate,
+    ForgingContext, Transaction, TxInput, TxOutput, SimplifiedLedgerState,
+    ForgedBlock, BlockBody, ProductionScheduler, ProducedBlock
+};
+pub use validation::*;
+pub use slots::*;
+
+use std::fmt;
+
+/// Result type for consensus operations
+pub type Result<T> = std::result::Result<T, ConsensusError>;
+
+/// Consensus-related errors
+#[derive(Debug, Clone)]
+pub enum ConsensusError {
+    InvalidBlock(String),
+    ValidationFailed(String),
+    ChainSelectionError(String),
+    BlockProductionError(String),
+    InvalidKesSignature(String),
+    ExpiredKesKey(String),
+    InvalidSlotProgression(String),
+    InvalidPoolParameters(String),
+    TimeCalculationError(String),
+    SlotError(String),
+    KesKeyExpired(String),
+    InvalidKesEvolution(String),
+    InvalidKesKey(String),
+    NotSlotLeader(String),
+    InvalidTransaction(String),
+    InvalidSlot(String),
+    InvalidProtocolMagic(String),
+    InvalidOperationalCert(String),
+    InvalidVrfProof(String),
+    PoolNotFound(String),
+    InvalidInput(String),
+    InvalidScript(String),
+    InvalidSignature(String),
+}
+
+impl fmt::Display for ConsensusError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ConsensusError::InvalidBlock(msg) => write!(f, "Invalid block: {}", msg),
+            ConsensusError::ValidationFailed(msg) => write!(f, "Validation failed: {}", msg),
+            ConsensusError::ChainSelectionError(msg) => write!(f, "Chain selection error: {}", msg),
+            ConsensusError::BlockProductionError(msg) => write!(f, "Block production error: {}", msg),
+            ConsensusError::InvalidKesSignature(msg) => write!(f, "Invalid KES signature: {}", msg),
+            ConsensusError::ExpiredKesKey(msg) => write!(f, "Expired KES key: {}", msg),
+            ConsensusError::InvalidSlotProgression(msg) => write!(f, "Invalid slot progression: {}", msg),
+            ConsensusError::InvalidPoolParameters(msg) => write!(f, "Invalid pool parameters: {}", msg),
+            ConsensusError::TimeCalculationError(msg) => write!(f, "Time calculation error: {}", msg),
+            ConsensusError::SlotError(msg) => write!(f, "Slot error: {}", msg),
+            ConsensusError::KesKeyExpired(msg) => write!(f, "KES key expired: {}", msg),
+            ConsensusError::InvalidKesEvolution(msg) => write!(f, "Invalid KES evolution: {}", msg),
+            ConsensusError::InvalidKesKey(msg) => write!(f, "Invalid KES key: {}", msg),
+            ConsensusError::NotSlotLeader(msg) => write!(f, "Not slot leader: {}", msg),
+            ConsensusError::InvalidTransaction(msg) => write!(f, "Invalid transaction: {}", msg),
+            ConsensusError::InvalidSlot(msg) => write!(f, "Invalid slot: {}", msg),
+            ConsensusError::InvalidProtocolMagic(msg) => write!(f, "Invalid protocol magic: {}", msg),
+            ConsensusError::InvalidOperationalCert(msg) => write!(f, "Invalid operational certificate: {}", msg),
+            ConsensusError::InvalidVrfProof(msg) => write!(f, "Invalid VRF proof: {}", msg),
+            ConsensusError::PoolNotFound(msg) => write!(f, "Pool not found: {}", msg),
+            ConsensusError::InvalidInput(msg) => write!(f, "Invalid input: {}", msg),
+            ConsensusError::InvalidScript(msg) => write!(f, "Invalid script: {}", msg),
+            ConsensusError::InvalidSignature(msg) => write!(f, "Invalid signature: {}", msg),
+        }
+    }
+}

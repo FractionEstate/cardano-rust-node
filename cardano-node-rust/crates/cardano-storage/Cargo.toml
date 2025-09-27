@@ -1,0 +1,38 @@
+[package]
+name = "cardano-storage"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Cardano blockchain and ledger state storage backends"
+keywords = ["cardano", "storage", "database", "lmdb", "rocksdb"]
+
+[dependencies]
+# Database backends
+lmdb.workspace = true
+rocksdb.workspace = true
+
+# Serialization
+serde.workspace = true
+minicbor.workspace = true
+
+# Internal dependencies
+cardano-ledger = { path = "../cardano-ledger" }
+cardano-crypto = { path = "../cardano-crypto" }
+
+# Error handling and logging
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+
+# Async operations
+tokio.workspace = true
+async-trait.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+proptest.workspace = true
+hex.workspace = true
+cardano-crypto = { path = "../cardano-crypto" }

@@ -1,0 +1,38 @@
+[package]
+name = "cardano-node"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Cardano Node main executable"
+keywords = ["cardano", "node", "blockchain", "executable"]
+
+[[bin]]
+name = "cardano-node"
+path = "src/main.rs"
+
+[dependencies]
+# CLI framework
+clap.workspace = true
+
+# Configuration
+config.workspace = true
+
+# Async runtime
+tokio.workspace = true
+
+# Internal dependencies
+cardano-consensus = { path = "../cardano-consensus" }
+cardano-ledger = { path = "../cardano-ledger" }
+cardano-network = { path = "../cardano-network" }
+cardano-storage = { path = "../cardano-storage" }
+cardano-tracing = { path = "../cardano-tracing" }
+cardano-api = { path = "../cardano-api" }
+
+# Error handling and logging
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

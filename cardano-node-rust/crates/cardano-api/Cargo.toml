@@ -1,0 +1,39 @@
+[package]
+name = "cardano-api"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Cardano Node API interfaces - socket, REST, and WebSocket"
+keywords = ["cardano", "api", "rest", "websocket", "socket"]
+
+[dependencies]
+# Async runtime and web frameworks
+tokio.workspace = true
+tokio-util.workspace = true
+futures.workspace = true
+async-trait.workspace = true
+axum = "0.7"
+tower = { version = "0.4", features = ["util"] }
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+hyper = "1.0"
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+minicbor.workspace = true
+hex = "0.4"
+
+# Internal dependencies
+cardano-ledger = { path = "../cardano-ledger" }
+cardano-network = { path = "../cardano-network" }
+
+# Error handling and logging
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tokio-test = "0.4"

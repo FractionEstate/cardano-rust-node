@@ -1,0 +1,37 @@
+[package]
+name = "cardano-crypto"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Cardano cryptographic operations - Ed25519, VRF, hashing"
+keywords = ["cardano", "cryptography", "ed25519", "vrf", "blake2"]
+
+[dependencies]
+# Cryptographic primitives
+ed25519-dalek.workspace = true
+blake2.workspace = true
+sha2.workspace = true
+vrf.workspace = true
+blstrs.workspace = true
+ff.workspace = true
+group.workspace = true
+
+# Serialization
+minicbor.workspace = true
+serde.workspace = true
+hex.workspace = true
+
+# Error handling
+thiserror.workspace = true
+anyhow.workspace = true
+
+# Random number generation
+rand_core = { version = "0.6", features = ["getrandom"] }
+getrandom = "0.2"
+
+[dev-dependencies]
+proptest.workspace = true
+hex-literal = "0.4"

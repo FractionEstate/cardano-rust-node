@@ -1,0 +1,34 @@
+[package]
+name = "cardano-ledger"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Cardano ledger state and transaction validation across all eras"
+keywords = ["cardano", "ledger", "transactions", "utxo", "validation"]
+
+[dependencies]
+# Serialization
+serde.workspace = true
+minicbor.workspace = true
+hex.workspace = true
+
+# Internal dependencies
+cardano-crypto = { path = "../cardano-crypto" }
+
+# Error handling and logging
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+
+# Collections and data structures
+indexmap = "2.0"
+
+# Numeric operations
+num-bigint = "0.4"
+num-traits = "0.2"
+
+[dev-dependencies]
+proptest.workspace = true

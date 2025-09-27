@@ -1,0 +1,70 @@
+[workspace]
+members = [
+    "crates/cardano-crypto",
+    "crates/cardano-consensus",
+    "crates/cardano-ledger",
+    "crates/cardano-network",
+    "crates/cardano-storage",
+    "crates/cardano-tracing",
+    "crates/cardano-api",
+    "crates/cardano-node",
+    "crates/cardano-testnet",
+]
+resolver = "2"
+
+[workspace.package]
+version = "8.7.3"
+edition = "2021"
+rust-version = "1.75"
+authors = ["Cardano Rust Team"]
+license = "Apache-2.0"
+repository = "https://github.com/cardano-rust/cardano-node-rust"
+homepage = "https://cardano.org"
+description = "Cardano Node implementation in Rust"
+keywords = ["cardano", "blockchain", "cryptocurrency", "consensus", "ouroboros"]
+categories = ["cryptography", "network-programming", "development-tools"]
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+tokio-util = "0.7"
+futures = "0.3"
+async-trait = "0.1"
+
+# Serialization and data formats
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+minicbor = { version = "0.24", features = ["derive", "std"] }
+hex = "0.4"
+
+# Cryptography
+ed25519-dalek = { version = "2.0", features = ["rand_core", "serde"] }
+blake2 = "0.10"
+sha2 = "0.10"
+vrf = "0.2"
+blstrs = "0.7"
+ff = "0.13"
+group = "0.13"
+
+# Database and storage
+lmdb = "0.8"
+rocksdb = "0.21"
+
+# Networking
+socket2 = "0.5"
+mio = "0.8"
+
+# Error handling and logging
+thiserror = "1.0"
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Testing
+proptest = "1.4"
+criterion = "0.5"
+tempfile = "3.8"
+
+# Development dependencies
+clap = { version = "4.4", features = ["derive"] }
+config = "0.14"
