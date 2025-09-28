@@ -20,8 +20,8 @@ mio.workspace = true
 # Serialization
 serde.workspace = true
 minicbor.workspace = true
-hex = "0.4"
-bytes = "1.5"
+hex.workspace = true
+bytes.workspace = true
 
 # Internal dependencies
 cardano-crypto = { path = "../cardano-crypto" }
@@ -35,4 +35,4 @@ tracing.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
-tokio-test = "0.4"
+tokio-test.workspace = true

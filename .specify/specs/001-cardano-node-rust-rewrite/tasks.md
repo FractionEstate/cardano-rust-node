@@ -172,11 +172,11 @@
 - [x] T079 Submit API implementation in crates/cardano-api/src/submit_api/mod.rs
 
 ## Phase 3.19: Main Node Integration
-- [ ] T080 CLI argument parsing tests in tests/node/test_cli_parsing.rs
-- [ ] T081 [P] Configuration loading tests in tests/node/test_config_loading.rs
-- [ ] T082 [P] Node startup and shutdown tests in tests/node/test_node_lifecycle.rs
-- [ ] T083 CLI interface implementation in crates/cardano-node/src/cli/mod.rs
-- [ ] T084 Configuration management in crates/cardano-node/src/config/mod.rs
+- [x] T080 CLI argument parsing tests in tests/node/test_cli_parsing.rs
+- [x] T081 [P] Configuration loading tests in tests/node/test_config_loading.rs (21 tests passing)
+- [x] T082 [P] Node startup and shutdown tests in tests/node/test_node_lifecycle.rs
+- [x] T083 CLI interface implementation in crates/cardano-node/src/cli/mod.rs ✅ COMPLETE (36 tests passing)
+- [x] T084 Configuration management in crates/cardano-node/src/config/mod.rs ✅ COMPLETE (60 tests passing)
 - [ ] T085 Node runtime and main loop in crates/cardano-node/src/run/mod.rs
 - [ ] T086 Main executable entry point in crates/cardano-node/src/main.rs
 

@@ -29,8 +29,8 @@ anyhow.workspace = true
 tracing.workspace = true
 
 # Time handling for slots
-chrono = "0.4"
+chrono.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
-tokio-test = "0.4"
+tokio-test.workspace = true

@@ -26,25 +26,29 @@ categories = ["cryptography", "network-programming", "development-tools"]
 
 [workspace.dependencies]
 # Async runtime
-tokio = { version = "1.35", features = ["full"] }
+tokio = { version = "1.47", features = ["full"] }
 tokio-util = "0.7"
+tokio-test = "0.4"
 futures = "0.3"
 async-trait = "0.1"
 
 # Serialization and data formats
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde = { version = "1.0.227", features = ["derive"] }
+serde_json = "1.0.145"
 minicbor = { version = "0.24", features = ["derive", "std"] }
 hex = "0.4"
+bytes = "1.10"
 
 # Cryptography
-ed25519-dalek = { version = "2.0", features = ["rand_core", "serde"] }
+ed25519-dalek = { version = "2.2", features = ["rand_core", "serde"] }
 blake2 = "0.10"
 sha2 = "0.10"
 vrf = "0.2"
 blstrs = "0.7"
 ff = "0.13"
 group = "0.13"
+rand_core = { version = "0.6", features = ["getrandom"] }
+getrandom = "0.2"
 
 # Database and storage
 lmdb = "0.8"
@@ -54,6 +58,22 @@ rocksdb = "0.21"
 socket2 = "0.5"
 mio = "0.8"
 
+# Collections and data structures
+indexmap = "2.11"
+
+# Numeric operations
+num-bigint = "0.4"
+num-traits = "0.2"
+
+# Time handling
+chrono = "0.4"
+
+# Web framework and HTTP
+axum = "0.7"
+tower = { version = "0.4", features = ["util"] }
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+hyper = "1.7"
+
 # Error handling and logging
 thiserror = "1.0"
 anyhow = "1.0"
@@ -61,10 +81,11 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 # Testing
-proptest = "1.4"
+proptest = "1.8"
 criterion = "0.5"
-tempfile = "3.8"
+tempfile = "3.23"
+hex-literal = "0.4"
 
 # Development dependencies
-clap = { version = "4.4", features = ["derive"] }
+clap = { version = "4.5", features = ["derive"] }
 config = "0.14"

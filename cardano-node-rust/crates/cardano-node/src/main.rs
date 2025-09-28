@@ -3,51 +3,48 @@
 //! Entry point for the Cardano Node Rust implementation.
 
 use anyhow::Result;
-use clap::Parser;
 use tracing::info;
-
-/// Cardano Node command-line interface
-#[derive(Parser)]
-#[command(name = "cardano-node")]
-#[command(about = "Cardano Node - Rust Implementation")]
-#[command(version = "8.7.3")]
-pub struct Cli {
-    /// Configuration file path
-    #[arg(long)]
-    pub config: Option<String>,
-
-    /// Network topology file path
-    #[arg(long)]
-    pub topology: Option<String>,
-
-    /// Database path
-    #[arg(long)]
-    pub database_path: Option<String>,
-
-    /// Socket path for node communication
-    #[arg(long)]
-    pub socket_path: Option<String>,
-
-    /// Port for the node API
-    #[arg(long, default_value = "3001")]
-    pub port: u16,
-}
+use cardano_node::{parse_cli, Commands, run_node};
 
 #[tokio::main]
 async fn main() -> Result<()> {
     // Initialize tracing
     tracing_subscriber::fmt::init();
 
-    let cli = Cli::parse();
+    let cli = parse_cli()?;
 
-    info!("Starting Cardano Node Rust v{}", env!("CARGO_PKG_VERSION"));
-    info!("Config: {:?}", cli.config);
-    info!("Database: {:?}", cli.database_path);
-    info!("Socket: {:?}", cli.socket_path);
-    info!("Port: {}", cli.port);
+    match cli.command {
+        Commands::Run(args) => {
+            info!("Starting Cardano Node");
+            info!("Configuration: {:?}", args.config);
+            info!("Topology: {:?}", args.topology);
+            info!("Database path: {:?}", args.database_path);
+            info!("Socket path: {:?}", args.socket_path);
 
-    // TODO: Initialize and start the node components
-    info!("Node initialization not yet implemented");
+            run_node(args).await?;
+        }
+        Commands::Version(version_args) => {
+            if version_args.detailed {
+                println!("cardano-node {}", env!("CARGO_PKG_VERSION"));
+                println!("Git commit: {}", option_env!("GIT_HASH").unwrap_or("unknown"));
+                println!("Build date: {}", option_env!("BUILD_DATE").unwrap_or("unknown"));
+                println!("Rust version: {}", option_env!("RUSTC_VERSION").unwrap_or("unknown"));
+                println!("Target: {}", option_env!("TARGET").unwrap_or("unknown"));
+            } else {
+                println!("cardano-node {}", env!("CARGO_PKG_VERSION"));
+            }
+        }
+        Commands::Validate(validate_args) => {
+            info!("Validating configuration files");
+            // TODO: Implement configuration validation
+            println!("Configuration validation completed");
+        }
+        Commands::Info(info_args) => {
+            info!("Showing node information");
+            // TODO: Implement info display
+            println!("Node information displayed");
+        }
+    }
 
     Ok(())
 }

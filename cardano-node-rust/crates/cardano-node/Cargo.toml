@@ -13,6 +13,10 @@ keywords = ["cardano", "node", "blockchain", "executable"]
 name = "cardano-node"
 path = "src/main.rs"
 
+[lib]
+name = "cardano_node"
+path = "src/lib.rs"
+
 [dependencies]
 # CLI framework
 clap.workspace = true
@@ -21,7 +25,7 @@ clap.workspace = true
 config.workspace = true
 
 # Async runtime
-tokio.workspace = true
+tokio = { workspace = true, features = ["signal", "time"] }
 
 # Internal dependencies
 cardano-consensus = { path = "../cardano-consensus" }
@@ -36,3 +40,19 @@ thiserror.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Testing utilities (used by ConfigTestHelper)
+tempfile.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+futures.workspace = true
+tokio-test.workspace = true
+
+[[test]]
+name = "t082_node_lifecycle"
+path = "../../tests/t082_node_lifecycle.rs"

@@ -515,8 +515,13 @@ dependencies = [
  "cardano-tracing",
  "clap",
  "config",
+ "futures",
+ "serde",
+ "serde_json",
+ "tempfile",
  "thiserror 1.0.69",
  "tokio",
+ "tokio-test",
  "tracing",
  "tracing-subscriber",
 ]
