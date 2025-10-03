@@ -22,6 +22,10 @@ subtle = "2.5"
 zeroize = "1.7"
 once_cell = "1.19"
 
+# Cardano Base Rust - Official VRF implementation
+cardano-vrf-pure.workspace = true
+cardano-crypto-class.workspace = true
+
 # Serialization
 minicbor.workspace = true
 serde.workspace = true

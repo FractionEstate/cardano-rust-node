@@ -53,6 +53,10 @@ once_cell = "1.19"
 rand_core = { version = "0.6", features = ["getrandom"] }
 getrandom = "0.2"
 
+# Cardano Base Rust - Official VRF implementation
+cardano-vrf-pure = { git = "https://github.com/FractionEstate/cardano-base-rust", branch = "master" }
+cardano-crypto-class = { git = "https://github.com/FractionEstate/cardano-base-rust", branch = "master" }
+
 # Database and storage
 lmdb = "0.8"
 rocksdb = "0.21"
@@ -100,9 +104,6 @@ tui-input = "0.10"
 
 # WebSocket
 tokio-tungstenite = "0.24"
-
-[patch.crates-io]
-curve25519-dalek = { path = "curve25519-dalek/curve25519-dalek" }
 
 [profile.release]
 opt-level = 3
