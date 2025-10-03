@@ -29,10 +29,12 @@ Welcome to the Cardano Node Rust documentation! This directory contains all the 
 - [**Quality Check Summary**](development/QUALITY_CHECK_SUMMARY.md) - Quality summary
 
 ### 📊 Status Reports
+- [**🎯 Project Status (October 2025)**](reports/PROJECT_STATUS_OCTOBER_2025.md) - **Comprehensive current status**
 - [**Mission Accomplished**](reports/MISSION_ACCOMPLISHED.md) - ✅ 110% Cryptographic Accuracy Achievement
+- [**Documentation Cleanup**](reports/DOCUMENTATION_CLEANUP.md) - Documentation organization report
 - [**Final Implementation Report**](reports/FINAL_IMPLEMENTATION_REPORT.md) - Complete implementation status
-- [**Final Status**](reports/FINAL_STATUS.md) - Final project status
 - [**Implementation Status**](reports/IMPLEMENTATION_STATUS.md) - Detailed implementation progress
+- [**Final Status**](reports/FINAL_STATUS.md) - Final project status
 - [**Production Ready**](reports/PRODUCTION_READY.md) - Production readiness assessment
 - [**Production Ready Complete**](reports/PRODUCTION_READY_COMPLETE.md) - Complete production readiness
 - [**Production Readiness**](reports/PRODUCTION_READINESS.md) - Readiness evaluation
