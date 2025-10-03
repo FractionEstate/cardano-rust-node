@@ -126,23 +126,26 @@ pub enum LocalSocketMethod {
     QueryNodeStatus,
 }
 
-impl LocalSocketMethod {
-    /// Parse method from string
-    pub fn from_str(s: &str) -> Option<Self> {
+impl std::str::FromStr for LocalSocketMethod {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "queryChainTip" => Some(Self::QueryChainTip),
-            "queryBlock" => Some(Self::QueryBlock),
-            "queryTransaction" => Some(Self::QueryTransaction),
-            "queryUtxos" => Some(Self::QueryUtxos),
-            "submitTransaction" => Some(Self::SubmitTransaction),
-            "queryProtocolParams" => Some(Self::QueryProtocolParams),
-            "queryStakePools" => Some(Self::QueryStakePools),
-            "queryDelegation" => Some(Self::QueryDelegation),
-            "queryNodeStatus" => Some(Self::QueryNodeStatus),
-            _ => None,
+            "queryChainTip" => Ok(Self::QueryChainTip),
+            "queryBlock" => Ok(Self::QueryBlock),
+            "queryTransaction" => Ok(Self::QueryTransaction),
+            "queryUtxos" => Ok(Self::QueryUtxos),
+            "submitTransaction" => Ok(Self::SubmitTransaction),
+            "queryProtocolParams" => Ok(Self::QueryProtocolParams),
+            "queryStakePools" => Ok(Self::QueryStakePools),
+            "queryDelegation" => Ok(Self::QueryDelegation),
+            "queryNodeStatus" => Ok(Self::QueryNodeStatus),
+            _ => Err(()),
         }
     }
+}
 
+impl LocalSocketMethod {
     /// Convert to string
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -173,7 +176,8 @@ mod tests {
         };
 
         let json = serde_json::to_string(&request).expect("Failed to serialize");
-        let deserialized: LocalSocketRequest = serde_json::from_str(&json).expect("Failed to deserialize");
+        let deserialized: LocalSocketRequest =
+            serde_json::from_str(&json).expect("Failed to deserialize");
 
         assert_eq!(request.method, deserialized.method);
         assert_eq!(request.id, deserialized.id);
@@ -184,7 +188,8 @@ mod tests {
         let response = LocalSocketResponse::success(json!({"tip": "hash"}), Some(json!(1)));
 
         let json = serde_json::to_string(&response).expect("Failed to serialize");
-        let deserialized: LocalSocketResponse = serde_json::from_str(&json).expect("Failed to deserialize");
+        let deserialized: LocalSocketResponse =
+            serde_json::from_str(&json).expect("Failed to deserialize");
 
         assert!(deserialized.result.is_some());
         assert!(deserialized.error.is_none());
@@ -202,7 +207,10 @@ mod tests {
 
     #[test]
     fn test_method_parsing() {
-        assert_eq!(LocalSocketMethod::from_str("queryChainTip"), Some(LocalSocketMethod::QueryChainTip));
-        assert_eq!(LocalSocketMethod::from_str("invalidMethod"), None);
+        assert_eq!(
+            "queryChainTip".parse::<LocalSocketMethod>(),
+            Ok(LocalSocketMethod::QueryChainTip)
+        );
+        assert!("invalidMethod".parse::<LocalSocketMethod>().is_err());
     }
 }

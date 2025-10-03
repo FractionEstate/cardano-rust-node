@@ -2,10 +2,13 @@
 //!
 //! Handles slot leader election and block creation based on Ouroboros Praos protocol.
 
-use crate::{ConsensusError, Result};
-use cardano_crypto::{Blake2b256Hash, Ed25519KeyHash, VrfOutput, VrfProof, VrfPrivateKey};
-use std::collections::HashMap;
 use crate::ouroboros::SlotNo;
+use crate::{ConsensusError, Result};
+use cardano_crypto::{
+    Blake2b256Hash, Ed25519KeyHash, VrfOutput, VrfPrivateKey, VrfProof, VrfPublicKey,
+    VRF_SEED_LENGTH,
+};
+use std::collections::HashMap;
 
 /// Block producer with cryptographic credentials
 #[derive(Debug, Clone)]
@@ -20,8 +23,8 @@ pub struct BlockProducer {
 /// VRF (Verifiable Random Function) key for slot leadership
 #[derive(Debug, Clone)]
 pub struct VrfKey {
-    pub public_key: Blake2b256Hash,
-    pub private_key: Blake2b256Hash, // Simplified for implementation
+    pub public_key: VrfPublicKey,
+    pub private_key: VrfPrivateKey,
 }
 
 /// KES (Key Evolving Signature) key for block signing
@@ -113,37 +116,54 @@ pub struct BlockBody {
     pub total_size: u32,
 }
 
+impl Default for VrfKey {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl VrfKey {
     pub fn new() -> Self {
+        let default_seed = Blake2b256Hash::hash(b"default_vrf_seed");
+        Self::from_seed(default_seed.as_bytes())
+    }
+
+    pub fn from_seed(seed: &[u8; VRF_SEED_LENGTH]) -> Self {
+        let private_key = VrfPrivateKey::generate(seed);
+        let public_key = private_key.public_key();
         Self {
-            public_key: Blake2b256Hash::hash(b"vrf_public_key"),
-            private_key: Blake2b256Hash::hash(b"vrf_private_key"),
+            public_key,
+            private_key,
         }
     }
 
+    pub fn for_pool(pool_id: &Ed25519KeyHash) -> Self {
+        let seed = Blake2b256Hash::hash(pool_id.as_bytes());
+        Self::from_seed(seed.as_bytes())
+    }
+
     /// Evaluate VRF for slot leadership
-    pub fn evaluate_leadership(&self, slot: SlotNo, epoch_nonce: &Blake2b256Hash) -> Result<(VrfOutput, VrfProof)> {
-        // Use the crypto library's VRF implementation
-        let seed = [1u8; 32]; // Fixed seed for deterministic testing
-        let vrf_private = cardano_crypto::VrfPrivateKey::generate(&seed);
+    pub fn evaluate_leadership(
+        &self,
+        slot: SlotNo,
+        epoch_nonce: &Blake2b256Hash,
+    ) -> Result<(VrfOutput, VrfProof)> {
+        let mut payload =
+            Vec::with_capacity(epoch_nonce.as_bytes().len() + std::mem::size_of::<u64>());
+        payload.extend_from_slice(epoch_nonce.as_bytes());
+        payload.extend_from_slice(&slot.0.to_le_bytes());
 
-        // Create VRF input from slot and epoch nonce
-        let mut input = Vec::new();
-        input.extend_from_slice(&slot.0.to_le_bytes());
-        input.extend_from_slice(epoch_nonce.as_bytes());
-
-        // Generate VRF proof and output using real crypto library
-        let (vrf_output, vrf_proof) = vrf_private.prove(&input);
-
-        Ok((vrf_output, vrf_proof))
+        self.private_key.try_prove(&payload).map_err(|err| {
+            ConsensusError::InvalidVrfProof(format!("VRF evaluation failed: {}", err))
+        })
     }
 }
 
 impl KesKey {
     pub fn new(period: u64) -> Self {
         Self {
-            public_key: Blake2b256Hash::hash(&format!("kes_public_{}", period).as_bytes()),
-            private_key: Blake2b256Hash::hash(&format!("kes_private_{}", period).as_bytes()),
+            public_key: Blake2b256Hash::hash(format!("kes_public_{}", period).as_bytes()),
+            private_key: Blake2b256Hash::hash(format!("kes_private_{}", period).as_bytes()),
             period,
             max_period: 90, // ~90 days worth of KES periods
         }
@@ -158,19 +178,19 @@ impl KesKey {
     pub fn evolve(&mut self, new_period: u64) -> Result<()> {
         if new_period > self.max_period {
             return Err(ConsensusError::KesKeyExpired(
-                "KES key has reached maximum evolution".to_string()
+                "KES key has reached maximum evolution".to_string(),
             ));
         }
 
         if new_period <= self.period {
             return Err(ConsensusError::InvalidKesEvolution(
-                "Cannot evolve to past period".to_string()
+                "Cannot evolve to past period".to_string(),
             ));
         }
 
         // Evolve keys (simplified - real KES involves cryptographic evolution)
-        self.public_key = Blake2b256Hash::hash(&format!("kes_public_{}", new_period).as_bytes());
-        self.private_key = Blake2b256Hash::hash(&format!("kes_private_{}", new_period).as_bytes());
+        self.public_key = Blake2b256Hash::hash(format!("kes_public_{}", new_period).as_bytes());
+        self.private_key = Blake2b256Hash::hash(format!("kes_private_{}", new_period).as_bytes());
         self.period = new_period;
 
         Ok(())
@@ -182,13 +202,13 @@ impl KesKey {
         let expected_period = header.slot.0 / 129600; // ~36 hours per KES period
         if self.period != expected_period {
             return Err(ConsensusError::InvalidKesKey(
-                "KES key period mismatch".to_string()
+                "KES key period mismatch".to_string(),
             ));
         }
 
         // Create signature (simplified)
         let header_bytes = format!("{:?}", header);
-        let signature = Blake2b256Hash::hash(&format!("kes_sig_{}", header_bytes).as_bytes());
+        let signature = Blake2b256Hash::hash(format!("kes_sig_{}", header_bytes).as_bytes());
 
         Ok(signature)
     }
@@ -196,7 +216,7 @@ impl KesKey {
 
 impl BlockProducer {
     pub fn new(pool_id: Ed25519KeyHash, stake: u64) -> Self {
-        let vrf_key = VrfKey::new();
+        let vrf_key = VrfKey::for_pool(&pool_id);
         let kes_key = KesKey::new(0);
 
         let operational_cert = OperationalCertificate {
@@ -221,12 +241,11 @@ impl BlockProducer {
         context: &ForgingContext,
         total_stake: u64,
         active_slot_coeff: f64,
-    ) -> Result<Option<VrfProof>> {
+    ) -> Result<Option<(VrfOutput, VrfProof)>> {
         // Evaluate VRF for slot leadership
-        let (vrf_output, vrf_proof) = self.vrf_key.evaluate_leadership(
-            context.current_slot,
-            &context.epoch_nonce,
-        )?;
+        let (vrf_output, vrf_proof) = self
+            .vrf_key
+            .evaluate_leadership(context.current_slot, &context.epoch_nonce)?;
 
         // Calculate leadership threshold
         let relative_stake = self.stake as f64 / total_stake as f64;
@@ -236,7 +255,7 @@ impl BlockProducer {
         let vrf_natural = self.vrf_output_to_natural(&vrf_output);
 
         if vrf_natural < threshold {
-            Ok(Some(vrf_proof))
+            Ok(Some((vrf_output, vrf_proof)))
         } else {
             Ok(None)
         }
@@ -267,11 +286,12 @@ impl BlockProducer {
         let total_stake = 1_000_000_000_000_000; // 1 billion ADA (simplified)
         let active_slot_coeff = 0.05; // 5% active slot coefficient
 
-        let proof_of_leadership = self
+        let (vrf_output, vrf_proof) = self
             .check_slot_leadership(context, total_stake, active_slot_coeff)?
             .ok_or_else(|| {
                 ConsensusError::NotSlotLeader("Producer not elected for this slot".to_string())
             })?;
+        let proof_of_leadership = vrf_proof.clone();
 
         // Select transactions from mempool
         let (selected_txs, total_fee) = self.select_transactions(&context.mempool)?;
@@ -298,11 +318,8 @@ impl BlockProducer {
             slot: context.current_slot,
             prev_hash: context.prev_block_hash,
             issuer_vkey: self.pool_id,
-            vrf_proof: proof_of_leadership.clone(),
-            vrf_output: self
-                .vrf_key
-                .evaluate_leadership(context.current_slot, &context.epoch_nonce)?
-                .0,
+            vrf_proof,
+            vrf_output,
             block_body_hash: body.hash(),
             block_size: body.total_size,
             operational_cert: self.operational_cert.clone(),
@@ -402,7 +419,7 @@ impl BlockProducer {
         let active_slot_coeff = 0.05;
 
         match self.check_slot_leadership(&context, total_stake, active_slot_coeff)? {
-            Some(_proof) => Ok(true),
+            Some((_output, _proof)) => Ok(true),
             None => Ok(false),
         }
     }
@@ -434,6 +451,12 @@ impl BlockBody {
     }
 }
 
+impl Default for SimplifiedLedgerState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SimplifiedLedgerState {
     pub fn new() -> Self {
         Self {
@@ -452,6 +475,8 @@ pub struct ProductionScheduler {
 }
 
 impl ProductionScheduler {
+    const MAINNET_EPOCH_LENGTH: u64 = 432_000;
+
     pub fn new() -> Self {
         Self {
             producers: HashMap::new(),
@@ -466,9 +491,26 @@ impl ProductionScheduler {
 
     /// Calculate slot leadership schedule for an epoch
     pub fn calculate_epoch_schedule(&mut self, epoch: u64, total_stake: u64) -> Result<()> {
-        let epoch_length = 432000; // 5 days in 1-second slots
-        let start_slot = epoch * epoch_length;
-        let end_slot = start_slot + epoch_length - 1;
+        self.calculate_epoch_schedule_with_length(epoch, total_stake, Self::MAINNET_EPOCH_LENGTH)
+    }
+
+    pub fn calculate_epoch_schedule_with_length(
+        &mut self,
+        epoch: u64,
+        total_stake: u64,
+        epoch_length: u64,
+    ) -> Result<()> {
+        assert!(epoch_length > 0, "epoch length must be positive");
+
+        let start_slot = epoch.checked_mul(epoch_length).ok_or_else(|| {
+            ConsensusError::InvalidSlot("epoch multiplication overflow".to_string())
+        })?;
+        let last_offset = epoch_length
+            .checked_sub(1)
+            .ok_or_else(|| ConsensusError::InvalidSlot("epoch length underflow".to_string()))?;
+        let end_slot = start_slot
+            .checked_add(last_offset)
+            .ok_or_else(|| ConsensusError::InvalidSlot("epoch end overflow".to_string()))?;
 
         // Clear previous schedule
         self.schedule.clear();
@@ -479,7 +521,7 @@ impl ProductionScheduler {
             for (pool_id, producer) in &self.producers {
                 let context = ForgingContext {
                     current_slot: SlotNo(slot),
-                    epoch_nonce: Blake2b256Hash::hash(&format!("epoch_{}", epoch).as_bytes()),
+                    epoch_nonce: Blake2b256Hash::hash(format!("epoch_{}", epoch).as_bytes()),
                     prev_block_hash: Blake2b256Hash::hash(b"prev_hash"),
                     mempool: vec![],
                     ledger_state: SimplifiedLedgerState::new(),
@@ -487,7 +529,9 @@ impl ProductionScheduler {
 
                 let active_slot_coeff = 0.05;
 
-                if let Ok(Some(_proof)) = producer.check_slot_leadership(&context, total_stake, active_slot_coeff) {
+                if let Ok(Some((_output, _proof))) =
+                    producer.check_slot_leadership(&context, total_stake, active_slot_coeff)
+                {
                     self.schedule.insert(SlotNo(slot), *pool_id);
                     break; // First producer wins (simplified - real protocol handles ties differently)
                 }
@@ -537,7 +581,10 @@ impl Default for ProductionScheduler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cardano_crypto::{Blake2b256Hash, Ed25519KeyHash};
+    use cardano_crypto::{
+        Blake2b256Hash, Ed25519KeyHash, VRF_OUTPUT_LENGTH, VRF_PRIVATE_KEY_LENGTH,
+        VRF_PROOF_LENGTH, VRF_PUBLIC_KEY_LENGTH,
+    };
 
     fn create_test_producer() -> BlockProducer {
         let pool_id = Ed25519KeyHash::from_test_data(b"test_pool");
@@ -549,21 +596,19 @@ mod tests {
             current_slot: SlotNo(slot),
             epoch_nonce: Blake2b256Hash::hash(b"test_epoch_nonce"),
             prev_block_hash: Blake2b256Hash::hash(b"prev_block_hash"),
-            mempool: vec![
-                Transaction {
-                    tx_id: Blake2b256Hash::hash(b"tx1"),
-                    inputs: vec![TxInput {
-                        tx_hash: Blake2b256Hash::hash(b"input_tx"),
-                        output_index: 0,
-                    }],
-                    outputs: vec![TxOutput {
-                        address: Blake2b256Hash::hash(b"output_addr"),
-                        value: 1_000_000,
-                    }],
-                    fee: 200_000,
-                    size: 300,
-                },
-            ],
+            mempool: vec![Transaction {
+                tx_id: Blake2b256Hash::hash(b"tx1"),
+                inputs: vec![TxInput {
+                    tx_hash: Blake2b256Hash::hash(b"input_tx"),
+                    output_index: 0,
+                }],
+                outputs: vec![TxOutput {
+                    address: Blake2b256Hash::hash(b"output_addr"),
+                    value: 1_000_000,
+                }],
+                fee: 200_000,
+                size: 300,
+            }],
             ledger_state: SimplifiedLedgerState::new(),
         }
     }
@@ -571,8 +616,8 @@ mod tests {
     #[test]
     fn test_vrf_key_creation() {
         let vrf_key = VrfKey::new();
-        assert!(!vrf_key.public_key.as_bytes().is_empty());
-        assert!(!vrf_key.private_key.as_bytes().is_empty());
+        assert_eq!(vrf_key.public_key.to_bytes().len(), VRF_PUBLIC_KEY_LENGTH);
+        assert_eq!(vrf_key.private_key.to_bytes().len(), VRF_PRIVATE_KEY_LENGTH);
     }
 
     #[test]
@@ -584,8 +629,8 @@ mod tests {
         assert!(result.is_ok());
 
         let (output, proof) = result.unwrap();
-        assert_eq!(output.to_bytes().len(), 64);
-        assert_eq!(proof.to_bytes().len(), 81);
+        assert_eq!(output.to_bytes().len(), VRF_OUTPUT_LENGTH);
+        assert_eq!(proof.to_bytes().len(), VRF_PROOF_LENGTH);
     }
 
     #[test]
@@ -613,7 +658,10 @@ mod tests {
         // Cannot evolve backwards
         let backwards_result = kes_key.evolve(0);
         assert!(backwards_result.is_err());
-        assert!(matches!(backwards_result.unwrap_err(), ConsensusError::InvalidKesEvolution(_)));
+        assert!(matches!(
+            backwards_result.unwrap_err(),
+            ConsensusError::InvalidKesEvolution(_)
+        ));
     }
 
     #[test]
@@ -627,7 +675,10 @@ mod tests {
         // Should fail to evolve beyond max period
         let expired_result = kes_key.evolve(91);
         assert!(expired_result.is_err());
-        assert!(matches!(expired_result.unwrap_err(), ConsensusError::KesKeyExpired(_)));
+        assert!(matches!(
+            expired_result.unwrap_err(),
+            ConsensusError::KesKeyExpired(_)
+        ));
     }
 
     #[test]
@@ -659,8 +710,9 @@ mod tests {
 
         // Result will be Some(proof) if leader, None if not leader
         match result.unwrap() {
-            Some(proof) => {
-                assert_eq!(proof.to_bytes().len(), 81);
+            Some((output, proof)) => {
+                assert_eq!(output.to_bytes().len(), VRF_OUTPUT_LENGTH);
+                assert_eq!(proof.to_bytes().len(), VRF_PROOF_LENGTH);
                 println!("Producer elected as slot leader!");
             }
             None => {
@@ -681,12 +733,19 @@ mod tests {
         ];
 
         for (bytes, description) in test_cases {
-            let output = VrfOutput::from_bytes(&bytes).unwrap();
+            let output = VrfOutput::from_bytes(bytes).unwrap();
             let natural = producer.vrf_output_to_natural(&output);
             println!("Testing {} -> natural: {}", description, natural);
-            assert!(natural >= 0.0 && natural < 1.0, "VRF natural should be in [0,1) for {}, got {}", description, natural);
+            assert!(
+                (0.0..1.0).contains(&natural),
+                "VRF natural should be in [0,1) for {}, got {}",
+                description,
+                natural
+            );
         }
-    }    #[test]
+    }
+
+    #[test]
     fn test_transaction_selection() {
         let producer = create_test_producer();
 
@@ -694,22 +753,37 @@ mod tests {
         let mempool = vec![
             Transaction {
                 tx_id: Blake2b256Hash::hash(b"high_fee_tx"),
-                inputs: vec![TxInput { tx_hash: Blake2b256Hash::hash(b"in1"), output_index: 0 }],
-                outputs: vec![TxOutput { address: Blake2b256Hash::hash(b"out1"), value: 1000000 }],
+                inputs: vec![TxInput {
+                    tx_hash: Blake2b256Hash::hash(b"in1"),
+                    output_index: 0,
+                }],
+                outputs: vec![TxOutput {
+                    address: Blake2b256Hash::hash(b"out1"),
+                    value: 1000000,
+                }],
                 fee: 500_000, // High fee
                 size: 200,
             },
             Transaction {
                 tx_id: Blake2b256Hash::hash(b"low_fee_tx"),
-                inputs: vec![TxInput { tx_hash: Blake2b256Hash::hash(b"in2"), output_index: 0 }],
-                outputs: vec![TxOutput { address: Blake2b256Hash::hash(b"out2"), value: 2000000 }],
+                inputs: vec![TxInput {
+                    tx_hash: Blake2b256Hash::hash(b"in2"),
+                    output_index: 0,
+                }],
+                outputs: vec![TxOutput {
+                    address: Blake2b256Hash::hash(b"out2"),
+                    value: 2000000,
+                }],
                 fee: 100_000, // Low fee
                 size: 300,
             },
             Transaction {
                 tx_id: Blake2b256Hash::hash(b"invalid_tx"),
                 inputs: vec![], // No inputs - invalid
-                outputs: vec![TxOutput { address: Blake2b256Hash::hash(b"out3"), value: 1000000 }],
+                outputs: vec![TxOutput {
+                    address: Blake2b256Hash::hash(b"out3"),
+                    value: 1000000,
+                }],
                 fee: 200_000,
                 size: 250,
             },
@@ -733,8 +807,14 @@ mod tests {
         // Valid transaction
         let valid_tx = Transaction {
             tx_id: Blake2b256Hash::hash(b"valid"),
-            inputs: vec![TxInput { tx_hash: Blake2b256Hash::hash(b"in"), output_index: 0 }],
-            outputs: vec![TxOutput { address: Blake2b256Hash::hash(b"out"), value: 1000000 }],
+            inputs: vec![TxInput {
+                tx_hash: Blake2b256Hash::hash(b"in"),
+                output_index: 0,
+            }],
+            outputs: vec![TxOutput {
+                address: Blake2b256Hash::hash(b"out"),
+                value: 1000000,
+            }],
             fee: 200_000,
             size: 300,
         };
@@ -742,16 +822,28 @@ mod tests {
         assert!(producer.validate_transaction(&valid_tx).is_ok());
 
         // Invalid transactions
-        let no_inputs = Transaction { inputs: vec![], ..valid_tx.clone() };
+        let no_inputs = Transaction {
+            inputs: vec![],
+            ..valid_tx.clone()
+        };
         assert!(producer.validate_transaction(&no_inputs).is_err());
 
-        let no_outputs = Transaction { outputs: vec![], ..valid_tx.clone() };
+        let no_outputs = Transaction {
+            outputs: vec![],
+            ..valid_tx.clone()
+        };
         assert!(producer.validate_transaction(&no_outputs).is_err());
 
-        let zero_fee = Transaction { fee: 0, ..valid_tx.clone() };
+        let zero_fee = Transaction {
+            fee: 0,
+            ..valid_tx.clone()
+        };
         assert!(producer.validate_transaction(&zero_fee).is_err());
 
-        let oversized = Transaction { size: 20000, ..valid_tx.clone() }; // > 16KB
+        let oversized = Transaction {
+            size: 20000,
+            ..valid_tx.clone()
+        }; // > 16KB
         assert!(producer.validate_transaction(&oversized).is_err());
     }
 
@@ -765,8 +857,8 @@ mod tests {
             slot: SlotNo(50000), // Should be in KES period 0
             prev_hash: Blake2b256Hash::hash(b"prev"),
             issuer_vkey: producer.pool_id,
-            vrf_proof: VrfProof::from_bytes(&[1u8; 81]).unwrap(),
-            vrf_output: VrfOutput::from_bytes(&[2u8; 64]).unwrap(),
+            vrf_proof: VrfProof::from_bytes([1u8; VRF_PROOF_LENGTH]).unwrap(),
+            vrf_output: VrfOutput::from_bytes([2u8; VRF_OUTPUT_LENGTH]).unwrap(),
             block_body_hash: Blake2b256Hash::hash(b"body"),
             block_size: 1000,
             operational_cert: producer.operational_cert.clone(),
@@ -784,7 +876,10 @@ mod tests {
 
         let wrong_sig = kes_key.sign_block(&wrong_period_header);
         assert!(wrong_sig.is_err());
-        assert!(matches!(wrong_sig.unwrap_err(), ConsensusError::InvalidKesKey(_)));
+        assert!(matches!(
+            wrong_sig.unwrap_err(),
+            ConsensusError::InvalidKesKey(_)
+        ));
     }
 
     #[test]
@@ -816,7 +911,10 @@ mod tests {
 
         // Should fail because producer is not slot leader
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), ConsensusError::NotSlotLeader(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            ConsensusError::NotSlotLeader(_)
+        ));
 
         // Restore original stake
         producer.stake = original_stake;
@@ -827,17 +925,20 @@ mod tests {
         let mut scheduler = ProductionScheduler::new();
 
         // Add test producers
-        let producer1 = BlockProducer::new(Ed25519KeyHash::from_test_data(b"pool1"), 10_000_000_000_000);
-        let producer2 = BlockProducer::new(Ed25519KeyHash::from_test_data(b"pool2"), 5_000_000_000_000);
+        let producer1 =
+            BlockProducer::new(Ed25519KeyHash::from_test_data(b"pool1"), 10_000_000_000_000);
+        let producer2 =
+            BlockProducer::new(Ed25519KeyHash::from_test_data(b"pool2"), 5_000_000_000_000);
 
         scheduler.add_producer(producer1);
         scheduler.add_producer(producer2);
 
         // Calculate schedule for a small epoch (just a few slots for testing)
         let total_stake = 15_000_000_000_000; // Sum of both producers
+        let epoch_length = 32;
 
         // Note: This is probabilistic, so we mainly test that it doesn't crash
-        let result = scheduler.calculate_epoch_schedule(1, total_stake);
+        let result = scheduler.calculate_epoch_schedule_with_length(1, total_stake, epoch_length);
         assert!(result.is_ok());
 
         // Get statistics
@@ -873,7 +974,8 @@ mod tests {
             Ok(block) => {
                 assert_eq!(block.slot, 1000);
                 assert!(!block.header.prev_hash.as_bytes().is_empty());
-                assert!(!block.body.transactions.is_empty() || block.body.transactions.is_empty()); // Either is fine
+                assert!(!block.body.transactions.is_empty() || block.body.transactions.is_empty());
+                // Either is fine
             }
             Err(ConsensusError::NotSlotLeader(_)) => {
                 // This is expected if the producer is not elected for this slot

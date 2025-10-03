@@ -48,9 +48,9 @@ pub struct ByronAddressAttributes {
 /// Byron address types
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ByronAddressType {
-    PublicKey(Ed25519KeyHash),     // Single key address
-    Script(Blake2b256Hash),        // Script address (limited in Byron)
-    Redeem(Ed25519KeyHash),        // Redemption address (for bootstrap era)
+    PublicKey(Ed25519KeyHash), // Single key address
+    Script(Blake2b256Hash),    // Script address (limited in Byron)
+    Redeem(Ed25519KeyHash),    // Redemption address (for bootstrap era)
 }
 
 /// Byron value (simple ADA amounts)
@@ -83,8 +83,8 @@ pub struct ByronVKeyWitness {
 /// Byron script witness (minimal scripting in Byron)
 #[derive(Debug, Clone)]
 pub struct ByronScriptWitness {
-    pub validator: Blake2b256Hash,  // Script hash
-    pub redeemer: Blake2b256Hash,   // Simple redeemer
+    pub validator: Blake2b256Hash, // Script hash
+    pub redeemer: Blake2b256Hash,  // Simple redeemer
 }
 
 /// Byron redemption witness (for bootstrap/genesis funds)
@@ -129,10 +129,10 @@ pub struct ByronBlockHeader {
 /// Byron body proof (Merkle tree root)
 #[derive(Debug, Clone)]
 pub struct ByronBodyProof {
-    pub tx_proof: Blake2b256Hash,      // Merkle root of transactions
-    pub ssc_proof: Blake2b256Hash,     // Shared Seed Computation proof
-    pub dlg_proof: Blake2b256Hash,     // Delegation proof
-    pub upd_proof: Blake2b256Hash,     // Update proposal proof
+    pub tx_proof: Blake2b256Hash,  // Merkle root of transactions
+    pub ssc_proof: Blake2b256Hash, // Shared Seed Computation proof
+    pub dlg_proof: Blake2b256Hash, // Delegation proof
+    pub upd_proof: Blake2b256Hash, // Update proposal proof
 }
 
 /// Byron consensus data
@@ -225,24 +225,24 @@ pub struct ByronUpdateProposal {
 /// Byron protocol parameters
 #[derive(Debug, Clone)]
 pub struct ByronProtocolParameters {
-    pub slot_duration: u64,           // Slot duration in milliseconds
-    pub security_parameter: u64,      // Security parameter k
-    pub max_block_size: u64,          // Maximum block size
-    pub max_tx_size: u64,             // Maximum transaction size
-    pub max_proposal_size: u64,       // Maximum update proposal size
-    pub mpc_threshold: f64,           // MPC threshold
-    pub heavy_del_threshold: f64,     // Heavy delegation threshold
-    pub update_vote_threshold: f64,   // Update vote threshold
-    pub update_proposal_threshold: f64, // Update proposal threshold
-    pub unlock_stake_epoch: u64,      // Epoch when stake unlocks
+    pub slot_duration: u64,              // Slot duration in milliseconds
+    pub security_parameter: u64,         // Security parameter k
+    pub max_block_size: u64,             // Maximum block size
+    pub max_tx_size: u64,                // Maximum transaction size
+    pub max_proposal_size: u64,          // Maximum update proposal size
+    pub mpc_threshold: f64,              // MPC threshold
+    pub heavy_del_threshold: f64,        // Heavy delegation threshold
+    pub update_vote_threshold: f64,      // Update vote threshold
+    pub update_proposal_threshold: f64,  // Update proposal threshold
+    pub unlock_stake_epoch: u64,         // Epoch when stake unlocks
     pub tx_fee_policy: ByronTxFeePolicy, // Transaction fee policy
 }
 
 /// Byron transaction fee policy
 #[derive(Debug, Clone)]
 pub struct ByronTxFeePolicy {
-    pub summand: u64,     // Base fee
-    pub multiplier: f64,  // Fee per byte multiplier
+    pub summand: u64,    // Base fee
+    pub multiplier: f64, // Fee per byte multiplier
 }
 
 /// Byron update vote
@@ -267,14 +267,16 @@ impl ByronValue {
 
     /// Add two values
     pub fn add(&self, other: &ByronValue) -> Result<ByronValue> {
-        self.coin.checked_add(other.coin)
+        self.coin
+            .checked_add(other.coin)
             .map(|coin| ByronValue { coin })
             .ok_or_else(|| LedgerError::ValueOverflow("Addition overflow".to_string()))
     }
 
     /// Subtract values
     pub fn subtract(&self, other: &ByronValue) -> Result<ByronValue> {
-        self.coin.checked_sub(other.coin)
+        self.coin
+            .checked_sub(other.coin)
             .map(|coin| ByronValue { coin })
             .ok_or_else(|| LedgerError::ValueUnderflow("Subtraction underflow".to_string()))
     }
@@ -304,7 +306,10 @@ impl ByronAddress {
     }
 
     /// Compute address ID from type and attributes
-    fn compute_address_id(address_type: &ByronAddressType, attributes: &ByronAddressAttributes) -> Blake2b256Hash {
+    fn compute_address_id(
+        address_type: &ByronAddressType,
+        attributes: &ByronAddressAttributes,
+    ) -> Blake2b256Hash {
         let data = format!("{:?}{:?}", address_type, attributes);
         Blake2b256Hash::hash(data.as_bytes())
     }
@@ -327,30 +332,40 @@ impl ByronTransaction {
     pub fn validate(&self) -> Result<()> {
         // Check inputs
         if self.inputs.is_empty() {
-            return Err(LedgerError::InvalidTransaction("Transaction has no inputs".to_string()));
+            return Err(LedgerError::InvalidTransaction(
+                "Transaction has no inputs".to_string(),
+            ));
         }
 
         // Check outputs
         if self.outputs.is_empty() {
-            return Err(LedgerError::InvalidTransaction("Transaction has no outputs".to_string()));
+            return Err(LedgerError::InvalidTransaction(
+                "Transaction has no outputs".to_string(),
+            ));
         }
 
         // Check for duplicate inputs
         let mut seen_inputs = std::collections::HashSet::new();
         for input in &self.inputs {
             if !seen_inputs.insert(input) {
-                return Err(LedgerError::InvalidTransaction("Duplicate input".to_string()));
+                return Err(LedgerError::InvalidTransaction(
+                    "Duplicate input".to_string(),
+                ));
             }
         }
 
         // Validate output values
         for output in &self.outputs {
             if output.value.is_zero() {
-                return Err(LedgerError::InvalidTransaction("Output has zero value".to_string()));
+                return Err(LedgerError::InvalidTransaction(
+                    "Output has zero value".to_string(),
+                ));
             }
 
             if !output.address.verify() {
-                return Err(LedgerError::InvalidTransaction("Invalid output address".to_string()));
+                return Err(LedgerError::InvalidTransaction(
+                    "Invalid output address".to_string(),
+                ));
             }
         }
 
@@ -362,8 +377,9 @@ impl ByronTransaction {
         let mut total = ByronValue::zero();
 
         for input in &self.inputs {
-            let output = utxo.utxo_map.get(input)
-                .ok_or_else(|| LedgerError::InvalidInput("Input not found in UTxO set".to_string()))?;
+            let output = utxo.utxo_map.get(input).ok_or_else(|| {
+                LedgerError::InvalidInput("Input not found in UTxO set".to_string())
+            })?;
             total = total.add(&output.value)?;
         }
 
@@ -386,6 +402,12 @@ impl ByronTransaction {
         let input_value = self.total_input_value(utxo)?;
         let output_value = self.total_output_value()?;
         input_value.subtract(&output_value)
+    }
+}
+
+impl Default for ByronUtxo {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -425,9 +447,10 @@ impl ByronUtxo {
         // Check all inputs exist
         for input in &tx.inputs {
             if !self.contains(input) {
-                return Err(LedgerError::InvalidInput(
-                    format!("Input {:?} not found in UTxO set", input.tx_id)
-                ));
+                return Err(LedgerError::InvalidInput(format!(
+                    "Input {:?} not found in UTxO set",
+                    input.tx_id
+                )));
             }
         }
 
@@ -483,7 +506,9 @@ impl ByronLedgerState {
         let output_value = tx.total_output_value()?;
 
         if input_value.coin < output_value.coin {
-            return Err(LedgerError::InsufficientFunds("Transaction outputs exceed inputs".to_string()));
+            return Err(LedgerError::InsufficientFunds(
+                "Transaction outputs exceed inputs".to_string(),
+            ));
         }
 
         // Apply to UTxO set
@@ -521,7 +546,9 @@ impl ByronLedgerState {
         let block_slot = slot_id.epoch * 21600 + slot_id.slot as u64;
 
         if block_slot <= self.current_slot {
-            return Err(LedgerError::InvalidSlot("Block slot not greater than current".to_string()));
+            return Err(LedgerError::InvalidSlot(
+                "Block slot not greater than current".to_string(),
+            ));
         }
 
         // Validate transactions
@@ -536,8 +563,11 @@ impl ByronLedgerState {
 impl ByronSlotId {
     /// Create new slot ID
     pub fn new(epoch: u64, slot: u16) -> Result<Self> {
-        if slot >= 21600 { // Byron has 21600 slots per epoch (20 second slots)
-            return Err(LedgerError::InvalidSlot("Slot exceeds epoch boundary".to_string()));
+        if slot >= 21600 {
+            // Byron has 21600 slots per epoch (20 second slots)
+            return Err(LedgerError::InvalidSlot(
+                "Slot exceeds epoch boundary".to_string(),
+            ));
         }
 
         Ok(Self { epoch, slot })
@@ -553,19 +583,19 @@ impl ByronProtocolParameters {
     /// Default Byron protocol parameters
     pub fn mainnet() -> Self {
         Self {
-            slot_duration: 20000,        // 20 seconds
-            security_parameter: 2160,    // k = 2160
-            max_block_size: 2097152,     // 2MB
-            max_tx_size: 4096,           // 4KB
-            max_proposal_size: 700,      // 700 bytes
-            mpc_threshold: 0.5,          // 50%
-            heavy_del_threshold: 0.005,  // 0.5%
-            update_vote_threshold: 0.6,  // 60%
+            slot_duration: 20000,           // 20 seconds
+            security_parameter: 2160,       // k = 2160
+            max_block_size: 2097152,        // 2MB
+            max_tx_size: 4096,              // 4KB
+            max_proposal_size: 700,         // 700 bytes
+            mpc_threshold: 0.5,             // 50%
+            heavy_del_threshold: 0.005,     // 0.5%
+            update_vote_threshold: 0.6,     // 60%
             update_proposal_threshold: 0.1, // 10%
-            unlock_stake_epoch: 0,       // Immediate
+            unlock_stake_epoch: 0,          // Immediate
             tx_fee_policy: ByronTxFeePolicy {
-                summand: 155381,         // Base fee in lovelace
-                multiplier: 43.946,      // Fee per byte
+                summand: 155381,    // Base fee in lovelace
+                multiplier: 43.946, // Fee per byte
             },
         }
     }
@@ -578,7 +608,7 @@ mod tests {
     #[test]
     fn test_byron_value_operations() {
         let v1 = ByronValue::new(1000000); // 1 ADA
-        let v2 = ByronValue::new(500000);  // 0.5 ADA
+        let v2 = ByronValue::new(500000); // 0.5 ADA
 
         let sum = v1.add(&v2).unwrap();
         assert_eq!(sum.coin, 1500000);
@@ -714,14 +744,20 @@ mod tests {
             output_index: 0,
         };
         let tx_out = ByronTxOut {
-            address: ByronAddress::new_pubkey(Ed25519KeyHash::from_test_data(b"genesis_key"), Some(764824073)),
+            address: ByronAddress::new_pubkey(
+                Ed25519KeyHash::from_test_data(b"genesis_key"),
+                Some(764824073),
+            ),
             value: ByronValue::new(5000000), // 5 ADA
         };
         ledger.utxo.add_output(tx_in.clone(), tx_out);
 
         // Create valid transaction
         let new_output = ByronTxOut {
-            address: ByronAddress::new_pubkey(Ed25519KeyHash::from_test_data(b"new_key"), Some(764824073)),
+            address: ByronAddress::new_pubkey(
+                Ed25519KeyHash::from_test_data(b"new_key"),
+                Some(764824073),
+            ),
             value: ByronValue::new(4000000), // 4 ADA (1 ADA fee)
         };
 
@@ -732,7 +768,11 @@ mod tests {
         };
 
         let result = ledger.apply_transaction(&tx);
-        assert!(result.is_ok(), "Transaction application failed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Transaction application failed: {:?}",
+            result.err()
+        );
 
         // UTxO should now contain the new output
         let new_tx_id = tx.tx_id();
@@ -754,14 +794,20 @@ mod tests {
             output_index: 0,
         };
         let tx_out = ByronTxOut {
-            address: ByronAddress::new_pubkey(Ed25519KeyHash::from_test_data(b"genesis_key"), Some(764824073)),
+            address: ByronAddress::new_pubkey(
+                Ed25519KeyHash::from_test_data(b"genesis_key"),
+                Some(764824073),
+            ),
             value: ByronValue::new(1000000), // 1 ADA
         };
         ledger.utxo.add_output(tx_in.clone(), tx_out);
 
         // Try to spend more than available
         let large_output = ByronTxOut {
-            address: ByronAddress::new_pubkey(Ed25519KeyHash::from_test_data(b"new_key"), Some(764824073)),
+            address: ByronAddress::new_pubkey(
+                Ed25519KeyHash::from_test_data(b"new_key"),
+                Some(764824073),
+            ),
             value: ByronValue::new(2000000), // 2 ADA (more than input)
         };
 

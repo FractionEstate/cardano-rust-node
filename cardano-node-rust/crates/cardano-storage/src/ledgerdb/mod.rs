@@ -7,7 +7,7 @@
 use crate::backends::StorageBackend;
 use crate::{Result, StorageError};
 use async_trait::async_trait;
-use cardano_crypto::{Blake2b256Hash, CryptoError};
+use cardano_crypto::Blake2b256Hash;
 use cardano_ledger::{Coin, Epoch};
 
 // Type aliases for ledger database
@@ -35,7 +35,9 @@ impl CoinExt for Coin {
 }
 
 /// Transaction input identifier
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, minicbor::Encode, minicbor::Decode)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, minicbor::Encode, minicbor::Decode,
+)]
 pub struct TransactionInput {
     #[n(0)]
     pub transaction_id: TransactionHash,
@@ -44,7 +46,9 @@ pub struct TransactionInput {
 }
 
 /// Transaction output (simplified for storage)
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, minicbor::Encode, minicbor::Decode)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, Serialize, Deserialize, minicbor::Encode, minicbor::Decode, Default,
+)]
 pub struct TransactionOutput {
     #[n(0)]
     pub amount: Coin,
@@ -52,28 +56,24 @@ pub struct TransactionOutput {
     pub address_data: Vec<u8>, // Serialized address
 }
 
-impl Default for TransactionOutput {
-    fn default() -> Self {
-        Self {
-            amount: 0,
-            address_data: Vec::new(),
-        }
-    }
-}
-
 /// Stake credential (simplified for storage)
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, minicbor::Encode, minicbor::Decode)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Hash,
+    PartialOrd,
+    Ord,
+    Serialize,
+    Deserialize,
+    minicbor::Encode,
+    minicbor::Decode,
+    Default,
+)]
 pub struct StakeCredential {
     #[n(0)]
     pub credential_data: Vec<u8>, // Serialized credential
-}
-
-impl Default for StakeCredential {
-    fn default() -> Self {
-        Self {
-            credential_data: Vec::new(),
-        }
-    }
 }
 
 impl StakeCredential {
@@ -109,7 +109,11 @@ pub trait LedgerDatabase: Send + Sync {
     async fn has_utxo(&self, input: &TransactionInput) -> Result<bool>;
 
     /// Batch UTxO operations for transaction processing
-    async fn apply_transaction_utxos(&self, consumed: &[TransactionInput], produced: &[(TransactionInput, TransactionOutput)]) -> Result<()>;
+    async fn apply_transaction_utxos(
+        &self,
+        consumed: &[TransactionInput],
+        produced: &[(TransactionInput, TransactionOutput)],
+    ) -> Result<()>;
 
     /// Stake Pool Management
     async fn store_pool(&self, pool_id: &PoolId, pool_params: &PoolParameters) -> Result<()>;
@@ -118,7 +122,11 @@ pub trait LedgerDatabase: Send + Sync {
     async fn list_active_pools(&self) -> Result<Vec<PoolId>>;
 
     /// Delegation Management
-    async fn store_delegation(&self, stake_credential: &StakeCredential, pool_id: &PoolId) -> Result<()>;
+    async fn store_delegation(
+        &self,
+        stake_credential: &StakeCredential,
+        pool_id: &PoolId,
+    ) -> Result<()>;
     async fn get_delegation(&self, stake_credential: &StakeCredential) -> Result<Option<PoolId>>;
     async fn delete_delegation(&self, stake_credential: &StakeCredential) -> Result<()>;
 
@@ -129,7 +137,11 @@ pub trait LedgerDatabase: Send + Sync {
     async fn get_rewards(&self, stake_credential: &StakeCredential) -> Result<Option<Coin>>;
 
     /// Protocol Parameters
-    async fn store_protocol_parameters(&self, epoch: EpochNo, params: &ProtocolParameters) -> Result<()>;
+    async fn store_protocol_parameters(
+        &self,
+        epoch: EpochNo,
+        params: &ProtocolParameters,
+    ) -> Result<()>;
     async fn get_protocol_parameters(&self, epoch: EpochNo) -> Result<Option<ProtocolParameters>>;
     async fn get_current_protocol_parameters(&self) -> Result<Option<ProtocolParameters>>;
 
@@ -247,7 +259,6 @@ const STAKE_PREFIX: &[u8] = b"stake:";
 const REWARDS_PREFIX: &[u8] = b"rewards:";
 const PROTOCOL_PARAMS_PREFIX: &[u8] = b"protocol_params:";
 const EPOCH_INFO_PREFIX: &[u8] = b"epoch_info:";
-const LEDGER_STATS_KEY: &[u8] = b"ledger:stats";
 const CURRENT_EPOCH_KEY: &[u8] = b"ledger:current_epoch";
 
 fn utxo_key(input: &TransactionInput) -> Vec<u8> {
@@ -297,8 +308,9 @@ fn epoch_info_key(epoch: EpochNo) -> Vec<u8> {
 impl<B: StorageBackend> LedgerDatabase for LedgerDatabaseImpl<B> {
     async fn store_utxo(&self, input: &TransactionInput, output: &TransactionOutput) -> Result<()> {
         let key = utxo_key(input);
-        let data = minicbor::to_vec(output)
-            .map_err(|e| StorageError::SerializationError(format!("Failed to serialize UTxO: {}", e)))?;
+        let data = minicbor::to_vec(output).map_err(|e| {
+            StorageError::SerializationError(format!("Failed to serialize UTxO: {}", e))
+        })?;
         self.backend.put(&key, &data).await
     }
 
@@ -306,8 +318,9 @@ impl<B: StorageBackend> LedgerDatabase for LedgerDatabaseImpl<B> {
         let key = utxo_key(input);
         match self.backend.get(&key).await? {
             Some(data) => {
-                let output = minicbor::decode(&data)
-                    .map_err(|e| StorageError::SerializationError(format!("Failed to deserialize UTxO: {}", e)))?;
+                let output = minicbor::decode(&data).map_err(|e| {
+                    StorageError::SerializationError(format!("Failed to deserialize UTxO: {}", e))
+                })?;
                 Ok(Some(output))
             }
             None => Ok(None),
@@ -324,7 +337,11 @@ impl<B: StorageBackend> LedgerDatabase for LedgerDatabaseImpl<B> {
         self.backend.exists(&key).await
     }
 
-    async fn apply_transaction_utxos(&self, consumed: &[TransactionInput], produced: &[(TransactionInput, TransactionOutput)]) -> Result<()> {
+    async fn apply_transaction_utxos(
+        &self,
+        consumed: &[TransactionInput],
+        produced: &[(TransactionInput, TransactionOutput)],
+    ) -> Result<()> {
         use crate::backends::BatchOperation;
 
         let mut operations = Vec::new();
@@ -338,8 +355,9 @@ impl<B: StorageBackend> LedgerDatabase for LedgerDatabaseImpl<B> {
         // Add produced UTxOs
         for (input, output) in produced {
             let key = utxo_key(input);
-            let data = minicbor::to_vec(output)
-                .map_err(|e| StorageError::SerializationError(format!("Failed to serialize UTxO: {}", e)))?;
+            let data = minicbor::to_vec(output).map_err(|e| {
+                StorageError::SerializationError(format!("Failed to serialize UTxO: {}", e))
+            })?;
             operations.push(BatchOperation::Put { key, value: data });
         }
 
@@ -348,8 +366,9 @@ impl<B: StorageBackend> LedgerDatabase for LedgerDatabaseImpl<B> {
 
     async fn store_pool(&self, pool_id: &PoolId, pool_params: &PoolParameters) -> Result<()> {
         let key = pool_key(pool_id);
-        let data = minicbor::to_vec(pool_params)
-            .map_err(|e| StorageError::SerializationError(format!("Failed to serialize pool parameters: {}", e)))?;
+        let data = minicbor::to_vec(pool_params).map_err(|e| {
+            StorageError::SerializationError(format!("Failed to serialize pool parameters: {}", e))
+        })?;
         self.backend.put(&key, &data).await
     }
 
@@ -357,8 +376,12 @@ impl<B: StorageBackend> LedgerDatabase for LedgerDatabaseImpl<B> {
         let key = pool_key(pool_id);
         match self.backend.get(&key).await? {
             Some(data) => {
-                let pool_params = minicbor::decode(&data)
-                    .map_err(|e| StorageError::SerializationError(format!("Failed to deserialize pool parameters: {}", e)))?;
+                let pool_params = minicbor::decode(&data).map_err(|e| {
+                    StorageError::SerializationError(format!(
+                        "Failed to deserialize pool parameters: {}",
+                        e
+                    ))
+                })?;
                 Ok(Some(pool_params))
             }
             None => Ok(None),
@@ -376,10 +399,15 @@ impl<B: StorageBackend> LedgerDatabase for LedgerDatabaseImpl<B> {
         Ok(Vec::new())
     }
 
-    async fn store_delegation(&self, stake_credential: &StakeCredential, pool_id: &PoolId) -> Result<()> {
+    async fn store_delegation(
+        &self,
+        stake_credential: &StakeCredential,
+        pool_id: &PoolId,
+    ) -> Result<()> {
         let key = delegation_key(stake_credential);
-        let data = minicbor::to_vec(&pool_id.as_ref())
-            .map_err(|e| StorageError::SerializationError(format!("Failed to serialize pool ID: {}", e)))?;
+        let data = minicbor::to_vec(pool_id.as_ref()).map_err(|e| {
+            StorageError::SerializationError(format!("Failed to serialize pool ID: {}", e))
+        })?;
         self.backend.put(&key, &data).await
     }
 
@@ -389,8 +417,12 @@ impl<B: StorageBackend> LedgerDatabase for LedgerDatabaseImpl<B> {
             Some(data) => {
                 let pool_id_bytes: Vec<u8> = minicbor::decode(&data)
                     .map_err(|e| StorageError::SerializationError(e.to_string()))?;
-                let pool_id = Blake2b256Hash::from_bytes(&pool_id_bytes)
-                    .map_err(|e| StorageError::SerializationError(format!("Failed to deserialize pool ID: {}", e)))?;
+                let pool_id = Blake2b256Hash::from_bytes(&pool_id_bytes).map_err(|e| {
+                    StorageError::SerializationError(format!(
+                        "Failed to deserialize pool ID: {}",
+                        e
+                    ))
+                })?;
                 Ok(Some(pool_id))
             }
             None => Ok(None),
@@ -404,8 +436,9 @@ impl<B: StorageBackend> LedgerDatabase for LedgerDatabaseImpl<B> {
 
     async fn store_stake(&self, stake_credential: &StakeCredential, stake: Coin) -> Result<()> {
         let key = stake_key(stake_credential);
-        let data = minicbor::to_vec(&stake)
-            .map_err(|e| StorageError::SerializationError(format!("Failed to serialize stake: {}", e)))?;
+        let data = minicbor::to_vec(stake).map_err(|e| {
+            StorageError::SerializationError(format!("Failed to serialize stake: {}", e))
+        })?;
         self.backend.put(&key, &data).await
     }
 
@@ -413,8 +446,9 @@ impl<B: StorageBackend> LedgerDatabase for LedgerDatabaseImpl<B> {
         let key = stake_key(stake_credential);
         match self.backend.get(&key).await? {
             Some(data) => {
-                let stake = minicbor::decode(&data)
-                    .map_err(|e| StorageError::SerializationError(format!("Failed to deserialize stake: {}", e)))?;
+                let stake = minicbor::decode(&data).map_err(|e| {
+                    StorageError::SerializationError(format!("Failed to deserialize stake: {}", e))
+                })?;
                 Ok(Some(stake))
             }
             None => Ok(None),
@@ -423,8 +457,9 @@ impl<B: StorageBackend> LedgerDatabase for LedgerDatabaseImpl<B> {
 
     async fn store_rewards(&self, stake_credential: &StakeCredential, rewards: Coin) -> Result<()> {
         let key = rewards_key(stake_credential);
-        let data = minicbor::to_vec(&rewards)
-            .map_err(|e| StorageError::SerializationError(format!("Failed to serialize rewards: {}", e)))?;
+        let data = minicbor::to_vec(rewards).map_err(|e| {
+            StorageError::SerializationError(format!("Failed to serialize rewards: {}", e))
+        })?;
         self.backend.put(&key, &data).await
     }
 
@@ -432,18 +467,30 @@ impl<B: StorageBackend> LedgerDatabase for LedgerDatabaseImpl<B> {
         let key = rewards_key(stake_credential);
         match self.backend.get(&key).await? {
             Some(data) => {
-                let rewards = minicbor::decode(&data)
-                    .map_err(|e| StorageError::SerializationError(format!("Failed to deserialize rewards: {}", e)))?;
+                let rewards = minicbor::decode(&data).map_err(|e| {
+                    StorageError::SerializationError(format!(
+                        "Failed to deserialize rewards: {}",
+                        e
+                    ))
+                })?;
                 Ok(Some(rewards))
             }
             None => Ok(None),
         }
     }
 
-    async fn store_protocol_parameters(&self, epoch: EpochNo, params: &ProtocolParameters) -> Result<()> {
+    async fn store_protocol_parameters(
+        &self,
+        epoch: EpochNo,
+        params: &ProtocolParameters,
+    ) -> Result<()> {
         let key = protocol_params_key(epoch);
-        let data = minicbor::to_vec(params)
-            .map_err(|e| StorageError::SerializationError(format!("Failed to serialize protocol parameters: {}", e)))?;
+        let data = minicbor::to_vec(params).map_err(|e| {
+            StorageError::SerializationError(format!(
+                "Failed to serialize protocol parameters: {}",
+                e
+            ))
+        })?;
         self.backend.put(&key, &data).await
     }
 
@@ -451,8 +498,12 @@ impl<B: StorageBackend> LedgerDatabase for LedgerDatabaseImpl<B> {
         let key = protocol_params_key(epoch);
         match self.backend.get(&key).await? {
             Some(data) => {
-                let params = minicbor::decode(&data)
-                    .map_err(|e| StorageError::SerializationError(format!("Failed to deserialize protocol parameters: {}", e)))?;
+                let params = minicbor::decode(&data).map_err(|e| {
+                    StorageError::SerializationError(format!(
+                        "Failed to deserialize protocol parameters: {}",
+                        e
+                    ))
+                })?;
                 Ok(Some(params))
             }
             None => Ok(None),
@@ -463,8 +514,12 @@ impl<B: StorageBackend> LedgerDatabase for LedgerDatabaseImpl<B> {
         // Get current epoch and return its parameters
         match self.backend.get(CURRENT_EPOCH_KEY).await? {
             Some(epoch_data) => {
-                let epoch: EpochNo = minicbor::decode(&epoch_data)
-                    .map_err(|e| StorageError::SerializationError(format!("Failed to deserialize current epoch: {}", e)))?;
+                let epoch: EpochNo = minicbor::decode(&epoch_data).map_err(|e| {
+                    StorageError::SerializationError(format!(
+                        "Failed to deserialize current epoch: {}",
+                        e
+                    ))
+                })?;
                 self.get_protocol_parameters(epoch).await
             }
             None => Ok(None),
@@ -473,8 +528,9 @@ impl<B: StorageBackend> LedgerDatabase for LedgerDatabaseImpl<B> {
 
     async fn store_epoch_info(&self, epoch: EpochNo, info: &EpochInfo) -> Result<()> {
         let key = epoch_info_key(epoch);
-        let data = minicbor::to_vec(info)
-            .map_err(|e| StorageError::SerializationError(format!("Failed to serialize epoch info: {}", e)))?;
+        let data = minicbor::to_vec(info).map_err(|e| {
+            StorageError::SerializationError(format!("Failed to serialize epoch info: {}", e))
+        })?;
         self.backend.put(&key, &data).await
     }
 
@@ -482,8 +538,12 @@ impl<B: StorageBackend> LedgerDatabase for LedgerDatabaseImpl<B> {
         let key = epoch_info_key(epoch);
         match self.backend.get(&key).await? {
             Some(data) => {
-                let info = minicbor::decode(&data)
-                    .map_err(|e| StorageError::SerializationError(format!("Failed to deserialize epoch info: {}", e)))?;
+                let info = minicbor::decode(&data).map_err(|e| {
+                    StorageError::SerializationError(format!(
+                        "Failed to deserialize epoch info: {}",
+                        e
+                    ))
+                })?;
                 Ok(Some(info))
             }
             None => Ok(None),
@@ -520,7 +580,10 @@ impl<B: StorageBackend> LedgerDatabase for LedgerDatabaseImpl<B> {
 mod tests {
     use super::*;
     use crate::backends::{LmdbBackend, LmdbConfig};
+    use std::sync::atomic::{AtomicU64, Ordering};
     use tempfile::TempDir;
+
+    static UTXO_COUNTER: AtomicU64 = AtomicU64::new(0);
 
     async fn create_test_ledgerdb() -> (LedgerDatabaseImpl<LmdbBackend>, TempDir) {
         let temp_dir = TempDir::new().unwrap();
@@ -532,9 +595,11 @@ mod tests {
     }
 
     fn create_test_utxo() -> (TransactionInput, TransactionOutput) {
+        let count = UTXO_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let transaction_id = TransactionHash::hash(&count.to_be_bytes());
         let input = TransactionInput {
-            transaction_id: TransactionHash::default(),
-            index: 0,
+            transaction_id,
+            index: (count % u32::MAX as u64) as u32,
         };
         let output = TransactionOutput::default();
         (input, output)
@@ -572,7 +637,13 @@ mod tests {
         ledgerdb.store_utxo(&input1, &output1).await.unwrap();
 
         // Apply transaction: consume input1, produce input2
-        ledgerdb.apply_transaction_utxos(&[input1.clone()], &[(input2.clone(), output2.clone())]).await.unwrap();
+        ledgerdb
+            .apply_transaction_utxos(
+                std::slice::from_ref(&input1),
+                &[(input2.clone(), output2.clone())],
+            )
+            .await
+            .unwrap();
 
         // Verify state
         assert!(!ledgerdb.has_utxo(&input1).await.unwrap());
@@ -588,7 +659,7 @@ mod tests {
 
         let pool_id = PoolId::default();
         let pool_params = PoolParameters {
-            pool_id: pool_id.clone(),
+            pool_id,
             pledge: CoinExt::new(1000000),
             cost: CoinExt::new(340000000),
             margin: 0.05,
@@ -620,14 +691,25 @@ mod tests {
         let pool_id = PoolId::default();
 
         // Store delegation
-        ledgerdb.store_delegation(&stake_credential, &pool_id).await.unwrap();
+        ledgerdb
+            .store_delegation(&stake_credential, &pool_id)
+            .await
+            .unwrap();
 
         // Retrieve delegation
-        let retrieved_pool_id = ledgerdb.get_delegation(&stake_credential).await.unwrap().unwrap();
+        let retrieved_pool_id = ledgerdb
+            .get_delegation(&stake_credential)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(retrieved_pool_id, pool_id);
 
         // Delete delegation
         ledgerdb.delete_delegation(&stake_credential).await.unwrap();
-        assert!(ledgerdb.get_delegation(&stake_credential).await.unwrap().is_none());
+        assert!(ledgerdb
+            .get_delegation(&stake_credential)
+            .await
+            .unwrap()
+            .is_none());
     }
 }

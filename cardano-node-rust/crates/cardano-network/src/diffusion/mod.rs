@@ -42,24 +42,24 @@
 //! selector.periodic_maintenance();
 //! ```
 
-pub mod types;
-pub mod selector;
 pub mod gossip;
+pub mod selector;
+pub mod types;
 
 #[cfg(test)]
 mod tests;
 
 // Re-export main types and traits for easy access
 pub use types::{
-    PeerId, PeerInfo, ConnectionState, ReputationScore, MisbehaviorSeverity,
-    SelectionConfig, NetworkStats, PeerSelectionError,
+    ConnectionState, MisbehaviorSeverity, NetworkStats, PeerId, PeerInfo, PeerSelectionError,
+    ReputationScore, SelectionConfig,
 };
 
 pub use selector::PeerSelector;
 
 pub use gossip::{
-    PeerGossip, GossipConfig, PeerAdvertisement, AdvertisedPeer,
-    ProcessResult, GossipError, GossipStats, PeerDiscovery,
+    AdvertisedPeer, GossipConfig, GossipError, GossipStats, PeerAdvertisement, PeerDiscovery,
+    PeerGossip, ProcessResult,
 };
 
 /// Main P2P diffusion manager that combines peer selection and gossip protocols
@@ -127,7 +127,10 @@ impl P2PDiffusion {
         &mut self,
         advertisement: PeerAdvertisement,
     ) -> Result<ProcessResult, GossipError> {
-        let result = self.discovery.gossip_mut().process_advertisement(advertisement)?;
+        let result = self
+            .discovery
+            .gossip_mut()
+            .process_advertisement(advertisement)?;
 
         // Add new peers to selector if any
         if let ProcessResult::NewPeers { ref peers, .. } = result {
@@ -151,17 +154,24 @@ impl P2PDiffusion {
     }
 
     /// Handle successful peer connection
-    pub fn handle_connection_success(&mut self, peer_id: &PeerId) -> Result<(), PeerSelectionError> {
+    pub fn handle_connection_success(
+        &mut self,
+        peer_id: &PeerId,
+    ) -> Result<(), PeerSelectionError> {
         self.selector.handle_connection_success(peer_id)?;
 
         // Add peer to gossip advertisement list
-        self.discovery.gossip_mut().add_peer_to_advertise(peer_id.clone());
+        self.discovery.gossip_mut().add_peer_to_advertise(*peer_id);
 
         Ok(())
     }
 
     /// Handle failed peer connection
-    pub fn handle_connection_failure(&mut self, peer_id: &PeerId, reason: String) -> Result<(), PeerSelectionError> {
+    pub fn handle_connection_failure(
+        &mut self,
+        peer_id: &PeerId,
+        reason: String,
+    ) -> Result<(), PeerSelectionError> {
         self.selector.handle_connection_failure(peer_id, reason)
     }
 
@@ -170,11 +180,17 @@ impl P2PDiffusion {
         self.selector.handle_disconnection(peer_id);
 
         // Remove from gossip advertisement list
-        self.discovery.gossip_mut().remove_peer_from_advertise(peer_id);
+        self.discovery
+            .gossip_mut()
+            .remove_peer_from_advertise(peer_id);
     }
 
     /// Record peer misbehavior
-    pub fn record_misbehavior(&mut self, peer_id: &PeerId, severity: MisbehaviorSeverity) -> Result<(), PeerSelectionError> {
+    pub fn record_misbehavior(
+        &mut self,
+        peer_id: &PeerId,
+        severity: MisbehaviorSeverity,
+    ) -> Result<(), PeerSelectionError> {
         self.selector.record_misbehavior(peer_id, severity)
     }
 
@@ -206,7 +222,11 @@ impl P2PDiffusion {
 
     /// Get all connected peers
     pub fn get_connected_peers(&self) -> Vec<PeerId> {
-        self.selector.get_connected_peers().iter().cloned().collect()
+        self.selector
+            .get_connected_peers()
+            .iter()
+            .cloned()
+            .collect()
     }
 
     /// Get total number of known peers
@@ -310,8 +330,7 @@ impl P2PDiffusionBuilder {
 
     /// Build the P2P diffusion instance
     pub fn build(self) -> Result<P2PDiffusion, Box<dyn std::error::Error>> {
-        let local_peer_id = self.local_peer_id
-            .ok_or("Local peer ID must be set")?;
+        let local_peer_id = self.local_peer_id.ok_or("Local peer ID must be set")?;
 
         Ok(P2PDiffusion::new(
             self.selection_config,
@@ -325,7 +344,7 @@ impl P2PDiffusionBuilder {
 #[cfg(test)]
 mod integration_tests {
     use super::*;
-    use std::net::{Ipv4Addr, IpAddr, SocketAddr};
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
     #[test]
     fn test_p2p_diffusion_creation() {
@@ -351,7 +370,7 @@ mod integration_tests {
             PeerId::random(2),
             SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 3000),
         );
-        let peer_id = peer.peer_id.clone();
+        let peer_id = peer.peer_id;
 
         diffusion.selector_mut().add_peer(peer).unwrap();
         assert_eq!(diffusion.peer_count(), 1);
@@ -385,7 +404,7 @@ mod integration_tests {
                 PeerId::random(i),
                 SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, i)), 3000),
             );
-            let peer_id = peer.peer_id.clone();
+            let peer_id = peer.peer_id;
 
             diffusion.selector_mut().add_peer(peer).unwrap();
             diffusion.handle_connection_success(&peer_id).unwrap();
@@ -411,13 +430,15 @@ mod integration_tests {
             PeerId::random(2),
             SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 3000),
         );
-        let peer_id = peer.peer_id.clone();
+        let peer_id = peer.peer_id;
 
         diffusion.selector_mut().add_peer(peer).unwrap();
         diffusion.handle_connection_success(&peer_id).unwrap();
 
         // Record misbehavior
-        diffusion.record_misbehavior(&peer_id, MisbehaviorSeverity::Critical).unwrap();
+        diffusion
+            .record_misbehavior(&peer_id, MisbehaviorSeverity::Critical)
+            .unwrap();
 
         let peer = diffusion.get_peer(&peer_id).unwrap();
         assert!(peer.reputation.value() < ReputationScore::INITIAL);

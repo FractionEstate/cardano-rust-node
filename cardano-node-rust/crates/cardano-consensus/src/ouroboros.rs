@@ -4,17 +4,17 @@
 //! slot leadership calculation, VRF evaluation, KES key rotation, and chain quality metrics.
 
 use crate::{ConsensusError, Result};
-use cardano_crypto::{Blake2b256Hash, Ed25519KeyHash, VrfOutput, VrfProof, BlsSignature};
+use cardano_crypto::{Blake2b256Hash, Ed25519KeyHash, VrfOutput, VrfProof};
 use std::collections::HashMap;
-use std::time::{SystemTime};
+use std::time::SystemTime;
 
 /// Ouroboros protocol parameters
 #[derive(Debug, Clone)]
 pub struct ProtocolParameters {
-    pub security_parameter: u64,    // k parameter
+    pub security_parameter: u64,      // k parameter
     pub active_slot_coefficient: f64, // f parameter
-    pub slot_length: u64,           // seconds per slot
-    pub epoch_length: u64,          // slots per epoch
+    pub slot_length: u64,             // seconds per slot
+    pub epoch_length: u64,            // slots per epoch
 }
 
 /// Slot number in the blockchain
@@ -164,10 +164,7 @@ pub struct SlotLeadershipCalculator {
 
 impl SlotLeadershipCalculator {
     /// Create new leadership calculator
-    pub fn new(
-        stake_distribution: StakeDistribution,
-        protocol_params: ProtocolParameters,
-    ) -> Self {
+    pub fn new(stake_distribution: StakeDistribution, protocol_params: ProtocolParameters) -> Self {
         Self {
             stake_distribution,
             protocol_params,
@@ -177,10 +174,10 @@ impl SlotLeadershipCalculator {
     /// Calculate if a pool is slot leader for given slot
     pub fn is_slot_leader(
         &self,
-        pool_id: &PoolId,
+        _pool_id: &PoolId,
         pool_stake: u64,
         vrf_output: &VrfOutput,
-        slot: SlotNo,
+        _slot: SlotNo,
     ) -> bool {
         let total_stake = self.stake_distribution.total_stake;
         if total_stake == 0 {
@@ -191,7 +188,8 @@ impl SlotLeadershipCalculator {
         let relative_stake = pool_stake as f64 / total_stake as f64;
 
         // Apply active slot coefficient
-        let threshold = 1.0 - (1.0 - self.protocol_params.active_slot_coefficient).powf(relative_stake);
+        let threshold =
+            1.0 - (1.0 - self.protocol_params.active_slot_coefficient).powf(relative_stake);
 
         // Convert VRF output to probability (simplified)
         let vrf_hash = Blake2b256Hash::hash(vrf_output.to_bytes());
@@ -253,18 +251,18 @@ impl KesManager {
 
         // Check signature is from correct period
         if signature_kes_period != current_kes_period {
-            return Err(ConsensusError::InvalidKesSignature(
-                format!("KES signature from period {}, expected {}",
-                    signature_kes_period, current_kes_period)
-            ));
+            return Err(ConsensusError::InvalidKesSignature(format!(
+                "KES signature from period {}, expected {}",
+                signature_kes_period, current_kes_period
+            )));
         }
 
         // Check certificate is not too old
         if current_kes_period > cert_kes_period + self.max_kes_evolutions {
-            return Err(ConsensusError::ExpiredKesKey(
-                format!("KES key expired: cert_period={}, current_period={}, max_evolutions={}",
-                    cert_kes_period, current_kes_period, self.max_kes_evolutions)
-            ));
+            return Err(ConsensusError::ExpiredKesKey(format!(
+                "KES key expired: cert_period={}, current_period={}, max_evolutions={}",
+                cert_kes_period, current_kes_period, self.max_kes_evolutions
+            )));
         }
 
         Ok(())
@@ -303,8 +301,8 @@ impl ChainDensityCalculator {
             };
         }
 
-        let first_slot = blocks.first().unwrap().0.0;
-        let last_slot = blocks.last().unwrap().0.0;
+        let first_slot = blocks.first().unwrap().0 .0;
+        let last_slot = blocks.last().unwrap().0 .0;
         let slot_range = if last_slot >= first_slot {
             last_slot - first_slot + 1
         } else {
@@ -312,11 +310,8 @@ impl ChainDensityCalculator {
         };
 
         let block_count = blocks.len() as u64;
-        let density = Self::calculate_density(
-            block_count,
-            slot_range,
-            params.active_slot_coefficient,
-        );
+        let density =
+            Self::calculate_density(block_count, slot_range, params.active_slot_coefficient);
 
         ChainQuality {
             density,
@@ -393,9 +388,10 @@ impl OuroborosState {
     /// Advance to next slot
     pub fn advance_slot(&mut self, new_slot: SlotNo) -> Result<()> {
         if new_slot.0 <= self.current_slot.0 {
-            return Err(ConsensusError::InvalidSlotProgression(
-                format!("Cannot advance from slot {} to {}", self.current_slot.0, new_slot.0)
-            ));
+            return Err(ConsensusError::InvalidSlotProgression(format!(
+                "Cannot advance from slot {} to {}",
+                self.current_slot.0, new_slot.0
+            )));
         }
 
         let old_epoch = self.current_epoch;
@@ -413,11 +409,7 @@ impl OuroborosState {
     }
 
     /// Handle epoch boundary transitions
-    fn handle_epoch_transition(
-        &mut self,
-        _old_epoch: EpochNo,
-        _new_epoch: EpochNo,
-    ) -> Result<()> {
+    fn handle_epoch_transition(&mut self, _old_epoch: EpochNo, _new_epoch: EpochNo) -> Result<()> {
         // Update stake distribution snapshot
         // Update protocol parameters if needed
         // Calculate new epoch nonce
@@ -434,13 +426,13 @@ impl OuroborosState {
         // Validate pool parameters
         if pool.margin < 0.0 || pool.margin > 1.0 {
             return Err(ConsensusError::InvalidPoolParameters(
-                "Pool margin must be between 0 and 1".to_string()
+                "Pool margin must be between 0 and 1".to_string(),
             ));
         }
 
         if pool.cost > pool.pledge {
             return Err(ConsensusError::InvalidPoolParameters(
-                "Pool cost cannot exceed pledge".to_string()
+                "Pool cost cannot exceed pledge".to_string(),
             ));
         }
 
@@ -456,7 +448,8 @@ impl OuroborosState {
     /// Get current time in slots since genesis
     pub fn current_time_to_slot(&self, genesis_time: SystemTime) -> Result<SlotNo> {
         let now = SystemTime::now();
-        let elapsed = now.duration_since(genesis_time)
+        let elapsed = now
+            .duration_since(genesis_time)
             .map_err(|_| ConsensusError::TimeCalculationError("Time went backwards".to_string()))?;
 
         let slots_elapsed = elapsed.as_secs() / self.protocol_params.slot_length;
@@ -465,11 +458,7 @@ impl OuroborosState {
 
     /// Check if we're synchronized with network time
     pub fn is_synchronized(&self, network_slot: SlotNo) -> bool {
-        let slot_diff = if network_slot.0 > self.current_slot.0 {
-            network_slot.0 - self.current_slot.0
-        } else {
-            self.current_slot.0 - network_slot.0
-        };
+        let slot_diff = network_slot.0.abs_diff(self.current_slot.0);
 
         // Allow up to 20 slots of drift
         slot_diff <= 20
@@ -518,9 +507,8 @@ mod tests {
         let vrf_output = VrfOutput::from_bytes([0u8; 64]).unwrap();
 
         // Test leadership calculation (result depends on VRF output)
-        let is_leader = calculator.is_slot_leader(&pool_id, 1000, &vrf_output, SlotNo(1));
-        // Result is probabilistic, just check it completes
-        assert!(is_leader || !is_leader);
+        let _is_leader = calculator.is_slot_leader(&pool_id, 1000, &vrf_output, SlotNo(1));
+        // Result is probabilistic, function completing successfully is the test
     }
 
     #[test]
@@ -575,7 +563,7 @@ mod tests {
 
         let vrf_outputs = vec![
             VrfOutput::from_bytes(vrf_output_1).unwrap(),
-            VrfOutput::from_bytes(vrf_output_2).unwrap()
+            VrfOutput::from_bytes(vrf_output_2).unwrap(),
         ];
 
         let new_nonce = transition.calculate_epoch_nonce(&nonce, &vrf_outputs, None);

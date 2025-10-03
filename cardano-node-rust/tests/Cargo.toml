@@ -1,0 +1,3 @@
+[[bin]]
+name = "test_haskell_compat"
+path = "tests/test_haskell_compatibility.rs"

@@ -3,8 +3,8 @@
 //! Defines the traits for handling REST API requests for blockchain
 //! queries and transaction submission.
 
-use serde_json::Value;
 use crate::Result;
+use serde_json::Value;
 
 /// Trait for handling blockchain queries via REST API
 #[async_trait::async_trait]

@@ -3,51 +3,25 @@
 //! Comprehensive tests for connection state machine, multiplexer functionality,
 //! handshake protocol, and integration scenarios.
 
-use std::net::SocketAddr;
-use std::sync::Arc;
-use std::time::Duration;
-
 use bytes::Bytes;
-use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::mpsc;
-use tokio::time::timeout;
 
-use crate::connection::*;
 use crate::connection::multiplexer::MultiplexerError;
-use crate::{NetworkError};
+use crate::connection::*;
 use crate::diffusion::{PeerId, PeerInfo};
+use crate::NetworkError;
 
 /// Test utilities
 mod utils {
     use super::*;
+    use std::net::SocketAddr;
 
     /// Create test peer info
     pub fn create_test_peer(id: u8) -> PeerInfo {
         let peer_id = PeerId::new([id; 32]);
-        let address = format!("127.0.0.1:{}", 3000 + id as u16).parse().unwrap();
+        let address = format!("127.0.0.1:{}", 3000 + id as u16)
+            .parse::<SocketAddr>()
+            .unwrap();
         PeerInfo::new(peer_id, address)
-    }
-
-    /// Create test TCP listener
-    pub async fn create_test_listener() -> (TcpListener, SocketAddr) {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        (listener, addr)
-    }
-
-    /// Simple echo server for testing
-    pub async fn run_echo_server(listener: TcpListener) {
-        while let Ok((mut stream, _)) = listener.accept().await {
-            tokio::spawn(async move {
-                let mut buf = [0u8; 1024];
-                while let Ok(n) = stream.try_read(&mut buf) {
-                    if n == 0 {
-                        break;
-                    }
-                    let _ = stream.try_write(&buf[..n]);
-                }
-            });
-        }
     }
 }
 
@@ -83,20 +57,20 @@ mod state_tests {
         assert_eq!(machine.current_state(), ConnectionState::Disconnected);
 
         // Valid transition sequence
-        machine.transition(
-            ConnectionState::Connecting,
-            TransitionReason::UserInitiated
-        ).unwrap();
+        machine
+            .transition(ConnectionState::Connecting, TransitionReason::UserInitiated)
+            .unwrap();
 
-        machine.transition(
-            ConnectionState::Connected,
-            TransitionReason::TcpEstablished
-        ).unwrap();
+        machine
+            .transition(ConnectionState::Connected, TransitionReason::TcpEstablished)
+            .unwrap();
 
-        machine.transition(
-            ConnectionState::Authenticated,
-            TransitionReason::HandshakeComplete
-        ).unwrap();
+        machine
+            .transition(
+                ConnectionState::Authenticated,
+                TransitionReason::HandshakeComplete,
+            )
+            .unwrap();
 
         // Check final state and history
         assert_eq!(machine.current_state(), ConnectionState::Authenticated);
@@ -114,7 +88,7 @@ mod state_tests {
         // Try invalid transition
         let result = machine.transition(
             ConnectionState::Authenticated,
-            TransitionReason::UserInitiated
+            TransitionReason::UserInitiated,
         );
 
         assert!(result.is_err());
@@ -134,19 +108,21 @@ mod state_tests {
         let mut machine = ConnectionStateMachine::new(connection_id, peer_id);
 
         // Transition to connecting
-        machine.transition(
-            ConnectionState::Connecting,
-            TransitionReason::UserInitiated
-        ).unwrap();
+        machine
+            .transition(ConnectionState::Connecting, TransitionReason::UserInitiated)
+            .unwrap();
 
         // Simulate failure
         machine.fail(
             TransitionReason::NetworkError,
-            "Connection timeout".to_string()
+            "Connection timeout".to_string(),
         );
 
         assert_eq!(machine.current_state(), ConnectionState::Failed);
-        assert_eq!(machine.info.stats.last_error, Some("Connection timeout".to_string()));
+        assert_eq!(
+            machine.info.stats.last_error,
+            Some("Connection timeout".to_string())
+        );
     }
 }
 
@@ -198,7 +174,10 @@ mod multiplexer_tests {
 
         assert!(result.is_err());
         match result.unwrap_err() {
-            NetworkError::MultiplexerError(MultiplexerError::InvalidFrameSize { expected, actual }) => {
+            NetworkError::MultiplexerError(MultiplexerError::InvalidFrameSize {
+                expected,
+                actual,
+            }) => {
                 assert_eq!(expected, 4);
                 assert_eq!(actual, 2);
             }
@@ -208,13 +187,13 @@ mod multiplexer_tests {
 
     #[tokio::test]
     async fn test_echo_protocol_handler() {
-        let handler = EchoProtocolHandler::new(
-            ProtocolId::CHAINSYNC,
-            "TestEcho".to_string(),
-        );
+        let handler = EchoProtocolHandler::new(ProtocolId::CHAINSYNC, "TestEcho".to_string());
 
         let message = Bytes::from_static(b"echo test");
-        let response = handler.handle_message(message.clone()).await.unwrap();
+        let response = handler
+            .handle_message(ConnectionId::new(), message.clone())
+            .await
+            .unwrap();
 
         assert_eq!(response, Some(message));
         assert_eq!(handler.protocol_id(), ProtocolId::CHAINSYNC);
@@ -235,7 +214,6 @@ mod multiplexer_tests {
 
 #[cfg(test)]
 mod handshake_tests {
-    use super::*;
     use crate::connection::handshake::*;
 
     #[test]
@@ -284,14 +262,12 @@ mod handshake_tests {
         let handshake = HandshakeProtocol::new();
 
         // Duplex modes are always compatible
-        assert!(handshake.is_mode_compatible(
-            &[ProtocolMode::Duplex],
-            &[ProtocolMode::InitiatorOnly]
-        ));
-        assert!(handshake.is_mode_compatible(
-            &[ProtocolMode::InitiatorOnly],
-            &[ProtocolMode::Duplex]
-        ));
+        assert!(
+            handshake.is_mode_compatible(&[ProtocolMode::Duplex], &[ProtocolMode::InitiatorOnly])
+        );
+        assert!(
+            handshake.is_mode_compatible(&[ProtocolMode::InitiatorOnly], &[ProtocolMode::Duplex])
+        );
 
         // Complementary modes are compatible
         assert!(handshake.is_mode_compatible(
@@ -339,7 +315,10 @@ mod handshake_tests {
             RefuseReason::VersionMismatch,
             RefuseReason::HandshakeDecodeError("Test error".to_string()),
             RefuseReason::Refused("Test refusal".to_string()),
-            RefuseReason::NetworkMismatch { expected: 123, received: 456 },
+            RefuseReason::NetworkMismatch {
+                expected: 123,
+                received: 456,
+            },
             RefuseReason::ModeIncompatible,
         ];
 
@@ -495,7 +474,10 @@ mod monitor_tests {
 
         // Check connection is now monitored
         assert_eq!(monitor.get_all_metrics().await.len(), 1);
-        assert_eq!(monitor.get_health(connection_id).await, Some(HealthStatus::Healthy));
+        assert_eq!(
+            monitor.get_health(connection_id).await,
+            Some(HealthStatus::Healthy)
+        );
 
         // Update activity
         monitor.update_activity(connection_id).await;
@@ -525,7 +507,9 @@ mod monitor_tests {
 
         // Test keepalive handling
         let message = KeepAliveMessage::new(123);
-        let response = protocol.handle_keepalive(connection_id, message.clone()).await;
+        let response = protocol
+            .handle_keepalive(connection_id, message.clone())
+            .await;
 
         assert_eq!(response.cookie, message.cookie);
 
@@ -655,21 +639,36 @@ mod integration_tests {
         // Verify events can be created and contain expected data
         for event in events {
             match event {
-                ConnectionEvent::Connecting { connection_id: cid, peer_id: pid, address: addr } => {
+                ConnectionEvent::Connecting {
+                    connection_id: cid,
+                    peer_id: pid,
+                    address: addr,
+                } => {
                     assert_eq!(cid, connection_id);
                     assert_eq!(pid, peer_id);
                     assert_eq!(addr, address);
                 }
-                ConnectionEvent::Connected { connection_id: cid, peer_id: pid } => {
+                ConnectionEvent::Connected {
+                    connection_id: cid,
+                    peer_id: pid,
+                } => {
                     assert_eq!(cid, connection_id);
                     assert_eq!(pid, peer_id);
                 }
-                ConnectionEvent::Authenticated { connection_id: cid, peer_id: pid, protocol_version } => {
+                ConnectionEvent::Authenticated {
+                    connection_id: cid,
+                    peer_id: pid,
+                    protocol_version,
+                } => {
                     assert_eq!(cid, connection_id);
                     assert_eq!(pid, peer_id);
                     assert_eq!(protocol_version, 1000);
                 }
-                ConnectionEvent::Disconnected { connection_id: cid, peer_id: pid, reason } => {
+                ConnectionEvent::Disconnected {
+                    connection_id: cid,
+                    peer_id: pid,
+                    reason,
+                } => {
                     assert_eq!(cid, connection_id);
                     assert_eq!(pid, peer_id);
                     assert_eq!(reason, "Test disconnect");

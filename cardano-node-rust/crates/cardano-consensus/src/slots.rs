@@ -3,7 +3,7 @@
 //! Handles conversion between wall-clock time and blockchain slots.
 
 use crate::{ConsensusError, Result};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime};
 
 /// Slot time calculator
 pub struct SlotCalculator {
@@ -23,7 +23,8 @@ impl SlotCalculator {
     /// Get current slot number
     pub fn current_slot(&self) -> Result<u64> {
         let now = SystemTime::now();
-        let elapsed = now.duration_since(self.genesis_time)
+        let elapsed = now
+            .duration_since(self.genesis_time)
             .map_err(|e| ConsensusError::SlotError(format!("Time calculation error: {}", e)))?;
 
         Ok(elapsed.as_secs() / self.slot_length.as_secs())

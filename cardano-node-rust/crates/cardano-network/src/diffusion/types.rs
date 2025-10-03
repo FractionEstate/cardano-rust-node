@@ -21,8 +21,8 @@ impl PeerId {
         let mut id = [0u8; 32];
         id[0] = seed;
         // Fill with deterministic pattern for reproducible tests
-        for i in 1..32 {
-            id[i] = (seed.wrapping_mul(i as u8)).wrapping_add(i as u8);
+        for (i, byte) in id.iter_mut().enumerate().skip(1) {
+            *byte = (seed.wrapping_mul(i as u8)).wrapping_add(i as u8);
         }
         Self { id }
     }
@@ -68,7 +68,10 @@ pub enum ConnectionState {
 impl ConnectionState {
     /// Check if peer is available for connection attempts
     pub fn is_available(&self) -> bool {
-        matches!(self, ConnectionState::Disconnected | ConnectionState::Failed(_))
+        matches!(
+            self,
+            ConnectionState::Disconnected | ConnectionState::Failed(_)
+        )
     }
 
     /// Check if peer is currently connected
@@ -186,6 +189,8 @@ pub struct PeerInfo {
     /// Data transfer statistics
     pub bytes_sent: u64,
     pub bytes_received: u64,
+    /// Number of recorded critical misbehavior events (for escalation)
+    pub critical_misbehavior_count: u32,
     /// Protocol version supported by peer
     pub protocol_version: Option<u32>,
     /// Custom metadata
@@ -209,6 +214,7 @@ impl PeerInfo {
             last_successful_connection: None,
             bytes_sent: 0,
             bytes_received: 0,
+            critical_misbehavior_count: 0,
             protocol_version: None,
             metadata: HashMap::new(),
         }
@@ -242,8 +248,9 @@ impl PeerInfo {
             self.successful_connections += 1;
             self.last_successful_connection = Some(Instant::now());
             self.connection_state = ConnectionState::Connected;
-            // Reward successful connections
-            self.reputation.adjust(10);
+            // Reward successful connections with a modest boost that can be
+            // fully offset by a single minor misbehavior event.
+            self.reputation.adjust(4);
         } else {
             self.connection_state = ConnectionState::Failed("Connection failed".to_string());
             // Penalize failed connections
@@ -253,7 +260,21 @@ impl PeerInfo {
 
     /// Record misbehavior and adjust reputation
     pub fn record_misbehavior(&mut self, severity: MisbehaviorSeverity) {
+        if severity == MisbehaviorSeverity::Critical {
+            self.critical_misbehavior_count = self.critical_misbehavior_count.saturating_add(1);
+        } else {
+            self.critical_misbehavior_count = 0;
+        }
+
         self.reputation.adjust(severity.penalty());
+
+        if self.critical_misbehavior_count >= 3 && !self.reputation.is_banned() {
+            // Escalate to immediate ban after repeated critical offenses.
+            let target = ReputationScore::BAN_THRESHOLD;
+            if self.reputation.value() > target {
+                self.reputation.adjust(target - self.reputation.value());
+            }
+        }
 
         // Ban peer if reputation drops too low
         if self.reputation.is_banned() {
@@ -368,7 +389,9 @@ impl std::fmt::Display for PeerSelectionError {
             PeerSelectionError::PeerAlreadyExists(id) => write!(f, "Peer already exists: {}", id),
             PeerSelectionError::PeerNotFound(id) => write!(f, "Peer not found: {}", id),
             PeerSelectionError::ConnectionLimitExceeded => write!(f, "Connection limit exceeded"),
-            PeerSelectionError::InvalidConfiguration(msg) => write!(f, "Invalid peer configuration: {}", msg),
+            PeerSelectionError::InvalidConfiguration(msg) => {
+                write!(f, "Invalid peer configuration: {}", msg)
+            }
             PeerSelectionError::NetworkError(msg) => write!(f, "Network error: {}", msg),
         }
     }
@@ -379,7 +402,7 @@ impl std::error::Error for PeerSelectionError {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::net::{Ipv4Addr, IpAddr};
+    use std::net::{IpAddr, Ipv4Addr};
 
     #[test]
     fn test_peer_id_creation() {
@@ -447,7 +470,7 @@ mod tests {
     fn test_peer_info_creation() {
         let peer_id = PeerId::random(1);
         let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 3000);
-        let peer = PeerInfo::new(peer_id.clone(), address);
+        let peer = PeerInfo::new(peer_id, address);
 
         assert_eq!(peer.peer_id, peer_id);
         assert_eq!(peer.address, address);
@@ -459,7 +482,7 @@ mod tests {
     fn test_peer_connection_attempts() {
         let mut peer = PeerInfo::new(
             PeerId::random(1),
-            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 3000)
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 3000),
         );
 
         let initial_rep = peer.reputation.value();
@@ -482,7 +505,7 @@ mod tests {
     fn test_peer_misbehavior() {
         let mut peer = PeerInfo::new(
             PeerId::random(1),
-            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 3000)
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 3000),
         );
 
         let initial_rep = peer.reputation.value();
@@ -503,7 +526,7 @@ mod tests {
     fn test_peer_data_transfer() {
         let mut peer = PeerInfo::new(
             PeerId::random(1),
-            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 3000)
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 3000),
         );
 
         let initial_rep = peer.reputation.value();

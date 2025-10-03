@@ -285,10 +285,7 @@ mod tests {
 
     #[test]
     fn test_protocol_version() {
-        let version = ProtocolVersion {
-            major: 8,
-            minor: 0,
-        };
+        let version = ProtocolVersion { major: 8, minor: 0 };
 
         let json = serde_json::to_string(&version).unwrap();
         let deserialized: ProtocolVersion = serde_json::from_str(&json).unwrap();

@@ -2,6 +2,9 @@
 //!
 //! Handles CLI argument parsing, validation, and command execution for cardano-node.
 
+pub mod commands;
+pub use commands::*;
+
 use anyhow::{Context, Result};
 use clap::Parser;
 use std::net::SocketAddr;
@@ -35,11 +38,21 @@ pub struct CardanoNodeCli {
     pub verbose: bool,
 
     /// Log level (error, warn, info, debug, trace)
-    #[arg(long, global = true, default_value = "info", help = "Set logging level")]
+    #[arg(
+        long,
+        global = true,
+        default_value = "info",
+        help = "Set logging level"
+    )]
     pub log_level: String,
 
     /// Log format (json, plain)
-    #[arg(long, global = true, default_value = "plain", help = "Set log output format")]
+    #[arg(
+        long,
+        global = true,
+        default_value = "plain",
+        help = "Set log output format"
+    )]
     pub log_format: String,
 }
 
@@ -47,7 +60,7 @@ pub struct CardanoNodeCli {
 #[derive(Parser, Debug, Clone)]
 pub enum Commands {
     /// Run the cardano-node
-    Run(RunArgs),
+    Run(Box<RunArgs>),
 
     /// Show version information
     Version(VersionArgs),
@@ -57,6 +70,30 @@ pub enum Commands {
 
     /// Show node information and statistics
     Info(InfoArgs),
+
+    /// Query blockchain and node state
+    Query(QueryArgs),
+
+    /// Transaction operations
+    Transaction(TransactionArgs),
+
+    /// Stake pool operations
+    StakePool(StakePoolArgs),
+
+    /// Stake address operations
+    StakeAddress(StakeAddressArgs),
+
+    /// Address operations
+    Address(AddressArgs),
+
+    /// Governance operations (Conway era)
+    Governance(GovernanceArgs),
+
+    /// Interactive terminal dashboard
+    Dashboard(DashboardArgs),
+
+    /// Node administration commands
+    Admin(AdminArgs),
 }
 
 /// Arguments for the run command
@@ -195,21 +232,20 @@ impl CardanoNodeCli {
         I: IntoIterator<Item = T>,
         T: Into<std::ffi::OsString> + Clone,
     {
-        <Self as Parser>::try_parse_from(iter)
-            .context("Failed to parse command line arguments")
+        <Self as Parser>::try_parse_from(iter).context("Failed to parse command line arguments")
     }
 
     /// Validate the parsed CLI arguments
     pub fn validate(&self) -> Result<()> {
         // Validate log level
         match self.log_level.to_lowercase().as_str() {
-            "error" | "warn" | "info" | "debug" | "trace" => {},
+            "error" | "warn" | "info" | "debug" | "trace" => {}
             _ => return Err(anyhow::anyhow!("Invalid log level: {}", self.log_level)),
         }
 
         // Validate log format
         match self.log_format.to_lowercase().as_str() {
-            "json" | "plain" => {},
+            "json" | "plain" => {}
             _ => return Err(anyhow::anyhow!("Invalid log format: {}", self.log_format)),
         }
 
@@ -219,6 +255,8 @@ impl CardanoNodeCli {
             Commands::Version(args) => self.validate_version_args(args)?,
             Commands::Validate(args) => self.validate_validate_args(args)?,
             Commands::Info(args) => self.validate_info_args(args)?,
+            // Other commands have their own validation logic
+            _ => {},
         }
 
         Ok(())
@@ -228,14 +266,20 @@ impl CardanoNodeCli {
         // Check config file exists if provided
         if let Some(config_path) = &args.config {
             if !config_path.exists() {
-                return Err(anyhow::anyhow!("Configuration file does not exist: {:?}", config_path));
+                return Err(anyhow::anyhow!(
+                    "Configuration file does not exist: {:?}",
+                    config_path
+                ));
             }
         }
 
         // Check topology file exists if provided
         if let Some(topology_path) = &args.topology {
             if !topology_path.exists() {
-                return Err(anyhow::anyhow!("Topology file does not exist: {:?}", topology_path));
+                return Err(anyhow::anyhow!(
+                    "Topology file does not exist: {:?}",
+                    topology_path
+                ));
             }
         }
 
@@ -248,7 +292,11 @@ impl CardanoNodeCli {
         ] {
             if let Some(genesis_path) = path {
                 if !genesis_path.exists() {
-                    return Err(anyhow::anyhow!("{} file does not exist: {:?}", name, genesis_path));
+                    return Err(anyhow::anyhow!(
+                        "{} file does not exist: {:?}",
+                        name,
+                        genesis_path
+                    ));
                 }
             }
         }
@@ -257,10 +305,8 @@ impl CardanoNodeCli {
         // No additional validation needed as clap already validates port range 0-65535
 
         // Validate metrics configuration
-        if args.metrics {
-            if args.metrics_host.is_none() && args.metrics_port.is_none() {
-                tracing::warn!("Metrics enabled but no host or port specified, using defaults");
-            }
+        if args.metrics && args.metrics_host.is_none() && args.metrics_port.is_none() {
+            tracing::warn!("Metrics enabled but no host or port specified, using defaults");
         }
 
         Ok(())
@@ -276,7 +322,9 @@ impl CardanoNodeCli {
     fn validate_validate_args(&self, args: &ValidateArgs) -> Result<()> {
         // Must specify at least one file to validate
         if args.config.is_none() && args.topology.is_none() && args.genesis.is_none() && !args.all {
-            return Err(anyhow::anyhow!("Must specify at least one file to validate or use --all"));
+            return Err(anyhow::anyhow!(
+                "Must specify at least one file to validate or use --all"
+            ));
         }
 
         Ok(())
@@ -344,21 +392,13 @@ mod tests {
 
     #[test]
     fn test_validate_command() {
-        let cli = CardanoNodeCli::try_parse_from([
-            "cardano-node",
-            "validate",
-            "--all"
-        ]).unwrap();
+        let cli = CardanoNodeCli::try_parse_from(["cardano-node", "validate", "--all"]).unwrap();
         assert!(matches!(cli.command, Commands::Validate(_)));
     }
 
     #[test]
     fn test_info_command() {
-        let cli = CardanoNodeCli::try_parse_from([
-            "cardano-node",
-            "info",
-            "--protocol"
-        ]).unwrap();
+        let cli = CardanoNodeCli::try_parse_from(["cardano-node", "info", "--protocol"]).unwrap();
         assert!(matches!(cli.command, Commands::Info(_)));
     }
 
@@ -367,10 +407,13 @@ mod tests {
         let cli = CardanoNodeCli::try_parse_from([
             "cardano-node",
             "--verbose",
-            "--log-level", "debug",
-            "--log-format", "json",
-            "run"
-        ]).unwrap();
+            "--log-level",
+            "debug",
+            "--log-format",
+            "json",
+            "run",
+        ])
+        .unwrap();
 
         assert!(cli.verbose);
         assert_eq!(cli.log_level, "debug");
@@ -382,17 +425,25 @@ mod tests {
         let cli = CardanoNodeCli::try_parse_from([
             "cardano-node",
             "run",
-            "--config", "/path/to/config.json",
-            "--topology", "/path/to/topology.json",
-            "--database-path", "/path/to/db",
-            "--socket-path", "/path/to/socket",
-            "--port", "3001",
-            "--protocol-magic", "764824073",
+            "--config",
+            "/path/to/config.json",
+            "--topology",
+            "/path/to/topology.json",
+            "--database-path",
+            "/path/to/db",
+            "--socket-path",
+            "/path/to/socket",
+            "--port",
+            "3001",
+            "--protocol-magic",
+            "764824073",
             "--metrics",
-            "--metrics-port", "12798",
+            "--metrics-port",
+            "12798",
             "--validate-db",
-            "--dev-mode"
-        ]).unwrap();
+            "--dev-mode",
+        ])
+        .unwrap();
 
         if let Commands::Run(args) = cli.command {
             assert!(args.config.is_some());
@@ -412,22 +463,17 @@ mod tests {
 
     #[test]
     fn test_invalid_log_level_fails() {
-        let cli = CardanoNodeCli::try_parse_from([
-            "cardano-node",
-            "--log-level", "invalid",
-            "run"
-        ]).unwrap();
+        let cli = CardanoNodeCli::try_parse_from(["cardano-node", "--log-level", "invalid", "run"])
+            .unwrap();
 
         assert!(cli.validate().is_err());
     }
 
     #[test]
     fn test_invalid_format_fails() {
-        let cli = CardanoNodeCli::try_parse_from([
-            "cardano-node",
-            "version",
-            "--format", "invalid"
-        ]).unwrap();
+        let cli =
+            CardanoNodeCli::try_parse_from(["cardano-node", "version", "--format", "invalid"])
+                .unwrap();
 
         assert!(cli.validate().is_err());
     }

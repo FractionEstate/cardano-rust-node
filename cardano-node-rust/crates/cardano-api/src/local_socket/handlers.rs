@@ -3,12 +3,12 @@
 //! Handles incoming requests from the Unix domain socket and routes them
 //! to appropriate blockchain query or transaction submission handlers.
 
-use std::sync::Arc;
 use serde_json::{json, Value};
+use std::sync::Arc;
 use tracing::{debug, warn};
 
-use crate::Result;
 use super::protocol::*;
+use crate::Result;
 
 /// Trait for handling blockchain queries
 #[async_trait::async_trait]
@@ -73,19 +73,21 @@ impl LocalSocketHandlers {
                 return serde_json::to_value(LocalSocketResponse::error(
                     LocalSocketError::parse_error(),
                     None,
-                )).unwrap_or(json!({}));
+                ))
+                .unwrap_or(json!({}));
             }
         };
 
         // Parse method
-        let method = match LocalSocketMethod::from_str(&request.method) {
-            Some(m) => m,
-            None => {
+        let method = match request.method.parse::<LocalSocketMethod>() {
+            Ok(m) => m,
+            Err(_) => {
                 warn!("Unknown method: {}", request.method);
                 return serde_json::to_value(LocalSocketResponse::error(
                     LocalSocketError::method_not_found(),
                     request.id,
-                )).unwrap_or(json!({}));
+                ))
+                .unwrap_or(json!({}));
             }
         };
 
@@ -105,17 +107,21 @@ impl LocalSocketHandlers {
     }
 
     /// Handle a specific method
-    async fn handle_method(&self, method: LocalSocketMethod, params: Option<Value>) -> Result<Value> {
+    async fn handle_method(
+        &self,
+        method: LocalSocketMethod,
+        params: Option<Value>,
+    ) -> Result<Value> {
         match method {
-            LocalSocketMethod::QueryChainTip => {
-                self.chain_query.get_chain_tip().await
-            }
+            LocalSocketMethod::QueryChainTip => self.chain_query.get_chain_tip().await,
             LocalSocketMethod::QueryBlock => {
                 let block_hash = params
                     .as_ref()
                     .and_then(|p| p.get("blockHash"))
                     .and_then(|h| h.as_str())
-                    .ok_or_else(|| crate::ApiError::RequestError("Block hash parameter required".to_string()))?;
+                    .ok_or_else(|| {
+                        crate::ApiError::RequestError("Block hash parameter required".to_string())
+                    })?;
 
                 match self.chain_query.get_block(block_hash).await? {
                     Some(block) => Ok(block),
@@ -127,11 +133,17 @@ impl LocalSocketHandlers {
                     .as_ref()
                     .and_then(|p| p.get("txId"))
                     .and_then(|t| t.as_str())
-                    .ok_or_else(|| crate::ApiError::RequestError("Transaction ID parameter required".to_string()))?;
+                    .ok_or_else(|| {
+                        crate::ApiError::RequestError(
+                            "Transaction ID parameter required".to_string(),
+                        )
+                    })?;
 
                 match self.chain_query.get_transaction(tx_id).await? {
                     Some(tx) => Ok(tx),
-                    None => Err(crate::ApiError::RequestError("Transaction not found".to_string())),
+                    None => Err(crate::ApiError::RequestError(
+                        "Transaction not found".to_string(),
+                    )),
                 }
             }
             LocalSocketMethod::QueryUtxos => {
@@ -139,37 +151,38 @@ impl LocalSocketHandlers {
                     .as_ref()
                     .and_then(|p| p.get("address"))
                     .and_then(|a| a.as_str())
-                    .ok_or_else(|| crate::ApiError::RequestError("Address parameter required".to_string()))?;
+                    .ok_or_else(|| {
+                        crate::ApiError::RequestError("Address parameter required".to_string())
+                    })?;
 
                 self.chain_query.get_utxos(address).await
             }
             LocalSocketMethod::SubmitTransaction => {
-                let tx_data = params
-                    .ok_or_else(|| crate::ApiError::RequestError("Transaction data required".to_string()))?;
+                let tx_data = params.ok_or_else(|| {
+                    crate::ApiError::RequestError("Transaction data required".to_string())
+                })?;
 
                 self.tx_submission.submit_transaction(&tx_data).await
             }
-            LocalSocketMethod::QueryProtocolParams => {
-                self.chain_query.get_protocol_params().await
-            }
-            LocalSocketMethod::QueryStakePools => {
-                self.chain_query.get_stake_pools().await
-            }
+            LocalSocketMethod::QueryProtocolParams => self.chain_query.get_protocol_params().await,
+            LocalSocketMethod::QueryStakePools => self.chain_query.get_stake_pools().await,
             LocalSocketMethod::QueryDelegation => {
                 let address = params
                     .as_ref()
                     .and_then(|p| p.get("address"))
                     .and_then(|a| a.as_str())
-                    .ok_or_else(|| crate::ApiError::RequestError("Address parameter required".to_string()))?;
+                    .ok_or_else(|| {
+                        crate::ApiError::RequestError("Address parameter required".to_string())
+                    })?;
 
                 match self.chain_query.get_delegation(address).await? {
                     Some(delegation) => Ok(delegation),
-                    None => Err(crate::ApiError::RequestError("No delegation found for address".to_string())),
+                    None => Err(crate::ApiError::RequestError(
+                        "No delegation found for address".to_string(),
+                    )),
                 }
             }
-            LocalSocketMethod::QueryNodeStatus => {
-                self.chain_query.get_node_status().await
-            }
+            LocalSocketMethod::QueryNodeStatus => self.chain_query.get_node_status().await,
         }
     }
 }

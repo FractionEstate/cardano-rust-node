@@ -4,8 +4,8 @@
 //! Haskell implementation. All signature operations must produce
 //! identical results for consensus safety.
 
-use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use crate::{CryptoError, Result};
+use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 
 pub mod mod_rs {
     //! Ed25519 module exports
@@ -41,8 +41,7 @@ impl Ed25519PrivateKey {
 
     /// Create from hex string
     pub fn from_hex(hex_str: &str) -> Result<Self> {
-        let bytes = hex::decode(hex_str)
-            .map_err(|_| CryptoError::InvalidHexEncoding)?;
+        let bytes = hex::decode(hex_str).map_err(|_| CryptoError::InvalidHexEncoding)?;
         if bytes.len() != 32 {
             return Err(CryptoError::InvalidKeyLength);
         }
@@ -78,14 +77,13 @@ impl Ed25519PublicKey {
     pub fn from_bytes(bytes: [u8; 32]) -> Result<Self> {
         match VerifyingKey::from_bytes(&bytes) {
             Ok(key) => Ok(Self(key)),
-            Err(_) => Err(CryptoError::InvalidPublicKey)
+            Err(_) => Err(CryptoError::InvalidPublicKey),
         }
     }
 
     /// Create from hex string
     pub fn from_hex(hex_str: &str) -> Result<Self> {
-        let bytes = hex::decode(hex_str)
-            .map_err(|_| CryptoError::InvalidHexEncoding)?;
+        let bytes = hex::decode(hex_str).map_err(|_| CryptoError::InvalidHexEncoding)?;
         if bytes.len() != 32 {
             return Err(CryptoError::InvalidKeyLength);
         }
@@ -93,7 +91,7 @@ impl Ed25519PublicKey {
         key_bytes.copy_from_slice(&bytes);
         match VerifyingKey::from_bytes(&key_bytes) {
             Ok(key) => Ok(Self(key)),
-            Err(_) => Err(CryptoError::InvalidPublicKey)
+            Err(_) => Err(CryptoError::InvalidPublicKey),
         }
     }
 
@@ -126,7 +124,7 @@ impl Ed25519Signature {
             .map_err(|e| CryptoError::InvalidSignature(format!("Invalid hex: {}", e)))?;
         if bytes.len() != 64 {
             return Err(CryptoError::InvalidSignature(
-                "Ed25519 signature hex must be 128 characters (64 bytes)".to_string()
+                "Ed25519 signature hex must be 128 characters (64 bytes)".to_string(),
             ));
         }
         let mut sig_bytes = [0u8; 64];
@@ -217,6 +215,6 @@ impl Ed25519KeyHash {
 
     /// Get hex representation
     pub fn to_hex(&self) -> String {
-        hex::encode(&self.0)
+        hex::encode(self.0)
     }
 }

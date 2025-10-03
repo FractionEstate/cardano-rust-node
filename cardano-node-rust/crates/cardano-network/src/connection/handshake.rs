@@ -4,15 +4,13 @@
 //! and capability agreement between peers.
 
 use std::collections::HashMap;
-use std::io::Cursor;
 use std::time::{Duration, Instant};
 
-use bytes::{Buf, BufMut, Bytes, BytesMut};
-use minicbor::{Decoder, Encoder, Decode, Encode};
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use bytes::{BufMut, BytesMut};
+use minicbor::{Decode, Encode};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
-
-use crate::Result;
+use tracing::debug;
 
 /// Protocol version for Cardano P2P
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode)]
@@ -23,7 +21,8 @@ pub struct ProtocolVersion {
     /// Minor version number
     #[n(1)]
     pub minor: u16,
-}impl ProtocolVersion {
+}
+impl ProtocolVersion {
     /// Create new protocol version
     pub const fn new(major: u16, minor: u16) -> Self {
         Self { major, minor }
@@ -94,7 +93,8 @@ pub enum ProtocolMode {
     /// Full duplex (both directions)
     #[n(2)]
     Duplex,
-}/// Handshake messages
+}
+/// Handshake messages
 #[derive(Debug, Clone, Encode, Decode)]
 pub enum HandshakeMessage {
     /// Propose supported protocol versions
@@ -134,8 +134,10 @@ pub enum RefuseReason {
     /// Network magic mismatch
     #[n(3)]
     NetworkMismatch {
-        #[n(0)] expected: u32,
-        #[n(1)] received: u32
+        #[n(0)]
+        expected: u32,
+        #[n(1)]
+        received: u32,
     },
     /// Protocol mode incompatible
     #[n(4)]
@@ -152,7 +154,11 @@ impl std::fmt::Display for RefuseReason {
             Self::HandshakeDecodeError(msg) => write!(f, "Decode error: {}", msg),
             Self::Refused(msg) => write!(f, "Refused: {}", msg),
             Self::NetworkMismatch { expected, received } => {
-                write!(f, "Network mismatch: expected {}, received {}", expected, received)
+                write!(
+                    f,
+                    "Network mismatch: expected {}, received {}",
+                    expected, received
+                )
             }
             Self::ModeIncompatible => write!(f, "Protocol mode incompatible"),
             Self::ProtocolViolation(msg) => write!(f, "Protocol violation: {}", msg),
@@ -268,22 +274,27 @@ impl HandshakeProtocol {
     }
 
     /// Perform handshake as initiator
-    pub async fn perform_handshake(&self, stream: TcpStream) -> std::result::Result<u32, HandshakeError> {
+    pub async fn perform_handshake(
+        &self,
+        stream: &mut TcpStream,
+    ) -> std::result::Result<u32, HandshakeError> {
         let start_time = Instant::now();
-        let (mut reader, mut writer) = stream.into_split();
 
         // Send ProposeVersions
         let propose_msg = HandshakeMessage::ProposeVersions {
             versions: self.supported_versions.clone(),
         };
 
-        self.send_message(&mut writer, &propose_msg).await?;
+        self.send_message(stream, &propose_msg).await?;
 
         // Receive response
-        let response = self.receive_message(&mut reader).await?;
+        let response = self.receive_message(stream).await?;
 
         match response {
-            HandshakeMessage::AcceptVersion { version, version_data } => {
+            HandshakeMessage::AcceptVersion {
+                version,
+                version_data,
+            } => {
                 // Validate accepted version
                 if let Some(our_data) = self.supported_versions.get(&version) {
                     // Check network compatibility
@@ -296,19 +307,27 @@ impl HandshakeProtocol {
                         let refuse_msg = HandshakeMessage::Refuse {
                             reason: RefuseReason::ModeIncompatible,
                         };
-                        self.send_message(&mut writer, &refuse_msg).await?;
-                        return Err(HandshakeError::VersionNegotiationFailed(RefuseReason::ModeIncompatible));
+                        self.send_message(stream, &refuse_msg).await?;
+                        return Err(HandshakeError::VersionNegotiationFailed(
+                            RefuseReason::ModeIncompatible,
+                        ));
                     }
 
                     let handshake_duration = start_time.elapsed();
+                    debug!(
+                        elapsed_ms = handshake_duration.as_millis(),
+                        "Handshake completed with version {}.{}", version.major, version.minor
+                    );
                     Ok(version.major as u32 * 1000 + version.minor as u32)
                 } else {
                     // Version not in our supported list
                     let refuse_msg = HandshakeMessage::Refuse {
                         reason: RefuseReason::VersionMismatch,
                     };
-                    self.send_message(&mut writer, &refuse_msg).await?;
-                    Err(HandshakeError::VersionNegotiationFailed(RefuseReason::VersionMismatch))
+                    self.send_message(stream, &refuse_msg).await?;
+                    Err(HandshakeError::VersionNegotiationFailed(
+                        RefuseReason::VersionMismatch,
+                    ))
                 }
             }
             HandshakeMessage::Refuse { reason } => {
@@ -317,19 +336,21 @@ impl HandshakeProtocol {
             HandshakeMessage::ProposeVersions { .. } => {
                 // Received proposal when we sent proposal - protocol violation
                 Err(HandshakeError::ProtocolViolation(
-                    "Received ProposeVersions in response to ProposeVersions".to_string()
+                    "Received ProposeVersions in response to ProposeVersions".to_string(),
                 ))
             }
         }
     }
 
     /// Handle handshake as responder
-    pub async fn handle_handshake(&self, stream: TcpStream) -> std::result::Result<NegotiationResult, HandshakeError> {
+    pub async fn handle_handshake(
+        &self,
+        stream: &mut TcpStream,
+    ) -> std::result::Result<NegotiationResult, HandshakeError> {
         let start_time = Instant::now();
-        let (mut reader, mut writer) = stream.into_split();
 
         // Receive ProposeVersions
-        let proposal = self.receive_message(&mut reader).await?;
+        let proposal = self.receive_message(stream).await?;
 
         match proposal {
             HandshakeMessage::ProposeVersions { versions } => {
@@ -343,7 +364,7 @@ impl HandshakeProtocol {
                         version_data: our_data.clone(),
                     };
 
-                    self.send_message(&mut writer, &accept_msg).await?;
+                    self.send_message(stream, &accept_msg).await?;
 
                     let handshake_duration = start_time.elapsed();
 
@@ -358,7 +379,7 @@ impl HandshakeProtocol {
                     let refuse_msg = HandshakeMessage::Refuse {
                         reason: RefuseReason::VersionMismatch,
                     };
-                    self.send_message(&mut writer, &refuse_msg).await?;
+                    self.send_message(stream, &refuse_msg).await?;
                     Err(HandshakeError::NoSupportedVersions)
                 }
             }
@@ -366,12 +387,12 @@ impl HandshakeProtocol {
                 // Invalid initial message
                 let refuse_msg = HandshakeMessage::Refuse {
                     reason: RefuseReason::ProtocolViolation(
-                        "Expected ProposeVersions as first message".to_string()
+                        "Expected ProposeVersions as first message".to_string(),
                     ),
                 };
-                self.send_message(&mut writer, &refuse_msg).await?;
+                self.send_message(stream, &refuse_msg).await?;
                 Err(HandshakeError::ProtocolViolation(
-                    "Expected ProposeVersions as first message".to_string()
+                    "Expected ProposeVersions as first message".to_string(),
                 ))
             }
         }
@@ -380,12 +401,11 @@ impl HandshakeProtocol {
     /// Send handshake message
     async fn send_message(
         &self,
-        writer: &mut tokio::net::tcp::OwnedWriteHalf,
+        writer: &mut TcpStream,
         message: &HandshakeMessage,
     ) -> std::result::Result<(), HandshakeError> {
         // Encode message to CBOR
-        let encoded_data = minicbor::to_vec(message)
-            .map_err(HandshakeError::from)?;
+        let encoded_data = minicbor::to_vec(message).map_err(HandshakeError::from)?;
 
         // Frame format: [length: u32][data: bytes]
         let mut frame = BytesMut::with_capacity(4 + encoded_data.len());
@@ -393,13 +413,14 @@ impl HandshakeProtocol {
         frame.put_slice(&encoded_data);
 
         writer.write_all(&frame).await?;
+        writer.flush().await?;
         Ok(())
     }
 
     /// Receive handshake message
     async fn receive_message(
         &self,
-        reader: &mut tokio::net::tcp::OwnedReadHalf,
+        reader: &mut TcpStream,
     ) -> std::result::Result<HandshakeMessage, HandshakeError> {
         // Read frame length
         let mut length_buf = [0u8; 4];
@@ -408,9 +429,10 @@ impl HandshakeProtocol {
 
         // Validate message length
         if message_length > 64 * 1024 {
-            return Err(HandshakeError::ProtocolViolation(
-                format!("Message too large: {} bytes", message_length)
-            ));
+            return Err(HandshakeError::ProtocolViolation(format!(
+                "Message too large: {} bytes",
+                message_length
+            )));
         }
 
         // Read message data
@@ -450,7 +472,11 @@ impl HandshakeProtocol {
     }
 
     /// Check if protocol modes are compatible
-    pub fn is_mode_compatible(&self, peer_modes: &[ProtocolMode], our_modes: &[ProtocolMode]) -> bool {
+    pub fn is_mode_compatible(
+        &self,
+        peer_modes: &[ProtocolMode],
+        our_modes: &[ProtocolMode],
+    ) -> bool {
         for peer_mode in peer_modes {
             for our_mode in our_modes {
                 match (peer_mode, our_mode) {
@@ -542,10 +568,9 @@ mod tests {
         let handshake = HandshakeProtocol::new();
 
         // Duplex modes are always compatible
-        assert!(handshake.is_mode_compatible(
-            &[ProtocolMode::Duplex],
-            &[ProtocolMode::InitiatorOnly]
-        ));
+        assert!(
+            handshake.is_mode_compatible(&[ProtocolMode::Duplex], &[ProtocolMode::InitiatorOnly])
+        );
 
         // Complementary modes are compatible
         assert!(handshake.is_mode_compatible(

@@ -3,22 +3,15 @@
 //! This module contains all tests from the original test specifications
 //! to ensure complete compatibility and correctness of the P2P implementation.
 
-use crate::diffusion::{types::*, selector::PeerSelector, gossip::*};
+use crate::diffusion::{gossip::*, selector::PeerSelector, types::*};
 use std::collections::HashSet;
-use std::net::{Ipv4Addr, IpAddr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::Duration;
 
 fn create_test_peer(id: u8, port: u16) -> PeerInfo {
     let peer_id = PeerId::random(id);
     let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, id)), port);
     PeerInfo::new(peer_id, address)
-}
-
-fn create_test_peer_with_pool(id: u8, port: u16, pool_id: String) -> PeerInfo {
-    let mut peer = create_test_peer(id, port);
-    peer.stake_pool_id = Some(pool_id);
-    peer.is_relay = true;
-    peer
 }
 
 #[cfg(test)]
@@ -98,7 +91,7 @@ mod peer_selection_tests {
     fn test_peer_connection_lifecycle() {
         let mut selector = PeerSelector::new(SelectionConfig::default());
         let peer = create_test_peer(1, 3000);
-        let peer_id = peer.peer_id.clone();
+        let peer_id = peer.peer_id;
 
         selector.add_peer(peer).unwrap();
 
@@ -127,11 +120,11 @@ mod peer_selection_tests {
 
             // Give different reputation scores
             match i {
-                1 => peer.reputation = ReputationScore::new(500),  // High reputation
-                2 => peer.reputation = ReputationScore::new(100),  // Medium reputation
-                3 => peer.reputation = ReputationScore::new(-50),  // Low reputation
+                1 => peer.reputation = ReputationScore::new(500), // High reputation
+                2 => peer.reputation = ReputationScore::new(100), // Medium reputation
+                3 => peer.reputation = ReputationScore::new(-50), // Low reputation
                 4 => peer.reputation = ReputationScore::new(-600), // Banned
-                5 => peer.reputation = ReputationScore::new(0),    // Neutral
+                5 => peer.reputation = ReputationScore::new(0),   // Neutral
                 _ => {}
             }
 
@@ -151,9 +144,11 @@ mod peer_selection_tests {
 
     #[test]
     fn test_peer_selection_diversity() {
-        let mut config = SelectionConfig::default();
-        config.geographic_diversity_weight = 1.0;
-        config.stake_pool_diversity_weight = 1.0;
+        let config = SelectionConfig {
+            geographic_diversity_weight: 1.0,
+            stake_pool_diversity_weight: 1.0,
+            ..Default::default()
+        };
 
         let mut selector = PeerSelector::new(config);
 
@@ -181,16 +176,15 @@ mod peer_selection_tests {
         let candidates = selector.select_connection_candidates(3);
 
         // Verify geographic diversity by checking we have peers from different subnets
-        let selected_subnets: HashSet<_> = candidates.iter()
+        let selected_subnets: HashSet<_> = candidates
+            .iter()
             .filter_map(|id| selector.get_peer(id))
-            .map(|peer| {
-                match peer.address.ip() {
-                    IpAddr::V4(ipv4) => {
-                        let octets = ipv4.octets();
-                        ((octets[0] as u32) << 8) | (octets[1] as u32)
-                    }
-                    IpAddr::V6(_) => 0,
+            .map(|peer| match peer.address.ip() {
+                IpAddr::V4(ipv4) => {
+                    let octets = ipv4.octets();
+                    ((octets[0] as u32) << 8) | (octets[1] as u32)
                 }
+                IpAddr::V6(_) => 0,
             })
             .collect();
 
@@ -200,9 +194,11 @@ mod peer_selection_tests {
 
     #[test]
     fn test_peer_selection_connection_limits() {
-        let mut config = SelectionConfig::default();
-        config.max_connections = 3;
-        config.target_connections = 2;
+        let config = SelectionConfig {
+            max_connections: 3,
+            target_connections: 2,
+            ..Default::default()
+        };
 
         let mut selector = PeerSelector::new(config);
 
@@ -232,20 +228,28 @@ mod peer_selection_tests {
     fn test_peer_misbehavior_handling() {
         let mut selector = PeerSelector::new(SelectionConfig::default());
         let peer = create_test_peer(1, 3000);
-        let peer_id = peer.peer_id.clone();
+        let peer_id = peer.peer_id;
 
         selector.add_peer(peer).unwrap();
         selector.handle_connection_success(&peer_id).unwrap();
 
         // Record minor misbehavior
-        selector.record_misbehavior(&peer_id, MisbehaviorSeverity::Minor).unwrap();
+        selector
+            .record_misbehavior(&peer_id, MisbehaviorSeverity::Minor)
+            .unwrap();
         let peer = selector.get_peer(&peer_id).unwrap();
         assert!(peer.reputation.value() < ReputationScore::INITIAL);
 
         // Record critical misbehavior - should lead to ban
-        selector.record_misbehavior(&peer_id, MisbehaviorSeverity::Critical).unwrap();
-        selector.record_misbehavior(&peer_id, MisbehaviorSeverity::Critical).unwrap();
-        selector.record_misbehavior(&peer_id, MisbehaviorSeverity::Critical).unwrap();
+        selector
+            .record_misbehavior(&peer_id, MisbehaviorSeverity::Critical)
+            .unwrap();
+        selector
+            .record_misbehavior(&peer_id, MisbehaviorSeverity::Critical)
+            .unwrap();
+        selector
+            .record_misbehavior(&peer_id, MisbehaviorSeverity::Critical)
+            .unwrap();
 
         let peer = selector.get_peer(&peer_id).unwrap();
         assert!(peer.reputation.is_banned());
@@ -296,8 +300,8 @@ mod peer_selection_tests {
         peer1.reputation = ReputationScore::new(100);
         peer2.reputation = ReputationScore::new(100);
 
-        let peer1_id = peer1.peer_id.clone();
-        let peer2_id = peer2.peer_id.clone();
+        let peer1_id = peer1.peer_id;
+        let peer2_id = peer2.peer_id;
 
         selector.add_peer(peer1).unwrap();
         selector.add_peer(peer2).unwrap();
@@ -316,8 +320,12 @@ mod peer_selection_tests {
             selector.calculate_selection_score(peer)
         };
 
-        assert!(peer1_score > peer2_score,
-            "Peer1 score ({}) should be higher than Peer2 score ({})", peer1_score, peer2_score);
+        assert!(
+            peer1_score > peer2_score,
+            "Peer1 score ({}) should be higher than Peer2 score ({})",
+            peer1_score,
+            peer2_score
+        );
     }
 
     #[test]
@@ -327,7 +335,7 @@ mod peer_selection_tests {
 
         // Set high reputation
         peer.reputation = ReputationScore::new(500);
-        let peer_id = peer.peer_id.clone();
+        let peer_id = peer.peer_id;
         selector.add_peer(peer).unwrap();
 
         // Force reputation decay by calling the internal method
@@ -383,34 +391,45 @@ mod peer_selection_tests {
 
         // Test adding duplicate peer
         let peer1 = create_test_peer(1, 3000);
-        let peer_id = peer1.peer_id.clone();
+        let peer_id = peer1.peer_id;
 
         selector.add_peer(peer1).unwrap();
 
-        let peer2 = PeerInfo::new(peer_id.clone(), SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2)), 3001));
+        let peer2 = PeerInfo::new(
+            peer_id,
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2)), 3001),
+        );
         assert!(selector.add_peer(peer2).is_err());
 
         // Test operations on non-existent peer
         let fake_peer_id = PeerId::random(99);
         assert!(selector.handle_connection_success(&fake_peer_id).is_err());
-        assert!(selector.handle_connection_failure(&fake_peer_id, "test".to_string()).is_err());
-        assert!(selector.record_misbehavior(&fake_peer_id, MisbehaviorSeverity::Minor).is_err());
+        assert!(selector
+            .handle_connection_failure(&fake_peer_id, "test".to_string())
+            .is_err());
+        assert!(selector
+            .record_misbehavior(&fake_peer_id, MisbehaviorSeverity::Minor)
+            .is_err());
     }
 
     #[test]
     fn test_peer_connection_attempts_limit() {
-        let mut config = SelectionConfig::default();
-        config.max_connection_attempts = 2;
+        let config = SelectionConfig {
+            max_connection_attempts: 2,
+            ..Default::default()
+        };
 
         let mut selector = PeerSelector::new(config);
         let peer = create_test_peer(1, 3000);
-        let peer_id = peer.peer_id.clone();
+        let peer_id = peer.peer_id;
 
         selector.add_peer(peer).unwrap();
 
         // Fail connections up to the limit
         for _ in 0..2 {
-            selector.handle_connection_failure(&peer_id, "Connection refused".to_string()).unwrap();
+            selector
+                .handle_connection_failure(&peer_id, "Connection refused".to_string())
+                .unwrap();
         }
 
         // Should not be selected anymore
@@ -422,13 +441,16 @@ mod peer_selection_tests {
     fn test_peer_data_transfer_tracking() {
         let mut selector = PeerSelector::new(SelectionConfig::default());
         let peer = create_test_peer(1, 3000);
-        let peer_id = peer.peer_id.clone();
+        let peer_id = peer.peer_id;
 
         let initial_reputation = peer.reputation.value();
         selector.add_peer(peer).unwrap();
 
         // Simulate data transfer
-        selector.get_peer_mut(&peer_id).unwrap().record_data_transfer(1024, 2048);
+        selector
+            .get_peer_mut(&peer_id)
+            .unwrap()
+            .record_data_transfer(1024, 2048);
 
         let peer = selector.get_peer(&peer_id).unwrap();
         assert_eq!(peer.bytes_sent, 1024);
@@ -452,16 +474,18 @@ mod peer_selection_tests {
 
     #[test]
     fn test_periodic_maintenance() {
-        let mut config = SelectionConfig::default();
-        config.reputation_decay_interval = Duration::from_millis(1); // Very short for testing
-        config.peer_discovery_interval = Duration::from_millis(1);
+        let config = SelectionConfig {
+            reputation_decay_interval: Duration::from_millis(1), // Very short for testing
+            peer_discovery_interval: Duration::from_millis(1),
+            ..Default::default()
+        };
 
         let mut selector = PeerSelector::new(config);
 
         // Add a peer with high reputation
         let mut peer = create_test_peer(1, 3000);
         peer.reputation = ReputationScore::new(500);
-        let peer_id = peer.peer_id.clone();
+        let peer_id = peer.peer_id;
         selector.add_peer(peer).unwrap();
 
         let initial_reputation = selector.get_peer(&peer_id).unwrap().reputation.value();
@@ -490,8 +514,8 @@ mod gossip_protocol_tests {
         // Add some peers to advertise
         for i in 2..=5 {
             let peer = create_test_peer(i, 3000 + i as u16);
-            gossip.add_peer_to_advertise(peer.peer_id.clone());
-            peers.insert(peer.peer_id.clone(), peer);
+            gossip.add_peer_to_advertise(peer.peer_id);
+            peers.insert(peer.peer_id, peer);
         }
 
         let advertisement = gossip.create_advertisement(&peers).unwrap();
@@ -521,7 +545,10 @@ mod gossip_protocol_tests {
         let result = gossip.process_advertisement(advertisement.clone()).unwrap();
 
         match result {
-            ProcessResult::NewPeers { peers, should_forward: _ } => {
+            ProcessResult::NewPeers {
+                peers,
+                should_forward: _,
+            } => {
                 assert_eq!(peers.len(), 1);
                 assert_eq!(peers[0].peer_id, PeerId::random(2));
                 assert_eq!(peers[0].stake_pool_id, Some("pool123".to_string()));
@@ -533,7 +560,7 @@ mod gossip_protocol_tests {
         // Process same advertisement again - should be duplicate
         let result2 = gossip.process_advertisement(advertisement).unwrap();
         match result2 {
-            ProcessResult::Duplicate => {}, // Expected
+            ProcessResult::Duplicate => {} // Expected
             _ => panic!("Expected Duplicate result"),
         }
     }
@@ -562,10 +589,7 @@ mod gossip_protocol_tests {
         assert_eq!(forwarded.source, original.source);
 
         // TTL 1 should not be forwarded
-        let ttl_1_ad = PeerAdvertisement {
-            ttl: 1,
-            ..original
-        };
+        let ttl_1_ad = PeerAdvertisement { ttl: 1, ..original };
 
         assert!(gossip.create_forwarded_advertisement(&ttl_1_ad).is_none());
     }
@@ -631,7 +655,10 @@ mod integration_tests {
         let result = gossip.process_advertisement(advertisement).unwrap();
 
         match result {
-            ProcessResult::NewPeers { peers, should_forward: _ } => {
+            ProcessResult::NewPeers {
+                peers,
+                should_forward: _,
+            } => {
                 // Add discovered peers to selector
                 for peer in peers {
                     selector.add_peer(peer).unwrap();
@@ -655,7 +682,9 @@ mod integration_tests {
 
         // Simulate some misbehavior
         if let Some(peer_id) = candidates.first() {
-            selector.record_misbehavior(peer_id, MisbehaviorSeverity::Minor).unwrap();
+            selector
+                .record_misbehavior(peer_id, MisbehaviorSeverity::Minor)
+                .unwrap();
             let peer = selector.get_peer(peer_id).unwrap();
             assert!(peer.reputation.value() < ReputationScore::INITIAL);
         }
@@ -670,9 +699,11 @@ mod integration_tests {
 
     #[test]
     fn test_peer_diversity_selection() {
-        let mut config = SelectionConfig::default();
-        config.geographic_diversity_weight = 1.0;
-        config.stake_pool_diversity_weight = 1.0;
+        let config = SelectionConfig {
+            geographic_diversity_weight: 1.0,
+            stake_pool_diversity_weight: 1.0,
+            ..Default::default()
+        };
 
         let mut selector = PeerSelector::new(config);
 
@@ -714,7 +745,8 @@ mod integration_tests {
         let additional_candidates = selector.select_connection_candidates(2);
 
         // Verify that selection considers diversity by checking addresses
-        let selected_ips: HashSet<_> = additional_candidates.iter()
+        let selected_ips: HashSet<_> = additional_candidates
+            .iter()
             .filter_map(|id| selector.get_peer(id))
             .map(|peer| peer.address.ip())
             .collect();

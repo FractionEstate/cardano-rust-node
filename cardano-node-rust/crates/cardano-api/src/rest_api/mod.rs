@@ -3,8 +3,6 @@
 //! Provides HTTP REST API endpoints for querying blockchain data and
 //! submitting transactions. Based on OpenAPI specification in contracts/api.yaml.
 
-use std::sync::Arc;
-use std::net::SocketAddr;
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
@@ -14,6 +12,8 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::Value;
+use std::net::SocketAddr;
+use std::sync::Arc;
 use tower::ServiceBuilder;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing::{debug, error, info};
@@ -124,7 +124,9 @@ pub struct UtxoQueryParams {
 }
 
 /// Chain tip endpoint
-async fn get_chain_tip(State(state): State<RestApiState>) -> std::result::Result<Json<Value>, StatusCode> {
+async fn get_chain_tip(
+    State(state): State<RestApiState>,
+) -> std::result::Result<Json<Value>, StatusCode> {
     debug!("GET /api/v1/chain/tip");
 
     match state.chain_handler.get_chain_tip().await {
@@ -225,7 +227,11 @@ async fn get_address_utxos(
 ) -> std::result::Result<Json<Value>, StatusCode> {
     debug!("GET /api/v1/addresses/{}/utxos", address);
 
-    match state.chain_handler.get_address_utxos(&address, params.asset.as_deref()).await {
+    match state
+        .chain_handler
+        .get_address_utxos(&address, params.asset.as_deref())
+        .await
+    {
         Ok(utxos) => Ok(Json(utxos)),
         Err(e) => {
             error!("Failed to get UTXOs for address {}: {}", address, e);
@@ -250,7 +256,9 @@ async fn get_protocol_parameters(
 }
 
 /// Get stake pools endpoint
-async fn get_stake_pools(State(state): State<RestApiState>) -> std::result::Result<Json<Value>, StatusCode> {
+async fn get_stake_pools(
+    State(state): State<RestApiState>,
+) -> std::result::Result<Json<Value>, StatusCode> {
     debug!("GET /api/v1/stake-pools");
 
     match state.chain_handler.get_stake_pools().await {
@@ -263,7 +271,9 @@ async fn get_stake_pools(State(state): State<RestApiState>) -> std::result::Resu
 }
 
 /// Get node status endpoint
-async fn get_node_status(State(state): State<RestApiState>) -> std::result::Result<Json<Value>, StatusCode> {
+async fn get_node_status(
+    State(state): State<RestApiState>,
+) -> std::result::Result<Json<Value>, StatusCode> {
     debug!("GET /api/v1/node/status");
 
     match state.chain_handler.get_node_status().await {

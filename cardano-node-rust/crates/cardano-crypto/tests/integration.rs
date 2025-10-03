@@ -66,15 +66,9 @@ fn test_bls_aggregation() {
         })
         .collect();
 
-    let public_keys: Vec<BlsPublicKey> = private_keys
-        .iter()
-        .map(|pk| pk.public_key())
-        .collect();
+    let public_keys: Vec<BlsPublicKey> = private_keys.iter().map(|pk| pk.public_key()).collect();
 
-    let signatures: Vec<BlsSignature> = private_keys
-        .iter()
-        .map(|pk| pk.sign(message))
-        .collect();
+    let signatures: Vec<BlsSignature> = private_keys.iter().map(|pk| pk.sign(message)).collect();
 
     // Aggregate public keys and signatures
     let agg_public_key = BlsPublicKey::aggregate(&public_keys).unwrap();
@@ -164,7 +158,10 @@ fn test_performance_requirements() {
         let _signature = private_key.sign(message);
     }
     let ed25519_duration = start.elapsed();
-    println!("Ed25519 signing: {} ops in {:?}", iterations, ed25519_duration);
+    println!(
+        "Ed25519 signing: {} ops in {:?}",
+        iterations, ed25519_duration
+    );
 
     // Ed25519 verification performance
     let public_key = private_key.public_key();
@@ -174,7 +171,10 @@ fn test_performance_requirements() {
         assert!(public_key.verify(message, &signature));
     }
     let verify_duration = start.elapsed();
-    println!("Ed25519 verification: {} ops in {:?}", iterations, verify_duration);
+    println!(
+        "Ed25519 verification: {} ops in {:?}",
+        iterations, verify_duration
+    );
 
     // Hash performance
     let data = vec![0u8; 1024]; // 1KB data
@@ -183,7 +183,10 @@ fn test_performance_requirements() {
         let _hash = Blake2b256Hash::hash(&data);
     }
     let hash_duration = start.elapsed();
-    println!("BLAKE2b-256 hashing: {} ops in {:?}", iterations, hash_duration);
+    println!(
+        "BLAKE2b-256 hashing: {} ops in {:?}",
+        iterations, hash_duration
+    );
 
     // Basic performance assertions (operations should be fast)
     assert!(ed25519_duration.as_millis() < 1000); // Should complete in < 1 second

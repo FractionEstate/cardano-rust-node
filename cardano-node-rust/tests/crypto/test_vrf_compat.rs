@@ -11,7 +11,22 @@
 //! - Cross-implementation compatibility with Haskell node
 
 use proptest::prelude::*;
-use cardano_crypto::vrf::{VrfPrivateKey, VrfPublicKey, VrfProof, VrfOutput};
+use cardano_crypto::vrf::{
+    VrfPrivateKey,
+    VrfProof,
+    VrfPublicKey,
+    VrfOutput,
+    VRF_PRIVATE_KEY_LENGTH,
+    VRF_PROOF_LENGTH,
+    VRF_PUBLIC_KEY_LENGTH,
+    VRF_SEED_LENGTH,
+    VRF_OUTPUT_LENGTH,
+};
+
+#[path = "../common/mod.rs"]
+mod common;
+
+use common::vrf::PRAOS_VRF_TEST_VECTORS;
 
 /// Property test: VRF key generation produces valid keypairs
 /// This test MUST FAIL because VRF key generation doesn't exist yet
@@ -77,46 +92,129 @@ fn test_vrf_output_distribution(seed: [u8; 32]) {
     }
 }
 
-/// Test VRF compatibility with Cardano Haskell implementation test vectors
-/// This test MUST FAIL because the required VRF functionality doesn't exist yet
+/// Verifies Praos VRF outputs against the official cardano-base golden vectors.
 #[test]
 fn test_vrf_cardano_haskell_compatibility() {
-    // Test vectors from Cardano Haskell VRF implementation
-    let test_vectors = vec![
-        VrfTestVector {
-            private_key_hex: "68e8f4b8cc19b8fe2bc8ad2ade6be7a8671de59b0adf1c5fbb5b99d6c92f3f24",
-            public_key_hex: "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
-            input_hex: "af82",
-            output_hex: "4f8e8ba1e3c5d0a7b2f1c9e6d4a8b5e2f7c0d9a6b3e1f4c7a0d8b5e2f9c6a3",
-            proof_hex: "6291d657deec24024827e69c3abe01a30ce548a284743a445e3680d7db5ac3ac18ff9b538d16f290ae67f760984dc6594a7c15e9716ed28dc027beceea1ec40a"
-        },
-        VrfTestVector {
-            private_key_hex: "833fe62409237b9d62ec77587520911e9a759cec1d19755b7da901b96dca3d42",
-            public_key_hex: "ec172b93ad5e563bf4932c70e1245034c35467ef2efd4d64ebf819683467e2bf",
-            input_hex: "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a",
-            output_hex: "2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f",
-            proof_hex: "dc2a4459e7369633a52b1bf277839a00201009a3efbf3ecb69bea2186c26b58909351fc9ac90b3ecfdfbc7c66431e0303dca179c138ac17ad9bef1177331a704"
-        }
-    ];
+    for vector in PRAOS_VRF_TEST_VECTORS {
+    let seed_bytes = hex::decode(vector.sk_seed_hex)
+            .unwrap_or_else(|err| panic!("{}: invalid seed hex: {}", vector.name, err));
+        assert_eq!(
+            seed_bytes.len(),
+            VRF_SEED_LENGTH,
+            "{}: unexpected seed length",
+            vector.name
+        );
 
-    for vector in test_vectors {
-        let private_key = VrfPrivateKey::from_hex(&vector.private_key_hex).unwrap();
-        let expected_public_key = VrfPublicKey::from_hex(&vector.public_key_hex).unwrap();
-        let input = hex::decode(&vector.input_hex).unwrap();
-        let expected_output = VrfOutput::from_hex(&vector.output_hex).unwrap();
-        let expected_proof = VrfProof::from_hex(&vector.proof_hex).unwrap();
+    let pk_bytes = hex::decode(vector.pk_hex)
+            .unwrap_or_else(|err| panic!("{}: invalid public key hex: {}", vector.name, err));
+        assert_eq!(
+            pk_bytes.len(),
+            VRF_PUBLIC_KEY_LENGTH,
+            "{}: unexpected public key length",
+            vector.name
+        );
 
-        // Verify public key derivation matches Haskell implementation
+        let mut sk_bytes = Vec::with_capacity(VRF_PRIVATE_KEY_LENGTH);
+        sk_bytes.extend_from_slice(&seed_bytes);
+        sk_bytes.extend_from_slice(&pk_bytes);
+        assert_eq!(
+            sk_bytes.len(),
+            VRF_PRIVATE_KEY_LENGTH,
+            "{}: unexpected secret key length",
+            vector.name
+        );
+
+        let private_key = VrfPrivateKey::from_bytes(&sk_bytes)
+            .unwrap_or_else(|err| panic!("{}: invalid secret key: {}", vector.name, err));
+        let expected_public_key = VrfPublicKey::from_bytes(&pk_bytes)
+            .unwrap_or_else(|err| panic!("{}: invalid public key: {}", vector.name, err));
+
+        let derived_seed = private_key
+            .to_seed()
+            .unwrap_or_else(|err| panic!("{}: failed to extract seed: {}", vector.name, err));
+        assert_eq!(
+            derived_seed.as_slice(),
+            seed_bytes.as_slice(),
+            "{}: seed roundtrip mismatch",
+            vector.name
+        );
+
         let derived_public_key = private_key.public_key();
-        assert_eq!(derived_public_key.to_bytes(), expected_public_key.to_bytes());
+        assert_eq!(
+            derived_public_key.to_bytes(),
+            expected_public_key.to_bytes(),
+            "{}: public key derivation mismatch",
+            vector.name
+        );
 
-        // Verify VRF prove generates expected output and proof
-        let (generated_output, generated_proof) = private_key.prove(&input);
-        assert_eq!(generated_output.to_bytes(), expected_output.to_bytes());
-        assert_eq!(generated_proof.to_bytes(), expected_proof.to_bytes());
+        let message = vector
+            .alpha_hex
+            .map(|alpha| {
+                hex::decode(alpha).unwrap_or_else(|err| {
+                    panic!("{}: invalid message hex: {}", vector.name, err)
+                })
+            })
+            .unwrap_or_default();
 
-        // Verify VRF verification works
-        assert!(expected_public_key.verify(&input, &expected_output, &expected_proof));
+        let expected_output = VrfOutput::from_hex(vector.output_hex)
+            .unwrap_or_else(|err| panic!("{}: invalid output hex: {}", vector.name, err));
+        assert_eq!(
+            expected_output.to_bytes().len(),
+            VRF_OUTPUT_LENGTH,
+            "{}: unexpected output length",
+            vector.name
+        );
+
+        let expected_proof = VrfProof::from_hex(vector.proof_hex)
+            .unwrap_or_else(|err| panic!("{}: invalid proof hex: {}", vector.name, err));
+        assert_eq!(
+            expected_proof.to_bytes().len(),
+            VRF_PROOF_LENGTH,
+            "{}: unexpected proof length",
+            vector.name
+        );
+
+        let (generated_output, generated_proof) = private_key.prove(&message);
+        assert_eq!(
+            generated_output.to_bytes(),
+            expected_output.to_bytes(),
+            "{}: VRF output mismatch",
+            vector.name
+        );
+        assert_eq!(
+            generated_proof.to_bytes(),
+            expected_proof.to_bytes(),
+            "{}: VRF proof mismatch",
+            vector.name
+        );
+
+        let expected_hash = expected_proof
+            .to_hash()
+            .unwrap_or_else(|err| panic!("{}: proof-to-hash failed: {}", vector.name, err));
+        assert_eq!(
+            expected_hash.to_bytes(),
+            expected_output.to_bytes(),
+            "{}: proof hash mismatch",
+            vector.name
+        );
+
+        let generated_hash = generated_proof
+            .to_hash()
+            .unwrap_or_else(|err| {
+                panic!("{}: generated proof-to-hash failed: {}", vector.name, err)
+            });
+        assert_eq!(
+            generated_hash.to_bytes(),
+            expected_output.to_bytes(),
+            "{}: generated proof hash mismatch",
+            vector.name
+        );
+
+        assert!(
+            expected_public_key.verify(&message, &expected_output, &expected_proof),
+            "{}: verification failed",
+            vector.name
+        );
     }
 }
 
@@ -175,15 +273,6 @@ fn test_vrf_proof_to_hash_for_ouroboros() {
     assert_ne!(eta_hash, leader_hash);
 }
 
-/// Test vector structure for VRF compatibility tests
-#[derive(Debug)]
-struct VrfTestVector {
-    private_key_hex: &'static str,
-    public_key_hex: &'static str,
-    input_hex: &'static str,
-    output_hex: &'static str,
-    proof_hex: &'static str,
-}
 
 /// Property test: VRF key and proof serialization round-trip
 /// This test MUST FAIL because serialization methods don't exist yet

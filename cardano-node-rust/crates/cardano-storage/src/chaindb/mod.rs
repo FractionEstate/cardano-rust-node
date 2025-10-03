@@ -14,7 +14,12 @@ use std::sync::Arc;
 #[async_trait]
 pub trait ChainDatabase: Send + Sync {
     /// Store a block and its transactions (generic data)
-    async fn store_block(&self, block_hash: &Blake2b256Hash, block_data: &[u8], tx_data: &[(Blake2b256Hash, Vec<u8>)]) -> Result<()>;
+    async fn store_block(
+        &self,
+        block_hash: &Blake2b256Hash,
+        block_data: &[u8],
+        tx_data: &[(Blake2b256Hash, Vec<u8>)],
+    ) -> Result<()>;
 
     /// Retrieve a block by its hash
     async fn get_block(&self, block_hash: &Blake2b256Hash) -> Result<Option<Vec<u8>>>;
@@ -29,7 +34,11 @@ pub trait ChainDatabase: Send + Sync {
     async fn get_chain_metadata(&self) -> Result<Option<ChainMetadata>>;
 
     /// Get blocks in a range (for chain sync)
-    async fn get_blocks_range(&self, start_hash: &Blake2b256Hash, count: u32) -> Result<Vec<Vec<u8>>>;
+    async fn get_blocks_range(
+        &self,
+        start_hash: &Blake2b256Hash,
+        count: u32,
+    ) -> Result<Vec<Vec<u8>>>;
 
     /// Check if a block exists
     async fn has_block(&self, block_hash: &Blake2b256Hash) -> Result<bool>;
@@ -38,10 +47,17 @@ pub trait ChainDatabase: Send + Sync {
     async fn has_transaction(&self, tx_hash: &Blake2b256Hash) -> Result<bool>;
 
     /// Store block-to-transaction mapping
-    async fn store_block_transactions(&self, block_hash: &Blake2b256Hash, tx_hashes: &[Blake2b256Hash]) -> Result<()>;
+    async fn store_block_transactions(
+        &self,
+        block_hash: &Blake2b256Hash,
+        tx_hashes: &[Blake2b256Hash],
+    ) -> Result<()>;
 
     /// Get all transaction hashes for a block
-    async fn get_block_transactions(&self, block_hash: &Blake2b256Hash) -> Result<Vec<Blake2b256Hash>>;
+    async fn get_block_transactions(
+        &self,
+        block_hash: &Blake2b256Hash,
+    ) -> Result<Vec<Blake2b256Hash>>;
 
     /// Get database statistics
     async fn get_chain_stats(&self) -> Result<ChainDatabaseStats>;
@@ -105,7 +121,6 @@ const BLOCK_PREFIX: &[u8] = b"block:";
 const TX_PREFIX: &[u8] = b"tx:";
 const METADATA_KEY: &[u8] = b"chain:metadata";
 const BLOCK_TXS_PREFIX: &[u8] = b"block_txs:";
-const STATS_KEY: &[u8] = b"chain:stats";
 
 fn block_key(block_hash: &Blake2b256Hash) -> Vec<u8> {
     let mut key = BLOCK_PREFIX.to_vec();
@@ -127,7 +142,12 @@ fn block_txs_key(block_hash: &Blake2b256Hash) -> Vec<u8> {
 
 #[async_trait]
 impl<B: StorageBackend> ChainDatabase for ChainDatabaseImpl<B> {
-    async fn store_block(&self, block_hash: &Blake2b256Hash, block_data: &[u8], tx_data: &[(Blake2b256Hash, Vec<u8>)]) -> Result<()> {
+    async fn store_block(
+        &self,
+        block_hash: &Blake2b256Hash,
+        block_data: &[u8],
+        tx_data: &[(Blake2b256Hash, Vec<u8>)],
+    ) -> Result<()> {
         // Store block
         self.backend.put(&block_key(block_hash), block_data).await?;
 
@@ -135,12 +155,13 @@ impl<B: StorageBackend> ChainDatabase for ChainDatabaseImpl<B> {
         let mut tx_hashes = Vec::new();
         for (tx_hash, data) in tx_data {
             self.backend.put(&tx_key(tx_hash), data).await?;
-            tx_hashes.push(tx_hash.clone());
+            tx_hashes.push(*tx_hash);
         }
 
         // Store block-to-transactions mapping
         if !tx_hashes.is_empty() {
-            self.store_block_transactions(block_hash, &tx_hashes).await?;
+            self.store_block_transactions(block_hash, &tx_hashes)
+                .await?;
         }
 
         Ok(())
@@ -157,23 +178,32 @@ impl<B: StorageBackend> ChainDatabase for ChainDatabaseImpl<B> {
     }
 
     async fn store_chain_metadata(&self, metadata: &ChainMetadata) -> Result<()> {
-        let data = minicbor::to_vec(metadata)
-            .map_err(|e| StorageError::SerializationError(format!("Failed to serialize metadata: {}", e)))?;
+        let data = minicbor::to_vec(metadata).map_err(|e| {
+            StorageError::SerializationError(format!("Failed to serialize metadata: {}", e))
+        })?;
         self.backend.put(METADATA_KEY, &data).await
     }
 
     async fn get_chain_metadata(&self) -> Result<Option<ChainMetadata>> {
         match self.backend.get(METADATA_KEY).await? {
             Some(data) => {
-                let metadata = minicbor::decode(&data)
-                    .map_err(|e| StorageError::SerializationError(format!("Failed to deserialize metadata: {}", e)))?;
+                let metadata = minicbor::decode(&data).map_err(|e| {
+                    StorageError::SerializationError(format!(
+                        "Failed to deserialize metadata: {}",
+                        e
+                    ))
+                })?;
                 Ok(Some(metadata))
             }
             None => Ok(None),
         }
     }
 
-    async fn get_blocks_range(&self, _start_hash: &Blake2b256Hash, _count: u32) -> Result<Vec<Vec<u8>>> {
+    async fn get_blocks_range(
+        &self,
+        _start_hash: &Blake2b256Hash,
+        _count: u32,
+    ) -> Result<Vec<Vec<u8>>> {
         // TODO: Implement efficient range queries
         // This would require additional indexing by height or chain order
         Ok(Vec::new())
@@ -189,19 +219,34 @@ impl<B: StorageBackend> ChainDatabase for ChainDatabaseImpl<B> {
         self.backend.exists(&key).await
     }
 
-    async fn store_block_transactions(&self, block_hash: &Blake2b256Hash, tx_hashes: &[Blake2b256Hash]) -> Result<()> {
-        let data = minicbor::to_vec(tx_hashes)
-            .map_err(|e| StorageError::SerializationError(format!("Failed to serialize transaction hashes: {}", e)))?;
+    async fn store_block_transactions(
+        &self,
+        block_hash: &Blake2b256Hash,
+        tx_hashes: &[Blake2b256Hash],
+    ) -> Result<()> {
+        let data = minicbor::to_vec(tx_hashes).map_err(|e| {
+            StorageError::SerializationError(format!(
+                "Failed to serialize transaction hashes: {}",
+                e
+            ))
+        })?;
         let key = block_txs_key(block_hash);
         self.backend.put(&key, &data).await
     }
 
-    async fn get_block_transactions(&self, block_hash: &Blake2b256Hash) -> Result<Vec<Blake2b256Hash>> {
+    async fn get_block_transactions(
+        &self,
+        block_hash: &Blake2b256Hash,
+    ) -> Result<Vec<Blake2b256Hash>> {
         let key = block_txs_key(block_hash);
         match self.backend.get(&key).await? {
             Some(data) => {
-                let tx_hashes = minicbor::decode(&data)
-                    .map_err(|e| StorageError::SerializationError(format!("Failed to deserialize transaction hashes: {}", e)))?;
+                let tx_hashes = minicbor::decode(&data).map_err(|e| {
+                    StorageError::SerializationError(format!(
+                        "Failed to deserialize transaction hashes: {}",
+                        e
+                    ))
+                })?;
                 Ok(tx_hashes)
             }
             None => Ok(Vec::new()),
@@ -244,7 +289,10 @@ mod tests {
         let tx_data = b"test_tx_data".to_vec();
 
         // Store block
-        chaindb.store_block(&block_hash, &block_data, &[(tx_hash.clone(), tx_data.clone())]).await.unwrap();
+        chaindb
+            .store_block(&block_hash, &block_data, &[(tx_hash, tx_data.clone())])
+            .await
+            .unwrap();
 
         // Retrieve block
         let retrieved_block = chaindb.get_block(&block_hash).await.unwrap().unwrap();
@@ -264,7 +312,10 @@ mod tests {
         let tx_data = b"test_tx_data".to_vec();
 
         // Store block with transaction
-        chaindb.store_block(&block_hash, &block_data, &[(tx_hash.clone(), tx_data.clone())]).await.unwrap();
+        chaindb
+            .store_block(&block_hash, &block_data, &[(tx_hash, tx_data.clone())])
+            .await
+            .unwrap();
 
         // Retrieve transaction
         let retrieved_tx = chaindb.get_transaction(&tx_hash).await.unwrap().unwrap();
@@ -309,10 +360,14 @@ mod tests {
         let tx2_data = b"test_tx2_data".to_vec();
 
         // Store block with transactions
-        chaindb.store_block(&block_hash, &block_data, &[
-            (tx1_hash.clone(), tx1_data),
-            (tx2_hash.clone(), tx2_data),
-        ]).await.unwrap();
+        chaindb
+            .store_block(
+                &block_hash,
+                &block_data,
+                &[(tx1_hash, tx1_data), (tx2_hash, tx2_data)],
+            )
+            .await
+            .unwrap();
 
         // Retrieve transaction hashes for the block
         let tx_hashes = chaindb.get_block_transactions(&block_hash).await.unwrap();

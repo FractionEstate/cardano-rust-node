@@ -22,9 +22,14 @@ pub enum StorageError {
 pub type Result<T> = std::result::Result<T, StorageError>;
 
 // Re-export commonly used types
-pub use backends::{BackendStats, BatchOperation, LmdbBackend, LmdbConfig, RocksDbBackend, RocksDbConfig, StorageBackend};
-pub use chaindb::{ChainDatabase, ChainDatabaseImpl, ChainMetadata, ChainDatabaseStats};
-pub use ledgerdb::{LedgerDatabase, LedgerDatabaseImpl, PoolParameters, EpochInfo, LedgerDatabaseStats};
+pub use backends::{
+    BackendStats, BatchOperation, LmdbBackend, LmdbConfig, RocksDbBackend, RocksDbConfig,
+    StorageBackend,
+};
+pub use chaindb::{ChainDatabase, ChainDatabaseImpl, ChainDatabaseStats, ChainMetadata};
+pub use ledgerdb::{
+    EpochInfo, LedgerDatabase, LedgerDatabaseImpl, LedgerDatabaseStats, PoolParameters,
+};
 
 // T066: LMDB Backend Tests Module
 #[cfg(test)]

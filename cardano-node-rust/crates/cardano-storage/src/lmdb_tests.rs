@@ -3,8 +3,7 @@
 //! Comprehensive integration tests for LMDB storage backend
 //! This test implements the requirements for Task T066 in the implementation plan.
 
-use crate::{StorageError, Result};
-use cardano_crypto::Blake2b256Hash;
+use crate::{Result, StorageError};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::thread;
@@ -71,10 +70,14 @@ impl MockLMDBBackend {
 
     pub fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
         if key.is_empty() {
-            return Err(StorageError::DatabaseError("T066: Key cannot be empty".to_string()));
+            return Err(StorageError::DatabaseError(
+                "T066: Key cannot be empty".to_string(),
+            ));
         }
         if value.len() > 1024 * 1024 {
-            return Err(StorageError::DatabaseError("T066: Value too large".to_string()));
+            return Err(StorageError::DatabaseError(
+                "T066: Value too large".to_string(),
+            ));
         }
         // Mock success
         Ok(())
@@ -82,7 +85,9 @@ impl MockLMDBBackend {
 
     pub fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         if key.is_empty() {
-            return Err(StorageError::DatabaseError("T066: Key cannot be empty".to_string()));
+            return Err(StorageError::DatabaseError(
+                "T066: Key cannot be empty".to_string(),
+            ));
         }
         // Mock data exists for specific test key
         if key == b"T066_test_key" {
@@ -94,7 +99,9 @@ impl MockLMDBBackend {
 
     pub fn delete(&self, key: &[u8]) -> Result<bool> {
         if key.is_empty() {
-            return Err(StorageError::DatabaseError("T066: Key cannot be empty".to_string()));
+            return Err(StorageError::DatabaseError(
+                "T066: Key cannot be empty".to_string(),
+            ));
         }
         Ok(true)
     }
@@ -116,20 +123,28 @@ pub struct MockTransaction {
 impl MockTransaction {
     pub fn put(&mut self, key: &[u8], _value: &[u8]) -> Result<()> {
         if self.committed {
-            return Err(StorageError::DatabaseError("T066: Transaction already committed".to_string()));
+            return Err(StorageError::DatabaseError(
+                "T066: Transaction already committed".to_string(),
+            ));
         }
         if key.is_empty() {
-            return Err(StorageError::DatabaseError("T066: Key cannot be empty".to_string()));
+            return Err(StorageError::DatabaseError(
+                "T066: Key cannot be empty".to_string(),
+            ));
         }
         Ok(())
     }
 
     pub fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         if self.committed {
-            return Err(StorageError::DatabaseError("T066: Transaction already committed".to_string()));
+            return Err(StorageError::DatabaseError(
+                "T066: Transaction already committed".to_string(),
+            ));
         }
         if key.is_empty() {
-            return Err(StorageError::DatabaseError("T066: Key cannot be empty".to_string()));
+            return Err(StorageError::DatabaseError(
+                "T066: Key cannot be empty".to_string(),
+            ));
         }
         // For mock, return test data if key matches
         if key == b"T066_key" {
@@ -165,16 +180,19 @@ mod tests {
         let backend = MockLMDBBackend::new().expect("T066: Failed to create backend");
 
         // Test basic put operation
-        backend.put(b"T066_test_key", b"T066_test_value")
+        backend
+            .put(b"T066_test_key", b"T066_test_value")
             .expect("T066: Put should succeed");
 
         // Test basic get operation
-        let result = backend.get(b"T066_test_key")
+        let result = backend
+            .get(b"T066_test_key")
             .expect("T066: Get should succeed");
         assert_eq!(result, Some(b"T066_test_value".to_vec()));
 
         // Test get non-existent key
-        let result = backend.get(b"T066_nonexistent")
+        let result = backend
+            .get(b"T066_nonexistent")
             .expect("T066: Get should succeed");
         assert_eq!(result, None);
 
@@ -189,8 +207,14 @@ mod tests {
         let result = backend.put(b"", b"value");
         match result {
             Err(StorageError::DatabaseError(msg)) => {
-                assert!(msg.contains("T066"), "T066: Error should contain T066 marker");
-                assert!(msg.contains("Key cannot be empty"), "T066: Should reject empty keys");
+                assert!(
+                    msg.contains("T066"),
+                    "T066: Error should contain T066 marker"
+                );
+                assert!(
+                    msg.contains("Key cannot be empty"),
+                    "T066: Should reject empty keys"
+                );
             }
             _ => panic!("T066: Expected DatabaseError for empty key"),
         }
@@ -199,7 +223,10 @@ mod tests {
         let result = backend.get(b"");
         match result {
             Err(StorageError::DatabaseError(msg)) => {
-                assert!(msg.contains("T066"), "T066: Error should contain T066 marker");
+                assert!(
+                    msg.contains("T066"),
+                    "T066: Error should contain T066 marker"
+                );
             }
             _ => panic!("T066: Expected DatabaseError for empty key"),
         }
@@ -216,15 +243,22 @@ mod tests {
         let result = backend.put(b"T066_large_key", &large_value);
         match result {
             Err(StorageError::DatabaseError(msg)) => {
-                assert!(msg.contains("T066"), "T066: Error should contain T066 marker");
-                assert!(msg.contains("Value too large"), "T066: Should reject large values");
+                assert!(
+                    msg.contains("T066"),
+                    "T066: Error should contain T066 marker"
+                );
+                assert!(
+                    msg.contains("Value too large"),
+                    "T066: Should reject large values"
+                );
             }
             _ => panic!("T066: Expected DatabaseError for large value"),
         }
 
         // Test with normal size value
         let normal_value = vec![42u8; 1024]; // 1KB
-        backend.put(b"T066_normal_key", &normal_value)
+        backend
+            .put(b"T066_normal_key", &normal_value)
             .expect("T066: Normal size should work");
 
         println!("✅ T066: Large value handling successful");
@@ -235,7 +269,8 @@ mod tests {
         let backend = MockLMDBBackend::new().expect("T066: Failed to create backend");
 
         // Test successful transaction
-        let mut tx = backend.begin_transaction()
+        let mut tx = backend
+            .begin_transaction()
             .expect("T066: Begin transaction should succeed");
 
         tx.put(b"T066_tx_key1", b"T066_tx_value1")
@@ -244,10 +279,12 @@ mod tests {
         tx.put(b"T066_tx_key2", b"T066_tx_value2")
             .expect("T066: Transaction put should succeed");
 
-        tx.commit().expect("T066: Transaction commit should succeed");
+        tx.commit()
+            .expect("T066: Transaction commit should succeed");
 
         // Test transaction with abort
-        let tx = backend.begin_transaction()
+        let tx = backend
+            .begin_transaction()
             .expect("T066: Begin transaction should succeed");
 
         tx.abort().expect("T066: Transaction abort should succeed");
@@ -259,7 +296,8 @@ mod tests {
     fn test_t066_transaction_post_commit_validation() {
         let backend = MockLMDBBackend::new().expect("T066: Failed to create backend");
 
-        let mut tx = backend.begin_transaction()
+        let mut tx = backend
+            .begin_transaction()
             .expect("T066: Begin transaction should succeed");
 
         // First add some data
@@ -270,14 +308,18 @@ mod tests {
         tx.commit().expect("T066: Commit should succeed");
 
         // Create new transaction to test after commit state
-        let mut new_tx = backend.begin_transaction()
+        let new_tx = backend
+            .begin_transaction()
             .expect("T066: Second transaction should succeed");
 
         // Verify data was committed
         let result = new_tx.get(b"T066_key");
         match result {
             Ok(Some(value)) => {
-                assert_eq!(value, b"T066_value", "T066: Committed data should be retrievable");
+                assert_eq!(
+                    value, b"T066_value",
+                    "T066: Committed data should be retrievable"
+                );
             }
             _ => panic!("T066: Committed data should be retrievable in new transaction"),
         }
@@ -293,24 +335,28 @@ mod tests {
         let block_hash = test_data::block_hash(42);
         let block_data = test_data::block_data(12345);
 
-        backend.put(block_hash.as_bytes(), &block_data)
+        backend
+            .put(block_hash.as_bytes(), &block_data)
             .expect("T066: Block storage should succeed");
 
         // Test transaction data storage (Cardano pattern)
         let tx_data = test_data::transaction_data(123);
-        backend.put(b"T066_tx:123", &tx_data)
+        backend
+            .put(b"T066_tx:123", &tx_data)
             .expect("T066: Transaction storage should succeed");
 
         // Test UTXO-style keys (Cardano pattern)
         let utxo_key = b"T066_utxo:tx_hash:output_index";
         let utxo_value = b"T066_utxo_output_data";
-        backend.put(utxo_key, utxo_value)
+        backend
+            .put(utxo_key, utxo_value)
             .expect("T066: UTXO storage should succeed");
 
         // Test stake pool metadata (Cardano pattern)
         let pool_key = b"T066_stake_pool:pool_id_hash";
         let pool_metadata = b"T066_stake_pool_metadata_json";
-        backend.put(pool_key, pool_metadata)
+        backend
+            .put(pool_key, pool_metadata)
             .expect("T066: Stake pool storage should succeed");
 
         println!("✅ T066: Cardano blockchain data patterns successful");
@@ -318,11 +364,12 @@ mod tests {
 
     #[test]
     fn test_t066_concurrent_read_operations() {
-        let backend: Arc<MockLMDBBackend> = Arc::new(MockLMDBBackend::new()
-            .expect("T066: Failed to create backend"));
+        let backend: Arc<MockLMDBBackend> =
+            Arc::new(MockLMDBBackend::new().expect("T066: Failed to create backend"));
 
         // Set up test data
-        backend.put(b"T066_concurrent_key", b"T066_concurrent_value")
+        backend
+            .put(b"T066_concurrent_key", b"T066_concurrent_value")
             .expect("T066: Initial put should succeed");
 
         let mut handles = vec![];
@@ -334,12 +381,14 @@ mod tests {
                 thread::sleep(Duration::from_millis(i * 10));
 
                 // Note: Mock returns None for keys other than "T066_test_key"
-                let result = backend_clone.get(b"T066_concurrent_key")
+                backend_clone
+                    .get(b"T066_concurrent_key")
                     .expect("T066: Concurrent get should succeed");
 
                 // Perform multiple operations from same thread
                 for _ in 0..10 {
-                    let _ = backend_clone.get(b"T066_concurrent_key")
+                    let _ = backend_clone
+                        .get(b"T066_concurrent_key")
                         .expect("T066: Multiple gets should succeed");
                 }
 
@@ -349,7 +398,8 @@ mod tests {
         }
 
         // Wait for all threads
-        let results: Vec<String> = handles.into_iter()
+        let results: Vec<String> = handles
+            .into_iter()
             .map(|h| h.join().expect("T066: Thread should complete"))
             .collect();
 
@@ -364,11 +414,12 @@ mod tests {
         // Test with binary data containing null bytes and various patterns
         let binary_key = vec![0u8, 255u8, 128u8, 1u8, 254u8, b'T', b'0', b'6', b'6'];
         let binary_value = vec![
-            0x00, 0x01, 0x02, 0x03, 0xFF, 0xFE, 0xFD, 0xFC,
-            0x80, 0x7F, 0x40, 0x3F, 0x20, 0x1F, 0x10, 0x0F
+            0x00, 0x01, 0x02, 0x03, 0xFF, 0xFE, 0xFD, 0xFC, 0x80, 0x7F, 0x40, 0x3F, 0x20, 0x1F,
+            0x10, 0x0F,
         ];
 
-        backend.put(&binary_key, &binary_value)
+        backend
+            .put(&binary_key, &binary_value)
             .expect("T066: Binary data should be handled");
 
         println!("✅ T066: Binary data handling successful");
@@ -384,7 +435,8 @@ mod tests {
         for i in 0..1000 {
             let key = format!("T066_perf_key_{:06}", i);
             let value = format!("T066_perf_value_{:06}_{}", i, "x".repeat(100));
-            backend.put(key.as_bytes(), value.as_bytes())
+            backend
+                .put(key.as_bytes(), value.as_bytes())
                 .expect("T066: Batch put should succeed");
         }
 
@@ -395,20 +447,27 @@ mod tests {
         // Batch read operations
         for i in 0..1000 {
             let key = format!("T066_perf_key_{:06}", i);
-            let _ = backend.get(key.as_bytes())
+            let _ = backend
+                .get(key.as_bytes())
                 .expect("T066: Batch get should succeed");
         }
 
         let batch_read_time = start.elapsed();
 
         // Performance assertions (lenient for mock)
-        assert!(batch_write_time.as_millis() < 5000,
-            "T066: Batch writes should complete within 5 seconds");
-        assert!(batch_read_time.as_millis() < 5000,
-            "T066: Batch reads should complete within 5 seconds");
+        assert!(
+            batch_write_time.as_millis() < 5000,
+            "T066: Batch writes should complete within 5 seconds"
+        );
+        assert!(
+            batch_read_time.as_millis() < 5000,
+            "T066: Batch reads should complete within 5 seconds"
+        );
 
-        println!("✅ T066: Performance test completed - Writes: {:?}, Reads: {:?}",
-            batch_write_time, batch_read_time);
+        println!(
+            "✅ T066: Performance test completed - Writes: {:?}, Reads: {:?}",
+            batch_write_time, batch_read_time
+        );
     }
 
     #[test]
@@ -420,13 +479,16 @@ mod tests {
         let medium_key = b"T066_medium_length_key_for_boundary_testing";
         let large_key = vec![b'T'; 500]; // Close to typical LMDB key limit
 
-        backend.put(small_key, b"T066_small_value")
+        backend
+            .put(small_key, b"T066_small_value")
             .expect("T066: Small key should work");
 
-        backend.put(medium_key, b"T066_medium_value")
+        backend
+            .put(medium_key, b"T066_medium_value")
             .expect("T066: Medium key should work");
 
-        backend.put(&large_key, b"T066_large_key_value")
+        backend
+            .put(&large_key, b"T066_large_key_value")
             .expect("T066: Large key should work");
 
         println!("✅ T066: Key/value size boundaries successful");
@@ -448,7 +510,10 @@ mod tests {
 
         // Verify error messages contain T066 identifier
         if let Err(StorageError::DatabaseError(msg)) = backend.put(b"", b"test") {
-            assert!(msg.contains("T066"), "T066: Error message should contain task identifier");
+            assert!(
+                msg.contains("T066"),
+                "T066: Error message should contain task identifier"
+            );
         }
 
         println!("✅ T066: Error propagation successful");
@@ -463,11 +528,13 @@ mod tests {
         // 1. Store blockchain data
         let block_hash = test_data::block_hash(1);
         let block_data = test_data::block_data(100);
-        backend.put(block_hash.as_bytes(), &block_data)
+        backend
+            .put(block_hash.as_bytes(), &block_data)
             .expect("T066: Block storage should succeed");
 
         // 2. Transaction operations
-        let mut tx = backend.begin_transaction()
+        let mut tx = backend
+            .begin_transaction()
             .expect("T066: Transaction creation should succeed");
 
         tx.put(b"T066_integration_key1", b"T066_integration_value1")
@@ -476,14 +543,16 @@ mod tests {
         tx.put(b"T066_integration_key2", b"T066_integration_value2")
             .expect("T066: Transaction put should succeed");
 
-        tx.commit().expect("T066: Transaction commit should succeed");
+        tx.commit()
+            .expect("T066: Transaction commit should succeed");
 
         // 3. Error handling validation
         let result = backend.put(b"", b"T066_should_fail");
         assert!(result.is_err(), "T066: Invalid operations should fail");
 
         // 4. Delete operations
-        let deleted = backend.delete(b"T066_integration_key1")
+        let deleted = backend
+            .delete(b"T066_integration_key1")
             .expect("T066: Delete should succeed");
         assert!(deleted, "T066: Delete should return success");
 
@@ -508,7 +577,7 @@ mod property_tests {
             if value.len() <= 1024 * 1024 {
                 prop_assert!(backend.put(&key, &value).is_ok());
                 // Note: Mock implementation doesn't persist data
-                let result = backend.get(&key).unwrap();
+                let _ = backend.get(&key).unwrap();
                 // In real implementation: prop_assert_eq!(result, Some(value));
             }
         }
@@ -533,4 +602,3 @@ mod property_tests {
 }
 
 // Export test modules for use in integration tests
-pub use tests::*;

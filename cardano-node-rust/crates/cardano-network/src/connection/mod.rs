@@ -15,18 +15,22 @@
 //!
 //! ## Usage
 //!
-//! ```rust
-//! use cardano_network::connection::{ConnectionManager, ConnectionConfig};
-//!
-//! let config = ConnectionConfig::default();
-//! let mut manager = ConnectionManager::new(config).await?;
-//!
-//! // Start connection management
+//! ```no_run
+//! use cardano_network::connection::{ConnectionConfig, ConnectionManager};
+//! # use tokio::runtime::Runtime;
+//! # use std::error::Error;
+//! #
+//! # fn main() -> Result<(), Box<dyn Error>> {
+//! #     let runtime = Runtime::new()?;
+//! #     runtime.block_on(async {
+//! let mut manager = ConnectionManager::new(ConnectionConfig::default()).await?;
 //! manager.start().await?;
-//!
-//! // Connect to a peer
 //! let peer_addr = "127.0.0.1:3001".parse()?;
 //! manager.connect_to_peer(peer_addr).await?;
+//! #         Ok::<(), Box<dyn Error>>(())
+//! #     })?;
+//! #     Ok(())
+//! # }
 //! ```
 
 use std::collections::HashMap;
@@ -35,32 +39,35 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use tokio::net::TcpStream;
-use tokio::sync::{mpsc, RwLock};
-use tokio::task::JoinHandle;
+use tokio::sync::RwLock;
 
 use crate::diffusion::{PeerId, PeerInfo};
-use crate::protocols::{chainsync, blockfetch, txsubmission};
-use crate::{NetworkError, Result};
 
-pub mod manager;
-pub mod multiplexer;
 pub mod handshake;
+pub mod manager;
 pub mod monitor;
+pub mod multiplexer;
 pub mod state;
 
 #[cfg(test)]
 mod tests;
 
+pub use handshake::{HandshakeError, HandshakeProtocol, VersionNegotiation};
 /// Re-exports for convenience
-pub use manager::{ConnectionManager, ConnectionConfig};
-pub use multiplexer::{ConnectionMultiplexer, ProtocolId, MultiplexerError};
-pub use handshake::{HandshakeProtocol, VersionNegotiation, HandshakeError};
+pub use manager::{ConnectionConfig, ConnectionManager};
 pub use monitor::{ConnectionMonitor, HealthStatus, MonitorConfig};
-pub use state::{ConnectionState, ConnectionInfo, StateTransition};
+pub use multiplexer::{ConnectionMultiplexer, MultiplexerError, ProtocolId};
+pub use state::{ConnectionInfo, ConnectionState, StateTransition};
 
 /// Unique identifier for a network connection
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ConnectionId(u64);
+
+impl Default for ConnectionId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl ConnectionId {
     /// Generate a new unique connection ID
@@ -89,7 +96,7 @@ pub struct Connection {
     /// TCP stream handle
     pub stream: Option<TcpStream>,
     /// Active protocol multiplexer
-    pub multiplexer: Option<ConnectionMultiplexer>,
+    pub multiplexer: Option<Arc<ConnectionMultiplexer>>,
 }
 
 impl Connection {

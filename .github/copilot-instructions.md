@@ -71,4 +71,5 @@ cargo bench --bench block_validation
 
 <!-- MANUAL ADDITIONS START -->
 1. **Reference github repo for the official Haskell Cardano Node**: `https://github.com/IntersectMBO/cardano-node/tree/master`
+2. **Reference github repo for the official Cardano core code**: `https://github.com/IntersectMBO/cardano-base`
 <!-- MANUAL ADDITIONS END -->

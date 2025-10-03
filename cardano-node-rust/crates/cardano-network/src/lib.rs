@@ -32,9 +32,9 @@
 //! # }
 //! ```
 
-pub mod protocols;
-pub mod diffusion;
 pub mod connection;
+pub mod diffusion;
+pub mod protocols;
 
 /// Network error types
 #[derive(Debug, thiserror::Error)]
@@ -68,12 +68,7 @@ pub type Result<T> = std::result::Result<T, NetworkError>;
 
 // Re-export commonly used types for convenience
 pub use connection::{
-    ConnectionManager, ConnectionConfig, ConnectionId, ConnectionState,
-    ConnectionEvent, ProtocolId,
+    ConnectionConfig, ConnectionEvent, ConnectionId, ConnectionManager, ConnectionState, ProtocolId,
 };
-pub use diffusion::{
-    PeerSelector, SelectionConfig, PeerId, PeerInfo,
-};
-pub use protocols::{
-    chainsync, blockfetch, txsubmission,
-};
+pub use diffusion::{PeerId, PeerInfo, PeerSelector, SelectionConfig};
+pub use protocols::{blockfetch, chainsync, txsubmission};

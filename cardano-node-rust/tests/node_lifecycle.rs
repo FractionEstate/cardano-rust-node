@@ -1,16 +1,15 @@
-//! T082 Node Startup/Shutdown Tests
+//! Node Startup/Shutdown Tests
 //!
 //! Integration tests for node lifecycle management including startup, shutdown,
 //! and error handling scenarios. Tests verify proper node initialization,
 //! graceful termination, and error recovery patterns.
 
+use cardano_node::NodeConfiguration;
+use serde_json::json;
 use std::path::PathBuf;
 use std::time::Duration;
-use tokio::time::timeout;
-use futures::FutureExt;
-use serde_json::json;
 use tempfile::TempDir;
-use cardano_node::NodeConfiguration;
+use tokio::time::timeout;
 
 /// Test helper struct for node lifecycle management
 pub struct NodeLifecycleTestHelper {
@@ -34,6 +33,20 @@ impl NodeLifecycleTestHelper {
     }
 
     pub fn create_valid_config(&self) {
+        let topology_path = self.temp_dir.path().join("topology.json");
+        let topology = json!({
+            "producers": [
+                {
+                    "addr": "127.0.0.1",
+                    "port": 3001,
+                    "valency": 1
+                }
+            ]
+        });
+
+        std::fs::write(&topology_path, topology.to_string())
+            .expect("Failed to write test topology file");
+
         let config = json!({
             "network_magic": 764824073,
             "listening_port": 3001,
@@ -43,7 +56,7 @@ impl NodeLifecycleTestHelper {
             "max_connections": 10,
             "enable_metrics": false, // Disable metrics for tests
             "metrics_port": 12798,
-            "topology_file": self.temp_dir.path().join("topology.json").to_str().unwrap()
+            "topology_file": topology_path.to_str().unwrap()
         });
 
         std::fs::write(&self.config_path, config.to_string())
@@ -67,7 +80,9 @@ impl NodeLifecycleTestHelper {
         Ok(())
     }
 
-    pub async fn start_node_expect_failure(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn start_node_expect_failure(
+        &self,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // This should fail with invalid config
         let config = NodeConfiguration::from_file(&self.config_path)?;
         config.validate()?;
@@ -105,7 +120,10 @@ async fn test_basic_node_startup() {
     let node_future = helper.start_node();
     let result = timeout(Duration::from_secs(10), node_future).await;
 
-    assert!(result.is_ok(), "Node startup should complete within timeout");
+    assert!(
+        result.is_ok(),
+        "Node startup should complete within timeout"
+    );
     assert!(result.unwrap().is_ok(), "Node startup should succeed");
     println!("✓ T082-1 Basic Node Startup Test passed");
 }
@@ -116,24 +134,33 @@ async fn test_graceful_shutdown() {
     let helper = NodeLifecycleTestHelper::new().await;
 
     // Start node and then request graceful shutdown
-    let _node = helper.start_node().await.expect("Node should start");
+    helper.start_node().await.expect("Node should start");
 
     // Test graceful shutdown
     let shutdown_result = timeout(Duration::from_secs(10), helper.graceful_shutdown()).await;
-    assert!(shutdown_result.is_ok(), "Graceful shutdown should complete within timeout");
-    assert!(shutdown_result.unwrap().is_ok(), "Graceful shutdown should succeed");
+    assert!(
+        shutdown_result.is_ok(),
+        "Graceful shutdown should complete within timeout"
+    );
+    assert!(
+        shutdown_result.unwrap().is_ok(),
+        "Graceful shutdown should succeed"
+    );
     println!("✓ T082-2 Graceful Shutdown Test passed");
 }
 
 #[tokio::test]
 async fn test_startup_with_invalid_config() {
     // T082-3: Startup failure with invalid configuration
-    let mut helper = NodeLifecycleTestHelper::new().await;
+    let helper = NodeLifecycleTestHelper::new().await;
     helper.create_invalid_config();
 
     // Test that startup with invalid config fails appropriately
     let result = helper.start_node_expect_failure().await;
-    assert!(result.is_err(), "Node startup should fail with invalid config");
+    assert!(
+        result.is_err(),
+        "Node startup should fail with invalid config"
+    );
     println!("✓ T082-3 Startup with Invalid Config Test passed");
 }
 
@@ -141,12 +168,18 @@ async fn test_startup_with_invalid_config() {
 async fn test_force_shutdown() {
     // T082-4: Force shutdown scenario
     let helper = NodeLifecycleTestHelper::new().await;
-    let _node = helper.start_node().await.expect("Node should start");
+    helper.start_node().await.expect("Node should start");
 
     // Test force shutdown
     let shutdown_result = timeout(Duration::from_secs(5), helper.force_shutdown()).await;
-    assert!(shutdown_result.is_ok(), "Force shutdown should complete within timeout");
-    assert!(shutdown_result.unwrap().is_ok(), "Force shutdown should succeed");
+    assert!(
+        shutdown_result.is_ok(),
+        "Force shutdown should complete within timeout"
+    );
+    assert!(
+        shutdown_result.unwrap().is_ok(),
+        "Force shutdown should succeed"
+    );
     println!("✓ T082-4 Force Shutdown Test passed");
 }
 
@@ -154,12 +187,21 @@ async fn test_force_shutdown() {
 async fn test_node_restart() {
     // T082-5: Node restart sequence
     let helper = NodeLifecycleTestHelper::new().await;
-    let _node = helper.start_node().await.expect("Node should start initially");
+    helper
+        .start_node()
+        .await
+        .expect("Node should start initially");
 
     // Test node restart
     let restart_result = timeout(Duration::from_secs(15), helper.restart_node()).await;
-    assert!(restart_result.is_ok(), "Node restart should complete within timeout");
-    assert!(restart_result.unwrap().is_ok(), "Node restart should succeed");
+    assert!(
+        restart_result.is_ok(),
+        "Node restart should complete within timeout"
+    );
+    assert!(
+        restart_result.unwrap().is_ok(),
+        "Node restart should succeed"
+    );
     println!("✓ T082-5 Node Restart Test passed");
 }
 
@@ -185,13 +227,16 @@ async fn test_startup_timeout_handling() {
 async fn test_shutdown_timeout_handling() {
     // T082-7: Shutdown timeout handling
     let helper = NodeLifecycleTestHelper::new().await;
-    let _node = helper.start_node().await.expect("Node should start");
+    helper.start_node().await.expect("Node should start");
 
     // Test shutdown with timeout
     let shutdown_future = helper.graceful_shutdown();
     let result = timeout(Duration::from_secs(5), shutdown_future).await;
 
-    assert!(result.is_ok(), "Shutdown should complete within reasonable timeout");
+    assert!(
+        result.is_ok(),
+        "Shutdown should complete within reasonable timeout"
+    );
     assert!(result.unwrap().is_ok(), "Shutdown should succeed");
     println!("✓ T082-7 Shutdown Timeout Handling Test passed");
 }
@@ -226,7 +271,10 @@ async fn test_config_validation_during_startup() {
     // Test config validation catches issues
     helper.create_invalid_config();
     let invalid_result = helper.start_node_expect_failure().await;
-    assert!(invalid_result.is_err(), "Startup should fail with invalid config");
+    assert!(
+        invalid_result.is_err(),
+        "Startup should fail with invalid config"
+    );
 
     println!("✓ T082-9 Config Validation During Startup Test passed");
 }
@@ -235,11 +283,14 @@ async fn test_config_validation_during_startup() {
 async fn test_resource_cleanup_on_shutdown() {
     // T082-10: Resource cleanup during shutdown
     let helper = NodeLifecycleTestHelper::new().await;
-    let _node = helper.start_node().await.expect("Node should start");
+    helper.start_node().await.expect("Node should start");
 
     // Test resource cleanup during shutdown
     let shutdown_result = helper.graceful_shutdown().await;
-    assert!(shutdown_result.is_ok(), "Shutdown with cleanup should succeed");
+    assert!(
+        shutdown_result.is_ok(),
+        "Shutdown with cleanup should succeed"
+    );
 
     // Verify resources are cleaned up (in mock, just test completion)
     println!("✓ T082-10 Resource Cleanup on Shutdown Test passed");
@@ -253,12 +304,18 @@ async fn test_error_recovery_during_startup() {
     // Create invalid config first
     helper.create_invalid_config();
     let failure_result = helper.start_node_expect_failure().await;
-    assert!(failure_result.is_err(), "Startup should fail with invalid config");
+    assert!(
+        failure_result.is_err(),
+        "Startup should fail with invalid config"
+    );
 
     // Fix config and retry
     helper.create_valid_config();
     let recovery_result = helper.start_node().await;
-    assert!(recovery_result.is_ok(), "Startup should succeed after config fix");
+    assert!(
+        recovery_result.is_ok(),
+        "Startup should succeed after config fix"
+    );
 
     println!("✓ T082-11 Error Recovery During Startup Test passed");
 }
@@ -267,7 +324,7 @@ async fn test_error_recovery_during_startup() {
 async fn test_shutdown_state_persistence() {
     // T082-12: State persistence during shutdown
     let helper = NodeLifecycleTestHelper::new().await;
-    let _node = helper.start_node().await.expect("Node should start");
+    helper.start_node().await.expect("Node should start");
 
     // Test that shutdown preserves necessary state
     let shutdown_result = helper.graceful_shutdown().await;

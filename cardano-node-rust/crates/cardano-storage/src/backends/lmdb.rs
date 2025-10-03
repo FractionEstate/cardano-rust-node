@@ -8,7 +8,7 @@ use super::{BackendStats, BatchOperation, StorageBackend};
 use crate::{Result, StorageError};
 use async_trait::async_trait;
 use lmdb::{
-    Database, Environment, EnvironmentFlags, Transaction, WriteFlags,
+    Cursor, Database, DatabaseFlags, Environment, EnvironmentFlags, Transaction, WriteFlags,
 };
 use std::path::Path;
 use std::sync::Arc;
@@ -66,8 +66,9 @@ impl LmdbBackend {
     /// Create a new LMDB backend with the given configuration
     pub fn new(config: LmdbConfig) -> Result<Self> {
         // Create directory if it doesn't exist
-        std::fs::create_dir_all(&config.path)
-            .map_err(|e| StorageError::DatabaseError(format!("Failed to create database directory: {}", e)))?;
+        std::fs::create_dir_all(&config.path).map_err(|e| {
+            StorageError::DatabaseError(format!("Failed to create database directory: {}", e))
+        })?;
 
         // Configure LMDB environment
         let mut env_flags = EnvironmentFlags::empty();
@@ -87,23 +88,16 @@ impl LmdbBackend {
             .set_max_dbs(config.max_dbs)
             .set_map_size(config.max_size)
             .open(&config.path)
-            .map_err(|e| StorageError::DatabaseError(format!("Failed to open LMDB environment: {}", e)))?;
+            .map_err(|e| {
+                StorageError::DatabaseError(format!("Failed to open LMDB environment: {}", e))
+            })?;
 
         let env = Arc::new(env);
 
         // Create or open the main database
-        let db = {
-            let txn = env.begin_ro_txn()
-                .map_err(|e| StorageError::DatabaseError(format!("Failed to begin transaction: {}", e)))?;
-
-            let db = env.open_db(Some("cardano_main"))
-                .map_err(|e| StorageError::DatabaseError(format!("Failed to open database: {}", e)))?;
-
-            txn.commit()
-                .map_err(|e| StorageError::DatabaseError(format!("Failed to commit transaction: {}", e)))?;
-
-            db
-        };
+        let db = env
+            .create_db(Some("cardano_main"), DatabaseFlags::empty())
+            .map_err(|e| StorageError::DatabaseError(format!("Failed to open database: {}", e)))?;
 
         Ok(Self {
             env,
@@ -114,8 +108,10 @@ impl LmdbBackend {
 
     /// Create a new LMDB backend with default configuration at the given path
     pub fn with_path<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let mut config = LmdbConfig::default();
-        config.path = path.as_ref().to_path_buf();
+        let config = LmdbConfig {
+            path: path.as_ref().to_path_buf(),
+            ..Default::default()
+        };
         Self::new(config)
     }
 
@@ -125,15 +121,17 @@ impl LmdbBackend {
     }
 
     /// Begin a read-only transaction
-    pub fn begin_ro_txn(&self) -> Result<lmdb::RoTransaction> {
-        self.env.begin_ro_txn()
-            .map_err(|e| StorageError::DatabaseError(format!("Failed to begin read transaction: {}", e)))
+    pub fn begin_ro_txn(&self) -> Result<lmdb::RoTransaction<'_>> {
+        self.env.begin_ro_txn().map_err(|e| {
+            StorageError::DatabaseError(format!("Failed to begin read transaction: {}", e))
+        })
     }
 
     /// Begin a read-write transaction
-    pub fn begin_rw_txn(&self) -> Result<lmdb::RwTransaction> {
-        self.env.begin_rw_txn()
-            .map_err(|e| StorageError::DatabaseError(format!("Failed to begin write transaction: {}", e)))
+    pub fn begin_rw_txn(&self) -> Result<lmdb::RwTransaction<'_>> {
+        self.env.begin_rw_txn().map_err(|e| {
+            StorageError::DatabaseError(format!("Failed to begin write transaction: {}", e))
+        })
     }
 }
 
@@ -145,15 +143,18 @@ impl StorageBackend for LmdbBackend {
             let env = Arc::clone(&self.env);
             move || -> Result<()> {
                 // Perform any initialization checks
-                let txn = env.begin_ro_txn()
-                    .map_err(|e| StorageError::DatabaseError(format!("Failed to begin init transaction: {}", e)))?;
+                let txn = env.begin_ro_txn().map_err(|e| {
+                    StorageError::DatabaseError(format!("Failed to begin init transaction: {}", e))
+                })?;
 
-                txn.commit()
-                    .map_err(|e| StorageError::DatabaseError(format!("Failed to commit init transaction: {}", e)))?;
+                txn.commit().map_err(|e| {
+                    StorageError::DatabaseError(format!("Failed to commit init transaction: {}", e))
+                })?;
 
                 Ok(())
             }
-        }).await
+        })
+        .await
         .map_err(|e| StorageError::DatabaseError(format!("Task join error: {}", e)))??;
 
         Ok(())
@@ -166,11 +167,13 @@ impl StorageBackend for LmdbBackend {
             task::spawn_blocking({
                 let env = Arc::clone(&self.env);
                 move || -> Result<()> {
-                    env.sync(true)
-                        .map_err(|e| StorageError::DatabaseError(format!("Failed to sync on close: {}", e)))?;
+                    env.sync(true).map_err(|e| {
+                        StorageError::DatabaseError(format!("Failed to sync on close: {}", e))
+                    })?;
                     Ok(())
                 }
-            }).await
+            })
+            .await
             .map_err(|e| StorageError::DatabaseError(format!("Task join error: {}", e)))??;
         }
 
@@ -187,18 +190,23 @@ impl StorageBackend for LmdbBackend {
             move || -> Result<()> {
                 let db = tokio::runtime::Handle::current().block_on(db.read());
 
-                let mut txn = env.begin_rw_txn()
-                    .map_err(|e| StorageError::DatabaseError(format!("Failed to begin write transaction: {}", e)))?;
+                let mut txn = env.begin_rw_txn().map_err(|e| {
+                    StorageError::DatabaseError(format!("Failed to begin write transaction: {}", e))
+                })?;
 
                 txn.put(*db, &key, &value, WriteFlags::empty())
-                    .map_err(|e| StorageError::DatabaseError(format!("Failed to put data: {}", e)))?;
+                    .map_err(|e| {
+                        StorageError::DatabaseError(format!("Failed to put data: {}", e))
+                    })?;
 
-                txn.commit()
-                    .map_err(|e| StorageError::DatabaseError(format!("Failed to commit transaction: {}", e)))?;
+                txn.commit().map_err(|e| {
+                    StorageError::DatabaseError(format!("Failed to commit transaction: {}", e))
+                })?;
 
                 Ok(())
             }
-        }).await
+        })
+        .await
         .map_err(|e| StorageError::DatabaseError(format!("Task join error: {}", e)))??;
 
         Ok(())
@@ -207,23 +215,30 @@ impl StorageBackend for LmdbBackend {
     async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         let key = key.to_vec();
 
-        task::spawn_blocking({
+        let result = task::spawn_blocking({
             let env = Arc::clone(&self.env);
             let db = Arc::clone(&self.db);
             move || -> Result<Option<Vec<u8>>> {
                 let db = tokio::runtime::Handle::current().block_on(db.read());
 
-                let txn = env.begin_ro_txn()
-                    .map_err(|e| StorageError::DatabaseError(format!("Failed to begin read transaction: {}", e)))?;
+                let txn = env.begin_ro_txn().map_err(|e| {
+                    StorageError::DatabaseError(format!("Failed to begin read transaction: {}", e))
+                })?;
 
                 match txn.get(*db, &key) {
                     Ok(data) => Ok(Some(data.to_vec())),
                     Err(lmdb::Error::NotFound) => Ok(None),
-                    Err(e) => Err(StorageError::DatabaseError(format!("Failed to get data: {}", e))),
+                    Err(e) => Err(StorageError::DatabaseError(format!(
+                        "Failed to get data: {}",
+                        e
+                    ))),
                 }
             }
-        }).await
-        .map_err(|e| StorageError::DatabaseError(format!("Task join error: {}", e)))?
+        })
+        .await
+        .map_err(|e| StorageError::DatabaseError(format!("Task join error: {}", e)))??;
+
+        Ok(result)
     }
 
     async fn delete(&self, key: &[u8]) -> Result<()> {
@@ -235,23 +250,31 @@ impl StorageBackend for LmdbBackend {
             move || -> Result<()> {
                 let db = tokio::runtime::Handle::current().block_on(db.read());
 
-                let mut txn = env.begin_rw_txn()
-                    .map_err(|e| StorageError::DatabaseError(format!("Failed to begin write transaction: {}", e)))?;
+                let mut txn = env.begin_rw_txn().map_err(|e| {
+                    StorageError::DatabaseError(format!("Failed to begin write transaction: {}", e))
+                })?;
 
                 match txn.del(*db, &key, None) {
-                    Ok(()) => {},
+                    Ok(()) => {}
                     Err(lmdb::Error::NotFound) => {
                         // Key doesn't exist, this is not an error
-                    },
-                    Err(e) => return Err(StorageError::DatabaseError(format!("Failed to delete data: {}", e))),
+                    }
+                    Err(e) => {
+                        return Err(StorageError::DatabaseError(format!(
+                            "Failed to delete data: {}",
+                            e
+                        )))
+                    }
                 }
 
-                txn.commit()
-                    .map_err(|e| StorageError::DatabaseError(format!("Failed to commit transaction: {}", e)))?;
+                txn.commit().map_err(|e| {
+                    StorageError::DatabaseError(format!("Failed to commit transaction: {}", e))
+                })?;
 
                 Ok(())
             }
-        }).await
+        })
+        .await
         .map_err(|e| StorageError::DatabaseError(format!("Task join error: {}", e)))??;
 
         Ok(())
@@ -266,16 +289,21 @@ impl StorageBackend for LmdbBackend {
             move || -> Result<bool> {
                 let db = tokio::runtime::Handle::current().block_on(db.read());
 
-                let txn = env.begin_ro_txn()
-                    .map_err(|e| StorageError::DatabaseError(format!("Failed to begin read transaction: {}", e)))?;
+                let txn = env.begin_ro_txn().map_err(|e| {
+                    StorageError::DatabaseError(format!("Failed to begin read transaction: {}", e))
+                })?;
 
                 match txn.get(*db, &key) {
                     Ok(_) => Ok(true),
                     Err(lmdb::Error::NotFound) => Ok(false),
-                    Err(e) => Err(StorageError::DatabaseError(format!("Failed to check existence: {}", e))),
+                    Err(e) => Err(StorageError::DatabaseError(format!(
+                        "Failed to check existence: {}",
+                        e
+                    ))),
                 }
             }
-        }).await
+        })
+        .await
         .map_err(|e| StorageError::DatabaseError(format!("Task join error: {}", e)))?
     }
 
@@ -286,33 +314,49 @@ impl StorageBackend for LmdbBackend {
             move || -> Result<()> {
                 let db = tokio::runtime::Handle::current().block_on(db.read());
 
-                let mut txn = env.begin_rw_txn()
-                    .map_err(|e| StorageError::DatabaseError(format!("Failed to begin batch transaction: {}", e)))?;
+                let mut txn = env.begin_rw_txn().map_err(|e| {
+                    StorageError::DatabaseError(format!("Failed to begin batch transaction: {}", e))
+                })?;
 
                 for operation in operations {
                     match operation {
                         BatchOperation::Put { key, value } => {
                             txn.put(*db, &key, &value, WriteFlags::empty())
-                                .map_err(|e| StorageError::DatabaseError(format!("Failed to put in batch: {}", e)))?;
-                        },
+                                .map_err(|e| {
+                                    StorageError::DatabaseError(format!(
+                                        "Failed to put in batch: {}",
+                                        e
+                                    ))
+                                })?;
+                        }
                         BatchOperation::Delete { key } => {
                             match txn.del(*db, &key, None) {
-                                Ok(()) => {},
+                                Ok(()) => {}
                                 Err(lmdb::Error::NotFound) => {
                                     // Key doesn't exist, this is not an error in batch operations
-                                },
-                                Err(e) => return Err(StorageError::DatabaseError(format!("Failed to delete in batch: {}", e))),
+                                }
+                                Err(e) => {
+                                    return Err(StorageError::DatabaseError(format!(
+                                        "Failed to delete in batch: {}",
+                                        e
+                                    )))
+                                }
                             }
-                        },
+                        }
                     }
                 }
 
-                txn.commit()
-                    .map_err(|e| StorageError::DatabaseError(format!("Failed to commit batch transaction: {}", e)))?;
+                txn.commit().map_err(|e| {
+                    StorageError::DatabaseError(format!(
+                        "Failed to commit batch transaction: {}",
+                        e
+                    ))
+                })?;
 
                 Ok(())
             }
-        }).await
+        })
+        .await
         .map_err(|e| StorageError::DatabaseError(format!("Task join error: {}", e)))??;
 
         Ok(())
@@ -326,40 +370,56 @@ impl StorageBackend for LmdbBackend {
                     .map_err(|e| StorageError::DatabaseError(format!("Failed to sync: {}", e)))?;
                 Ok(())
             }
-        }).await
+        })
+        .await
         .map_err(|e| StorageError::DatabaseError(format!("Task join error: {}", e)))??;
 
         Ok(())
     }
 
     async fn stats(&self) -> Result<BackendStats> {
-        task::spawn_blocking({
-            let env = Arc::clone(&self.env);
-            let db = Arc::clone(&self.db);
-            move || -> Result<BackendStats> {
-                let db = tokio::runtime::Handle::current().block_on(db.read());
+        let env = Arc::clone(&self.env);
+        let db = Arc::clone(&self.db);
 
-                let txn = env.begin_ro_txn()
-                    .map_err(|e| StorageError::DatabaseError(format!("Failed to begin stats transaction: {}", e)))?;
+        let stats = task::spawn_blocking(move || -> Result<BackendStats> {
+            let db_handle = tokio::runtime::Handle::current().block_on(db.read());
 
-                let stat = env.stat()
-                    .map_err(|e| StorageError::DatabaseError(format!("Failed to get database stats: {}", e)))?;
+            let env_stat = env.stat().map_err(|e| {
+                StorageError::DatabaseError(format!("Failed to get environment stats: {}", e))
+            })?;
 
-                // Calculate approximate statistics
-                let total_keys = 0u64; // LMDB doesn't provide easy key count
-                let page_size = stat.page_size() as u64;
-                let total_pages = (stat.leaf_pages() + stat.branch_pages() + stat.overflow_pages()) as u64;
-                let total_size = total_pages * page_size;
-                let memory_usage = total_size; // Approximate memory usage
+            let txn = env.begin_ro_txn().map_err(|e| {
+                StorageError::DatabaseError(format!("Failed to begin stats transaction: {}", e))
+            })?;
 
-                Ok(BackendStats {
-                    total_keys,
-                    total_size,
-                    memory_usage,
-                })
-            }
-        }).await
-        .map_err(|e| StorageError::DatabaseError(format!("Task join error: {}", e)))?
+            let mut cursor = txn.open_ro_cursor(*db_handle).map_err(|e| {
+                StorageError::DatabaseError(format!("Failed to open stats cursor: {}", e))
+            })?;
+
+            let total_keys = cursor.iter().count() as u64;
+            drop(cursor);
+
+            txn.commit().map_err(|e| {
+                StorageError::DatabaseError(format!("Failed to commit stats transaction: {}", e))
+            })?;
+
+            let page_size = env_stat.page_size() as u64;
+            let total_pages = (env_stat.leaf_pages()
+                + env_stat.branch_pages()
+                + env_stat.overflow_pages()) as u64;
+            let total_size = total_pages * page_size;
+            let memory_usage = total_size;
+
+            Ok(BackendStats {
+                total_keys,
+                total_size,
+                memory_usage,
+            })
+        })
+        .await
+        .map_err(|e| StorageError::DatabaseError(format!("Task join error: {}", e)))??;
+
+        Ok(stats)
     }
 }
 
@@ -387,7 +447,6 @@ mod tests {
         static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let counter = COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         config.path = config.path.join(format!("test_{}", counter));
-        config.max_readers = 1; // Avoid reader slot conflicts in tests
         let backend = LmdbBackend::new(config).unwrap();
         (backend, temp_dir)
     }

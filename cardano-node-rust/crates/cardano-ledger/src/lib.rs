@@ -3,7 +3,6 @@
 //! This crate implements the ledger rules for different Cardano eras,
 //! including transaction validation, UTxO management, and state transitions.
 
-use cardano_crypto::Blake2b256Hash;
 use std::error::Error;
 use std::fmt;
 

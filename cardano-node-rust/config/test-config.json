@@ -1,0 +1,37 @@
+{
+  "Protocol": "Cardano",
+  "ConsensusMode": "PraosMode",
+  "EnableP2P": true,
+  "PeerSharing": true,
+  "TargetNumberOfRootPeers": 100,
+  "TargetNumberOfKnownPeers": 100,
+  "TargetNumberOfEstablishedPeers": 50,
+  "TargetNumberOfActivePeers": 20,
+  "TraceChainDb": true,
+  "TraceChainSync": true,
+  "TraceBlockFetch": true,
+  "TraceMempool": true,
+  "TurnOnLogging": true,
+  "minSeverity": "Info",
+  "setupBackends": [
+    "KatipBK"
+  ],
+  "setupScribes": [
+    {
+      "scKind": "StdoutSK",
+      "scName": "stdout",
+      "scFormat": "ScJson"
+    }
+  ],
+  "hasEKG": 12788,
+  "hasPrometheus": [
+    "127.0.0.1",
+    12798
+  ],
+  "LedgerDB": {
+    "Backend": "V2InMemory",
+    "NumOfDiskSnapshots": 2,
+    "SnapshotInterval": 4320,
+    "QueryBatchSize": 100000
+  }
+}

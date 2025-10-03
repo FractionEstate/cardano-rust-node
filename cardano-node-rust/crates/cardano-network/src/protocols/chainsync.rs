@@ -20,12 +20,20 @@
 //!
 //! Based on the Cardano Network Protocol Specification.
 
-use cardano_consensus::block_production::BlockHeader;
+use bytes::Bytes;
+use cardano_consensus::block_production::{BlockHeader, OperationalCertificate};
 use cardano_consensus::ouroboros::SlotNo;
-use cardano_crypto::Blake2b256Hash;
-use std::collections::VecDeque;
+use cardano_crypto::{Blake2b256Hash, Ed25519KeyHash, VrfOutput, VrfProof};
+use minicbor::{Decode, Encode};
+use std::collections::{HashMap, VecDeque};
+use std::convert::TryFrom;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Mutex as AsyncMutex};
+
+use crate::connection::multiplexer::ProtocolHandler;
+use crate::connection::{ConnectionId, ProtocolId};
+use crate::{NetworkError, Result as NetworkResult};
 
 /// A point on the blockchain identified by slot and hash
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -57,7 +65,7 @@ impl Point {
         // In a real implementation, this would be the actual block hash
         Self {
             slot: header.slot,
-            hash: header.block_body_hash.clone(),
+            hash: header.block_body_hash,
         }
     }
 }
@@ -85,7 +93,7 @@ impl Tip {
         Self {
             slot: header.slot,
             height,
-            hash: header.block_body_hash.clone(),
+            hash: header.block_body_hash,
         }
     }
 
@@ -93,8 +101,264 @@ impl Tip {
     pub fn as_point(&self) -> Point {
         Point {
             slot: self.slot,
-            hash: self.hash.clone(),
+            hash: self.hash,
         }
+    }
+}
+
+#[derive(Debug, Clone, Encode, Decode)]
+pub struct PointWire {
+    #[n(0)]
+    slot: u64,
+    #[n(1)]
+    hash: Blake2b256Hash,
+}
+
+#[derive(Debug, Clone, Encode, Decode)]
+pub struct TipWire {
+    #[n(0)]
+    slot: u64,
+    #[n(1)]
+    hash: Blake2b256Hash,
+    #[n(2)]
+    height: u64,
+}
+
+#[derive(Debug, Clone, Encode, Decode)]
+pub struct OperationalCertificateWire {
+    #[n(0)]
+    hot_vkey: [u8; 20],
+    #[n(1)]
+    sequence_number: u64,
+    #[n(2)]
+    kes_period: u64,
+    #[n(3)]
+    sigma: Blake2b256Hash,
+}
+
+#[derive(Debug, Clone, Encode, Decode)]
+pub struct BlockHeaderWire {
+    #[n(0)]
+    slot: u64,
+    #[n(1)]
+    prev_hash: Blake2b256Hash,
+    #[n(2)]
+    issuer_vkey: [u8; 20],
+    #[n(3)]
+    vrf_proof: Vec<u8>,
+    #[n(4)]
+    vrf_output: Vec<u8>,
+    #[n(5)]
+    block_body_hash: Blake2b256Hash,
+    #[n(6)]
+    block_size: u32,
+    #[n(7)]
+    operational_cert: OperationalCertificateWire,
+    #[n(8)]
+    protocol_magic: u32,
+}
+
+#[derive(Debug, Clone, Encode, Decode)]
+pub enum ChainSyncWireMessage {
+    #[n(0)]
+    RequestNext,
+    #[n(1)]
+    FindIntersect {
+        #[n(0)]
+        points: Vec<PointWire>,
+    },
+    #[n(2)]
+    RollForward {
+        #[n(0)]
+        header: BlockHeaderWire,
+        #[n(1)]
+        tip: TipWire,
+    },
+    #[n(3)]
+    RollBackward {
+        #[n(0)]
+        point: PointWire,
+        #[n(1)]
+        tip: TipWire,
+    },
+    #[n(4)]
+    IntersectFound {
+        #[n(0)]
+        point: PointWire,
+        #[n(1)]
+        tip: TipWire,
+    },
+    #[n(5)]
+    IntersectNotFound {
+        #[n(0)]
+        tip: TipWire,
+    },
+}
+
+impl ChainSyncWireMessage {
+    fn from_domain(message: ChainSyncMessage) -> Result<Self, ChainSyncError> {
+        match message {
+            ChainSyncMessage::RequestNext => Ok(Self::RequestNext),
+            ChainSyncMessage::FindIntersect { points } => {
+                let wires = points.into_iter().map(PointWire::from).collect();
+                Ok(Self::FindIntersect { points: wires })
+            }
+            ChainSyncMessage::RollForward { header, tip } => Ok(Self::RollForward {
+                header: BlockHeaderWire::from(&*header),
+                tip: TipWire::from(tip),
+            }),
+            ChainSyncMessage::RollBackward { point, tip } => Ok(Self::RollBackward {
+                point: PointWire::from(point),
+                tip: TipWire::from(tip),
+            }),
+            ChainSyncMessage::IntersectFound { point, tip } => Ok(Self::IntersectFound {
+                point: PointWire::from(point),
+                tip: TipWire::from(tip),
+            }),
+            ChainSyncMessage::IntersectNotFound { tip } => Ok(Self::IntersectNotFound {
+                tip: TipWire::from(tip),
+            }),
+        }
+    }
+
+    fn into_domain(self) -> Result<ChainSyncMessage, ChainSyncError> {
+        match self {
+            Self::RequestNext => Ok(ChainSyncMessage::RequestNext),
+            Self::FindIntersect { points } => {
+                let points = points.into_iter().map(Point::from).collect();
+                Ok(ChainSyncMessage::FindIntersect { points })
+            }
+            Self::RollForward { header, tip } => Ok(ChainSyncMessage::RollForward {
+                header: Box::new(BlockHeader::try_from(header)?),
+                tip: Tip::from(tip),
+            }),
+            Self::RollBackward { point, tip } => Ok(ChainSyncMessage::RollBackward {
+                point: Point::from(point),
+                tip: Tip::from(tip),
+            }),
+            Self::IntersectFound { point, tip } => Ok(ChainSyncMessage::IntersectFound {
+                point: Point::from(point),
+                tip: Tip::from(tip),
+            }),
+            Self::IntersectNotFound { tip } => Ok(ChainSyncMessage::IntersectNotFound {
+                tip: Tip::from(tip),
+            }),
+        }
+    }
+}
+
+impl From<&Point> for PointWire {
+    fn from(point: &Point) -> Self {
+        Self {
+            slot: point.slot.0,
+            hash: point.hash,
+        }
+    }
+}
+
+impl From<Point> for PointWire {
+    fn from(point: Point) -> Self {
+        Self::from(&point)
+    }
+}
+
+impl From<&Tip> for TipWire {
+    fn from(tip: &Tip) -> Self {
+        Self {
+            slot: tip.slot.0,
+            hash: tip.hash,
+            height: tip.height,
+        }
+    }
+}
+
+impl From<Tip> for TipWire {
+    fn from(tip: Tip) -> Self {
+        Self::from(&tip)
+    }
+}
+
+impl From<&OperationalCertificate> for OperationalCertificateWire {
+    fn from(cert: &OperationalCertificate) -> Self {
+        Self {
+            hot_vkey: *cert.hot_vkey.as_bytes(),
+            sequence_number: cert.sequence_number,
+            kes_period: cert.kes_period,
+            sigma: cert.sigma,
+        }
+    }
+}
+
+impl From<&BlockHeader> for BlockHeaderWire {
+    fn from(header: &BlockHeader) -> Self {
+        Self {
+            slot: header.slot.0,
+            prev_hash: header.prev_hash,
+            issuer_vkey: *header.issuer_vkey.as_bytes(),
+            vrf_proof: header.vrf_proof.to_bytes().to_vec(),
+            vrf_output: header.vrf_output.to_bytes().to_vec(),
+            block_body_hash: header.block_body_hash,
+            block_size: header.block_size,
+            operational_cert: OperationalCertificateWire::from(&header.operational_cert),
+            protocol_magic: header.protocol_magic,
+        }
+    }
+}
+
+impl From<PointWire> for Point {
+    fn from(point: PointWire) -> Self {
+        Self {
+            slot: SlotNo(point.slot),
+            hash: point.hash,
+        }
+    }
+}
+
+impl From<TipWire> for Tip {
+    fn from(tip: TipWire) -> Self {
+        Self {
+            slot: SlotNo(tip.slot),
+            hash: tip.hash,
+            height: tip.height,
+        }
+    }
+}
+
+impl TryFrom<OperationalCertificateWire> for OperationalCertificate {
+    type Error = ChainSyncError;
+
+    fn try_from(wire: OperationalCertificateWire) -> Result<Self, Self::Error> {
+        let hot_vkey = Ed25519KeyHash::from_bytes(wire.hot_vkey);
+        Ok(Self {
+            hot_vkey,
+            sequence_number: wire.sequence_number,
+            kes_period: wire.kes_period,
+            sigma: wire.sigma,
+        })
+    }
+}
+
+impl TryFrom<BlockHeaderWire> for BlockHeader {
+    type Error = ChainSyncError;
+
+    fn try_from(wire: BlockHeaderWire) -> Result<Self, Self::Error> {
+        let vrf_proof = VrfProof::from_bytes(&wire.vrf_proof)
+            .map_err(|err| ChainSyncError::SerializationError(err.to_string()))?;
+        let vrf_output = VrfOutput::from_bytes(&wire.vrf_output)
+            .map_err(|err| ChainSyncError::SerializationError(err.to_string()))?;
+        let operational_cert = OperationalCertificate::try_from(wire.operational_cert)?;
+
+        Ok(Self {
+            slot: SlotNo(wire.slot),
+            prev_hash: wire.prev_hash,
+            issuer_vkey: Ed25519KeyHash::from_bytes(wire.issuer_vkey),
+            vrf_proof,
+            vrf_output,
+            block_body_hash: wire.block_body_hash,
+            block_size: wire.block_size,
+            operational_cert,
+            protocol_magic: wire.protocol_magic,
+        })
     }
 }
 
@@ -108,7 +372,7 @@ pub enum ChainSyncMessage {
     FindIntersect { points: Vec<Point> },
 
     /// Server responds with next block header (rollforward)
-    RollForward { header: BlockHeader, tip: Tip },
+    RollForward { header: Box<BlockHeader>, tip: Tip },
 
     /// Server responds with rollback to a previous point
     RollBackward { point: Point, tip: Tip },
@@ -146,21 +410,25 @@ pub enum ChainSyncServerState {
 pub struct ChainSyncClient {
     state: Arc<Mutex<ChainSyncClientState>>,
     outbound_tx: mpsc::UnboundedSender<ChainSyncMessage>,
-    inbound_rx: Arc<Mutex<mpsc::UnboundedReceiver<ChainSyncMessage>>>,
+    inbound_rx: Arc<AsyncMutex<mpsc::UnboundedReceiver<ChainSyncMessage>>>,
     current_tip: Arc<Mutex<Option<Tip>>>,
     chain_points: Arc<Mutex<Vec<Point>>>,
 }
 
 impl ChainSyncClient {
     /// Create a new ChainSync client
-    pub fn new() -> (Self, mpsc::UnboundedReceiver<ChainSyncMessage>, mpsc::UnboundedSender<ChainSyncMessage>) {
+    pub fn new() -> (
+        Self,
+        mpsc::UnboundedReceiver<ChainSyncMessage>,
+        mpsc::UnboundedSender<ChainSyncMessage>,
+    ) {
         let (outbound_tx, outbound_rx) = mpsc::unbounded_channel();
         let (inbound_tx, inbound_rx) = mpsc::unbounded_channel();
 
         let client = Self {
             state: Arc::new(Mutex::new(ChainSyncClientState::Idle)),
             outbound_tx,
-            inbound_rx: Arc::new(Mutex::new(inbound_rx)),
+            inbound_rx: Arc::new(AsyncMutex::new(inbound_rx)),
             current_tip: Arc::new(Mutex::new(None)),
             chain_points: Arc::new(Mutex::new(Vec::new())),
         };
@@ -188,14 +456,15 @@ impl ChainSyncClient {
         let mut state = self.state.lock().unwrap();
         if *state != ChainSyncClientState::Idle {
             return Err(ChainSyncError::InvalidState(
-                "Cannot request next in current state".to_string()
+                "Cannot request next in current state".to_string(),
             ));
         }
 
         *state = ChainSyncClientState::WaitingForNext;
         drop(state);
 
-        self.outbound_tx.send(ChainSyncMessage::RequestNext)
+        self.outbound_tx
+            .send(ChainSyncMessage::RequestNext)
             .map_err(|_| ChainSyncError::ConnectionClosed)?;
 
         Ok(())
@@ -206,21 +475,22 @@ impl ChainSyncClient {
         let mut state = self.state.lock().unwrap();
         if *state != ChainSyncClientState::Idle {
             return Err(ChainSyncError::InvalidState(
-                "Cannot find intersection in current state".to_string()
+                "Cannot find intersection in current state".to_string(),
             ));
         }
 
         // Validate points are in descending slot order
         if !self.validate_points_order(&points) {
             return Err(ChainSyncError::InvalidPoints(
-                "Points must be in descending slot order".to_string()
+                "Points must be in descending slot order".to_string(),
             ));
         }
 
         *state = ChainSyncClientState::WaitingForIntersection;
         drop(state);
 
-        self.outbound_tx.send(ChainSyncMessage::FindIntersect { points })
+        self.outbound_tx
+            .send(ChainSyncMessage::FindIntersect { points })
             .map_err(|_| ChainSyncError::ConnectionClosed)?;
 
         Ok(())
@@ -233,12 +503,18 @@ impl ChainSyncClient {
         let mut points = self.chain_points.lock().unwrap();
 
         match (&*state, message) {
-            (ChainSyncClientState::WaitingForNext, ChainSyncMessage::RollForward { header, tip: new_tip }) => {
+            (
+                ChainSyncClientState::WaitingForNext,
+                ChainSyncMessage::RollForward {
+                    header,
+                    tip: new_tip,
+                },
+            ) => {
                 // Validate rollforward
                 if let Some(current_tip) = &*tip {
                     if header.slot.0 <= current_tip.slot.0 {
                         return Err(ChainSyncError::InvalidRollForward(
-                            "New header slot must be greater than current tip".to_string()
+                            "New header slot must be greater than current tip".to_string(),
                         ));
                     }
                 }
@@ -252,11 +528,17 @@ impl ChainSyncClient {
                 Ok(())
             }
 
-            (ChainSyncClientState::WaitingForNext, ChainSyncMessage::RollBackward { point, tip: new_tip }) => {
+            (
+                ChainSyncClientState::WaitingForNext,
+                ChainSyncMessage::RollBackward {
+                    point,
+                    tip: new_tip,
+                },
+            ) => {
                 // Validate rollback point exists in our chain
-                if !points.iter().any(|p| *p == point) {
+                if !points.contains(&point) {
                     return Err(ChainSyncError::InvalidRollback(
-                        "Rollback point not found in chain".to_string()
+                        "Rollback point not found in chain".to_string(),
                     ));
                 }
 
@@ -268,7 +550,13 @@ impl ChainSyncClient {
                 Ok(())
             }
 
-            (ChainSyncClientState::WaitingForIntersection, ChainSyncMessage::IntersectFound { point, tip: new_tip }) => {
+            (
+                ChainSyncClientState::WaitingForIntersection,
+                ChainSyncMessage::IntersectFound {
+                    point,
+                    tip: new_tip,
+                },
+            ) => {
                 // Update chain to intersection point
                 points.clear();
                 points.push(point);
@@ -278,7 +566,10 @@ impl ChainSyncClient {
                 Ok(())
             }
 
-            (ChainSyncClientState::WaitingForIntersection, ChainSyncMessage::IntersectNotFound { tip: new_tip }) => {
+            (
+                ChainSyncClientState::WaitingForIntersection,
+                ChainSyncMessage::IntersectNotFound { tip: new_tip },
+            ) => {
                 // No intersection found, start from genesis
                 points.clear();
                 points.push(Point::genesis());
@@ -288,17 +579,21 @@ impl ChainSyncClient {
                 Ok(())
             }
 
-            _ => Err(ChainSyncError::UnexpectedMessage(
-                format!("Received unexpected message in state {:?}", *state)
-            ))
+            _ => Err(ChainSyncError::UnexpectedMessage(format!(
+                "Received unexpected message in state {:?}",
+                *state
+            ))),
         }
     }
 
     /// Wait for and handle the next message
     pub async fn receive_message(&self) -> Result<(), ChainSyncError> {
-        let mut rx = self.inbound_rx.lock().unwrap();
-        if let Some(message) = rx.recv().await {
-            drop(rx);
+        let message = {
+            let mut rx = self.inbound_rx.lock().await;
+            rx.recv().await
+        };
+
+        if let Some(message) = message {
             self.handle_message(message).await
         } else {
             Err(ChainSyncError::ConnectionClosed)
@@ -335,14 +630,20 @@ impl ChainSyncClient {
 pub struct ChainSyncServer {
     state: Arc<Mutex<ChainSyncServerState>>,
     outbound_tx: mpsc::UnboundedSender<ChainSyncMessage>,
-    inbound_rx: Arc<Mutex<mpsc::UnboundedReceiver<ChainSyncMessage>>>,
+    inbound_rx: Arc<AsyncMutex<mpsc::UnboundedReceiver<ChainSyncMessage>>>,
     chain: Arc<Mutex<VecDeque<BlockHeader>>>,
     current_tip: Arc<Mutex<Tip>>,
 }
 
 impl ChainSyncServer {
     /// Create a new ChainSync server
-    pub fn new(initial_chain: Vec<BlockHeader>) -> (Self, mpsc::UnboundedReceiver<ChainSyncMessage>, mpsc::UnboundedSender<ChainSyncMessage>) {
+    pub fn new(
+        initial_chain: Vec<BlockHeader>,
+    ) -> (
+        Self,
+        mpsc::UnboundedReceiver<ChainSyncMessage>,
+        mpsc::UnboundedSender<ChainSyncMessage>,
+    ) {
         let (outbound_tx, outbound_rx) = mpsc::unbounded_channel();
         let (inbound_tx, inbound_rx) = mpsc::unbounded_channel();
 
@@ -356,7 +657,7 @@ impl ChainSyncServer {
         let server = Self {
             state: Arc::new(Mutex::new(ChainSyncServerState::Idle)),
             outbound_tx,
-            inbound_rx: Arc::new(Mutex::new(inbound_rx)),
+            inbound_rx: Arc::new(AsyncMutex::new(inbound_rx)),
             chain: Arc::new(Mutex::new(chain)),
             current_tip: Arc::new(Mutex::new(tip)),
         };
@@ -385,44 +686,62 @@ impl ChainSyncServer {
 
     /// Process incoming message from client
     pub async fn handle_message(&self, message: ChainSyncMessage) -> Result<(), ChainSyncError> {
-        let mut state = self.state.lock().unwrap();
+        let current_state = { self.state.lock().unwrap().clone() };
 
-        match (&*state, message) {
+        match (current_state, message) {
             (ChainSyncServerState::Idle, ChainSyncMessage::RequestNext) => {
-                *state = ChainSyncServerState::ServingNext;
-                drop(state);
+                {
+                    let mut state = self.state.lock().unwrap();
+                    *state = ChainSyncServerState::ServingNext;
+                }
 
                 let response = self.serve_next().await?;
-                self.outbound_tx.send(response)
+                self.outbound_tx
+                    .send(response)
                     .map_err(|_| ChainSyncError::ConnectionClosed)?;
 
-                *self.state.lock().unwrap() = ChainSyncServerState::Idle;
+                {
+                    let mut state = self.state.lock().unwrap();
+                    *state = ChainSyncServerState::Idle;
+                }
+
                 Ok(())
             }
 
             (ChainSyncServerState::Idle, ChainSyncMessage::FindIntersect { points }) => {
-                *state = ChainSyncServerState::ServingIntersection;
-                drop(state);
+                {
+                    let mut state = self.state.lock().unwrap();
+                    *state = ChainSyncServerState::ServingIntersection;
+                }
 
                 let response = self.find_intersection(points).await?;
-                self.outbound_tx.send(response)
+                self.outbound_tx
+                    .send(response)
                     .map_err(|_| ChainSyncError::ConnectionClosed)?;
 
-                *self.state.lock().unwrap() = ChainSyncServerState::Idle;
+                {
+                    let mut state = self.state.lock().unwrap();
+                    *state = ChainSyncServerState::Idle;
+                }
+
                 Ok(())
             }
 
-            _ => Err(ChainSyncError::UnexpectedMessage(
-                format!("Received unexpected message in state {:?}", *state)
-            ))
+            (state, _) => Err(ChainSyncError::UnexpectedMessage(format!(
+                "Received unexpected message in state {:?}",
+                state
+            ))),
         }
     }
 
     /// Wait for and handle the next client request
     pub async fn serve_request(&self) -> Result<(), ChainSyncError> {
-        let mut rx = self.inbound_rx.lock().unwrap();
-        if let Some(message) = rx.recv().await {
-            drop(rx);
+        let message = {
+            let mut rx = self.inbound_rx.lock().await;
+            rx.recv().await
+        };
+
+        if let Some(message) = message {
             self.handle_message(message).await
         } else {
             Err(ChainSyncError::ConnectionClosed)
@@ -438,7 +757,7 @@ impl ChainSyncServer {
         // In a real implementation, this would track client position
         if let Some(header) = chain.back() {
             Ok(ChainSyncMessage::RollForward {
-                header: header.clone(),
+                header: Box::new(header.clone()),
                 tip,
             })
         } else {
@@ -448,15 +767,19 @@ impl ChainSyncServer {
     }
 
     /// Find intersection with client points
-    async fn find_intersection(&self, points: Vec<Point>) -> Result<ChainSyncMessage, ChainSyncError> {
+    async fn find_intersection(
+        &self,
+        points: Vec<Point>,
+    ) -> Result<ChainSyncMessage, ChainSyncError> {
         let chain = self.chain.lock().unwrap();
         let tip = self.current_tip.lock().unwrap().clone();
 
         // Find the first point that exists in our chain
         for point in points {
-            if chain.iter().any(|header| {
-                header.slot == point.slot && header.block_body_hash == point.hash
-            }) {
+            if chain
+                .iter()
+                .any(|header| header.slot == point.slot && header.block_body_hash == point.hash)
+            {
                 return Ok(ChainSyncMessage::IntersectFound { point, tip });
             }
         }
@@ -522,46 +845,47 @@ impl Default for ChainSyncConfig {
 }
 
 /// Utility functions for ChainSync protocol
-
 /// Create a mock chain of block headers for testing
 pub fn create_mock_chain(length: usize) -> Vec<BlockHeader> {
     use cardano_consensus::block_production::OperationalCertificate;
-    use cardano_crypto::{Ed25519KeyHash, VrfProof, VrfOutput};
+    use cardano_crypto::{
+        Ed25519KeyHash, VrfOutput, VrfProof, VRF_OUTPUT_LENGTH, VRF_PROOF_LENGTH,
+    };
 
     let mut headers: Vec<BlockHeader> = Vec::new();
 
     for i in 0..length {
         let hash_bytes = [(i as u8); 32];
 
-        // VrfProof needs 81 bytes
-        let mut vrf_proof_bytes = [0u8; 81];
-        vrf_proof_bytes[0] = (i as u8 + 100);
-        vrf_proof_bytes[80] = (i as u8 + 101);
+        // VrfProof needs 80 bytes
+        let mut vrf_proof_bytes = [0u8; VRF_PROOF_LENGTH];
+        vrf_proof_bytes[0] = i as u8 + 100;
+        vrf_proof_bytes[VRF_PROOF_LENGTH - 1] = i as u8 + 101;
 
         // VrfOutput needs 64 bytes
-        let mut vrf_output_bytes = [0u8; 64];
-        vrf_output_bytes[0] = (i as u8 + 150);
-        vrf_output_bytes[63] = (i as u8 + 151);
+        let mut vrf_output_bytes = [0u8; VRF_OUTPUT_LENGTH];
+        vrf_output_bytes[0] = i as u8 + 150;
+        vrf_output_bytes[VRF_OUTPUT_LENGTH - 1] = i as u8 + 151;
 
         // Create 20-byte array for Ed25519KeyHash
         let mut key_bytes = [0u8; 20];
-        key_bytes[0] = (i as u8 + 50);
-        key_bytes[19] = (i as u8 + 51);
+        key_bytes[0] = i as u8 + 50;
+        key_bytes[19] = i as u8 + 51;
 
         let mut hot_key_bytes = [0u8; 20];
-        hot_key_bytes[0] = (i as u8 + 75);
-        hot_key_bytes[19] = (i as u8 + 76);
+        hot_key_bytes[0] = i as u8 + 75;
+        hot_key_bytes[19] = i as u8 + 76;
 
         headers.push(BlockHeader {
             slot: SlotNo(i as u64),
             prev_hash: if i == 0 {
                 Blake2b256Hash::from_bytes(&[0u8; 32]).unwrap()
             } else {
-                headers[i-1].block_body_hash.clone()
+                headers[i - 1].block_body_hash
             },
             issuer_vkey: Ed25519KeyHash::from_bytes(key_bytes),
-            vrf_proof: VrfProof::from_bytes(&vrf_proof_bytes).unwrap(),
-            vrf_output: VrfOutput::from_bytes(&vrf_output_bytes).unwrap(),
+            vrf_proof: VrfProof::from_bytes(vrf_proof_bytes).unwrap(),
+            vrf_output: VrfOutput::from_bytes(vrf_output_bytes).unwrap(),
             block_body_hash: Blake2b256Hash::from_bytes(&hash_bytes).unwrap(),
             block_size: (1024 + (i * 10)) as u32,
             operational_cert: OperationalCertificate {
@@ -578,21 +902,25 @@ pub fn create_mock_chain(length: usize) -> Vec<BlockHeader> {
 }
 
 /// Validate ChainSync message according to protocol rules
-pub fn validate_message(message: &ChainSyncMessage, config: &ChainSyncConfig) -> Result<(), ChainSyncError> {
+pub fn validate_message(
+    message: &ChainSyncMessage,
+    config: &ChainSyncConfig,
+) -> Result<(), ChainSyncError> {
     match message {
         ChainSyncMessage::FindIntersect { points } => {
             if points.len() > config.max_intersection_points {
-                return Err(ChainSyncError::InvalidPoints(
-                    format!("Too many intersection points: {} > {}",
-                        points.len(), config.max_intersection_points)
-                ));
+                return Err(ChainSyncError::InvalidPoints(format!(
+                    "Too many intersection points: {} > {}",
+                    points.len(),
+                    config.max_intersection_points
+                )));
             }
 
             // Validate points are in descending order
             for window in points.windows(2) {
                 if window[0].slot.0 < window[1].slot.0 {
                     return Err(ChainSyncError::InvalidPoints(
-                        "Points must be in descending slot order".to_string()
+                        "Points must be in descending slot order".to_string(),
                     ));
                 }
             }
@@ -601,7 +929,7 @@ pub fn validate_message(message: &ChainSyncMessage, config: &ChainSyncConfig) ->
         ChainSyncMessage::RollForward { header, tip } => {
             if header.slot.0 > tip.slot.0 {
                 return Err(ChainSyncError::InvalidRollForward(
-                    "Header slot cannot exceed tip slot".to_string()
+                    "Header slot cannot exceed tip slot".to_string(),
                 ));
             }
         }
@@ -612,11 +940,123 @@ pub fn validate_message(message: &ChainSyncMessage, config: &ChainSyncConfig) ->
     Ok(())
 }
 
+struct ServerContext {
+    server: Arc<ChainSyncServer>,
+    outbound_rx: AsyncMutex<mpsc::UnboundedReceiver<ChainSyncMessage>>,
+}
+
+impl ServerContext {
+    fn new(chain: &[BlockHeader]) -> Self {
+        let (server, outbound_rx, _inbound_tx) = ChainSyncServer::new(chain.to_vec());
+        Self {
+            server: Arc::new(server),
+            outbound_rx: AsyncMutex::new(outbound_rx),
+        }
+    }
+}
+
+/// Protocol handler bridging the ChainSync server with the network multiplexer
+#[derive(Clone)]
+pub struct ChainSyncProtocolHandler {
+    protocol_id: ProtocolId,
+    name: &'static str,
+    chain: Arc<Vec<BlockHeader>>,
+    contexts: Arc<AsyncMutex<HashMap<ConnectionId, Arc<ServerContext>>>>,
+}
+
+impl ChainSyncProtocolHandler {
+    /// Create a new handler using the provided chain of block headers
+    pub fn new(chain: Vec<BlockHeader>) -> Self {
+        Self {
+            protocol_id: ProtocolId::CHAINSYNC,
+            name: "ChainSync",
+            chain: Arc::new(chain),
+            contexts: Arc::new(AsyncMutex::new(HashMap::new())),
+        }
+    }
+
+    /// Create a handler backed by a mock chain of the given length (useful for testing)
+    pub fn with_mock_chain(length: usize) -> Self {
+        Self::new(create_mock_chain(length))
+    }
+
+    async fn get_context(&self, connection_id: ConnectionId) -> Arc<ServerContext> {
+        let mut contexts = self.contexts.lock().await;
+        if let Some(ctx) = contexts.get(&connection_id) {
+            return ctx.clone();
+        }
+
+        let context = Arc::new(ServerContext::new(self.chain.as_ref()));
+        contexts.insert(connection_id, context.clone());
+        context
+    }
+
+    fn decode_message(&self, payload: &Bytes) -> Result<ChainSyncMessage, ChainSyncError> {
+        let wire: ChainSyncWireMessage = minicbor::decode(payload)
+            .map_err(|err| ChainSyncError::SerializationError(err.to_string()))?;
+        wire.into_domain()
+    }
+
+    fn encode_message(&self, message: ChainSyncMessage) -> Result<Bytes, ChainSyncError> {
+        let wire = ChainSyncWireMessage::from_domain(message)?;
+        let encoded = minicbor::to_vec(&wire)
+            .map_err(|err| ChainSyncError::SerializationError(err.to_string()))?;
+        Ok(Bytes::from(encoded))
+    }
+}
+
+impl ProtocolHandler for ChainSyncProtocolHandler {
+    fn handle_message(
+        &self,
+        connection_id: ConnectionId,
+        message: Bytes,
+    ) -> Pin<Box<dyn std::future::Future<Output = NetworkResult<Option<Bytes>>> + Send>> {
+        let handler = self.clone();
+        Box::pin(async move { handler.process_message(connection_id, message).await })
+    }
+
+    fn protocol_id(&self) -> ProtocolId {
+        self.protocol_id
+    }
+
+    fn name(&self) -> &str {
+        self.name
+    }
+}
+impl ChainSyncProtocolHandler {
+    async fn process_message(
+        &self,
+        connection_id: ConnectionId,
+        payload: Bytes,
+    ) -> NetworkResult<Option<Bytes>> {
+        let message = self
+            .decode_message(&payload)
+            .map_err(|err| NetworkError::ProtocolError(err.to_string()))?;
+
+        let context = self.get_context(connection_id).await;
+
+        context
+            .server
+            .handle_message(message)
+            .await
+            .map_err(|err| NetworkError::ProtocolError(err.to_string()))?;
+
+        let mut outbound = context.outbound_rx.lock().await;
+        if let Some(response) = outbound.recv().await {
+            let bytes = self
+                .encode_message(response)
+                .map_err(|err| NetworkError::ProtocolError(err.to_string()))?;
+            Ok(Some(bytes))
+        } else {
+            Ok(None)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::time::timeout;
-    use std::time::Duration;
+    use crate::connection::ConnectionId;
 
     #[tokio::test]
     async fn test_chainsync_client_creation() {
@@ -696,5 +1136,56 @@ mod tests {
         let points = vec![Point::genesis(); config.max_intersection_points + 1];
         let message = ChainSyncMessage::FindIntersect { points };
         assert!(validate_message(&message, &config).is_err());
+    }
+
+    #[tokio::test]
+    async fn test_wire_roundtrip_conversion() {
+        let chain = create_mock_chain(3);
+        let header = chain.last().cloned().unwrap();
+        let tip = Tip::from_header(&header, chain.len() as u64);
+
+        let wire = ChainSyncWireMessage::from_domain(ChainSyncMessage::RollForward {
+            header: Box::new(header.clone()),
+            tip: tip.clone(),
+        })
+        .expect("wire encoding should succeed");
+
+        match wire.into_domain().expect("wire decoding should succeed") {
+            ChainSyncMessage::RollForward {
+                header: decoded_header,
+                tip: decoded_tip,
+            } => {
+                assert_eq!(decoded_header.slot, header.slot);
+                assert_eq!(decoded_header.block_body_hash, header.block_body_hash);
+                assert_eq!(decoded_tip.slot, tip.slot);
+                assert_eq!(decoded_tip.height, tip.height);
+            }
+            other => panic!("unexpected variant: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handler_processes_request_next() {
+        let handler = ChainSyncProtocolHandler::with_mock_chain(4);
+        let connection_id = ConnectionId::new();
+
+        let payload = Bytes::from(
+            minicbor::to_vec(&ChainSyncWireMessage::RequestNext)
+                .expect("serialization should succeed"),
+        );
+
+        let response = handler
+            .handle_message(connection_id, payload)
+            .await
+            .expect("handler should succeed")
+            .expect("response should be present");
+
+        let message: ChainSyncWireMessage =
+            minicbor::decode(&response).expect("response should decode");
+
+        match message {
+            ChainSyncWireMessage::RollForward { .. } => {}
+            other => panic!("unexpected handler response: {:?}", other),
+        }
     }
 }

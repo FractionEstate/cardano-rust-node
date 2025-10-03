@@ -6,26 +6,32 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
+use blake2::{Blake2b512, Digest};
 use tokio::net::TcpStream;
-use tokio::sync::{mpsc, RwLock, Mutex};
+use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio::task::JoinHandle;
-use tokio::time::{interval, timeout, sleep};
+use tokio::time::{interval, timeout};
+use tracing::{error, warn};
 
-use super::{
-    Connection, ConnectionEvent, ConnectionId, ConnectionLimits, ConnectionError, ProtocolId,
-};
-use super::multiplexer::{ConnectionMultiplexer, MultiplexerConfig, ProtocolHandler};
 use super::handshake::HandshakeProtocol;
+use super::monitor::{ConnectionMonitor, MonitorConfig};
+use super::multiplexer::{ConnectionMultiplexer, MultiplexerConfig, ProtocolHandler};
 use super::state::ConnectionStateMachine;
 use super::state::{ConnectionState, TransitionReason};
-use super::monitor::{ConnectionMonitor, MonitorConfig};
-use crate::diffusion::{PeerId, PeerInfo, PeerSelector, SelectionConfig};
+use super::{
+    Connection, ConnectionError, ConnectionEvent, ConnectionId, ConnectionLimits,
+    ConnectionRegistry, ProtocolId,
+};
+use crate::diffusion::{
+    ConnectionState as PeerConnectionState, PeerId, PeerInfo, PeerSelector, SelectionConfig,
+};
+use crate::protocols::chainsync::ChainSyncProtocolHandler;
 use crate::{NetworkError, Result};
 
 /// Connection management configuration
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ConnectionConfig {
     /// Connection limits and timeouts
     pub limits: ConnectionLimits,
@@ -37,18 +43,6 @@ pub struct ConnectionConfig {
     pub peer_selection: SelectionConfig,
     /// Automatic reconnection settings
     pub reconnect: ReconnectConfig,
-}
-
-impl Default for ConnectionConfig {
-    fn default() -> Self {
-        Self {
-            limits: ConnectionLimits::default(),
-            multiplexer: MultiplexerConfig::default(),
-            monitor: MonitorConfig::default(),
-            peer_selection: SelectionConfig::default(),
-            reconnect: ReconnectConfig::default(),
-        }
-    }
 }
 
 /// Automatic reconnection configuration
@@ -90,15 +84,9 @@ pub enum ManagementEvent {
         target_connections: usize,
     },
     /// Peer selection completed
-    PeerSelectionCompleted {
-        candidates: usize,
-        selected: usize,
-    },
+    PeerSelectionCompleted { candidates: usize, selected: usize },
     /// Connection limit reached
-    ConnectionLimitReached {
-        current: usize,
-        limit: usize,
-    },
+    ConnectionLimitReached { current: usize, limit: usize },
     /// Reconnection attempt started
     ReconnectionStarted {
         peer_id: PeerId,
@@ -118,7 +106,7 @@ pub struct ConnectionManager {
     /// Manager configuration
     config: ConnectionConfig,
     /// Active connections registry
-    connections: Arc<RwLock<HashMap<ConnectionId, Connection>>>,
+    connections: ConnectionRegistry,
     /// Connection state machines
     state_machines: Arc<RwLock<HashMap<ConnectionId, ConnectionStateMachine>>>,
     /// Peer to connection mapping
@@ -145,7 +133,7 @@ impl ConnectionManager {
         let monitor = ConnectionMonitor::new(config.monitor.clone()).await?;
         let (event_tx, event_rx) = mpsc::unbounded_channel();
 
-        Ok(Self {
+        let mut manager = Self {
             config,
             connections: Arc::new(RwLock::new(HashMap::new())),
             state_machines: Arc::new(RwLock::new(HashMap::new())),
@@ -157,7 +145,13 @@ impl ConnectionManager {
             event_rx: Some(event_rx),
             tasks: Vec::new(),
             shutdown_tx: None,
-        })
+        };
+
+        // Register default ChainSync protocol handler
+        let chainsync_handler = Arc::new(ChainSyncProtocolHandler::with_mock_chain(32));
+        manager.register_protocol(chainsync_handler).await?;
+
+        Ok(manager)
     }
 
     /// Start the connection manager
@@ -188,13 +182,34 @@ impl ConnectionManager {
         let mut handlers = self.protocol_handlers.write().await;
 
         if handlers.contains_key(&protocol_id) {
-            return Err(NetworkError::ProtocolError(
-                format!("Protocol {} already registered", protocol_id)
-            ));
+            return Err(NetworkError::ProtocolError(format!(
+                "Protocol {} already registered",
+                protocol_id
+            )));
         }
 
         handlers.insert(protocol_id, handler);
         Ok(())
+    }
+
+    /// Register a known peer with the selector
+    pub async fn add_peer(&self, peer: PeerInfo) -> Result<()> {
+        let mut selector = self.peer_selector.lock().await;
+        selector
+            .add_peer(peer)
+            .map_err(|err| NetworkError::PeerSelectionError(err.to_string()))
+    }
+
+    /// Attempt to connect to a known peer by identifier
+    pub async fn connect_peer(&self, peer_id: &PeerId) -> Result<ConnectionId> {
+        let peer_info = {
+            let selector = self.peer_selector.lock().await;
+            selector.get_peer(peer_id).cloned().ok_or_else(|| {
+                NetworkError::PeerSelectionError(format!("Peer {} not registered", peer_id))
+            })
+        }?;
+
+        self.clone_for_task().initiate_connection(peer_info).await
     }
 
     /// Connect to a specific peer
@@ -205,24 +220,35 @@ impl ConnectionManager {
             self.emit_event(ManagementEvent::ConnectionLimitReached {
                 current: current_connections,
                 limit: self.config.limits.max_connections,
-            }).await;
+            })
+            .await;
             return Err(NetworkError::ConnectionError(
-                ConnectionError::ProtocolViolation("Maximum connections reached".to_string())
+                ConnectionError::ProtocolViolation("Maximum connections reached".to_string()),
             ));
         }
 
-        // Create peer info (in real implementation, this would come from peer discovery)
-        let peer_id = PeerId::new([0u8; 32]); // Placeholder
+        // Derive a deterministic peer ID from the address so repeated calls reuse the same entry
+        let mut hasher = Blake2b512::new();
+        hasher.update(address.to_string().as_bytes());
+        let digest = hasher.finalize();
+        let mut peer_id_bytes = [0u8; 32];
+        peer_id_bytes.copy_from_slice(&digest[..32]);
+        let peer_id = PeerId::new(peer_id_bytes);
         let peer_info = PeerInfo::new(peer_id, address);
 
-        // Check if already connected to this peer
-        if let Some(_existing_id) = self.peer_connections.read().await.get(&peer_id) {
-            return Err(NetworkError::ConnectionError(
-                ConnectionError::ProtocolViolation("Already connected to this peer".to_string())
-            ));
+        {
+            let mut selector = self.peer_selector.lock().await;
+            if let Err(err) = selector.add_peer(peer_info.clone()) {
+                if !matches!(
+                    err,
+                    crate::diffusion::PeerSelectionError::PeerAlreadyExists(_)
+                ) {
+                    return Err(NetworkError::PeerSelectionError(err.to_string()));
+                }
+            }
         }
 
-        self.initiate_connection(peer_info).await
+        self.clone_for_task().initiate_connection(peer_info).await
     }
 
     /// Disconnect from a peer
@@ -233,7 +259,8 @@ impl ConnectionManager {
         };
 
         if let Some(conn_id) = connection_id {
-            self.close_connection(conn_id, TransitionReason::UserDisconnect).await?;
+            self.close_connection(conn_id, TransitionReason::UserDisconnect)
+                .await?;
         }
 
         Ok(())
@@ -245,10 +272,13 @@ impl ConnectionManager {
         let mut stats = HashMap::new();
 
         for (id, connection) in connections.iter() {
-            if let Some(multiplexer) = &connection.multiplexer {
-                // In a full implementation, we would extract stats from the multiplexer
-                stats.insert(*id, super::ConnectionStats::default());
+            let mut connection_stats = super::ConnectionStats::default();
+
+            if connection.is_active() {
+                connection_stats.connect_time = Some(connection.uptime());
             }
+
+            stats.insert(*id, connection_stats);
         }
 
         stats
@@ -283,129 +313,10 @@ impl ConnectionManager {
         };
 
         for conn_id in connection_ids {
-            let _ = self.close_connection(conn_id, TransitionReason::UserDisconnect).await;
+            let _ = self
+                .close_connection(conn_id, TransitionReason::UserDisconnect)
+                .await;
         }
-    }
-
-    /// Initiate connection to peer
-    async fn initiate_connection(&self, peer_info: PeerInfo) -> Result<ConnectionId> {
-        let connection_id = ConnectionId::new();
-        let peer_id = peer_info.peer_id;
-
-        // Create connection and state machine
-        let connection = Connection::new(peer_info.clone(), peer_info.address);
-        let mut state_machine = ConnectionStateMachine::new(connection_id, peer_id);
-
-        // Transition to connecting state
-        state_machine.transition(
-            ConnectionState::Connecting,
-            TransitionReason::UserInitiated,
-        ).map_err(ConnectionError::from)?;
-
-        // Store connection and state machine
-        {
-            let mut connections = self.connections.write().await;
-            let mut state_machines = self.state_machines.write().await;
-            let mut peer_connections = self.peer_connections.write().await;
-
-            connections.insert(connection_id, connection);
-            state_machines.insert(connection_id, state_machine);
-            peer_connections.insert(peer_id, connection_id);
-        }
-
-        // Emit connection event
-        self.emit_connection_event(ConnectionEvent::Connecting {
-            connection_id,
-            peer_id,
-            address: peer_info.address,
-        }).await;
-
-        // Start connection attempt in background
-        let manager = self.clone_for_task();
-        tokio::spawn(async move {
-            if let Err(e) = manager.establish_connection(connection_id, peer_info).await {
-                eprintln!("Connection establishment failed: {}", e);
-                let connection_error = match e {
-                    NetworkError::ConnectionError(ce) => ce,
-                    _ => ConnectionError::ProtocolViolation(e.to_string()),
-                };
-                let _ = manager.handle_connection_error(connection_id, connection_error).await;
-            }
-        });
-
-        Ok(connection_id)
-    }
-
-    /// Establish TCP connection and handshake
-    async fn establish_connection(&self, connection_id: ConnectionId, peer_info: PeerInfo) -> Result<()> {
-        let connect_timeout = self.config.limits.connect_timeout;
-        let handshake_timeout = self.config.limits.handshake_timeout;
-
-        // Establish TCP connection
-        let stream = timeout(connect_timeout, TcpStream::connect(peer_info.address))
-            .await
-            .map_err(|_| ConnectionError::Timeout)?
-            .map_err(ConnectionError::from)?;
-
-        // Update state to connected
-        {
-            let mut state_machines = self.state_machines.write().await;
-            if let Some(state_machine) = state_machines.get_mut(&connection_id) {
-                state_machine.transition(
-                    ConnectionState::Connected,
-                    TransitionReason::TcpEstablished,
-                )?;
-            }
-        }
-
-        // Emit connected event
-        self.emit_connection_event(ConnectionEvent::Connected {
-            connection_id,
-            peer_id: peer_info.peer_id,
-        }).await;
-
-        // Perform handshake
-        let handshake = HandshakeProtocol::new();
-        let protocol_version = timeout(handshake_timeout, handshake.perform_handshake(stream))
-            .await
-            .map_err(|_| ConnectionError::Timeout)?
-            .map_err(ConnectionError::HandshakeError)?;
-
-        // For now, skip creating multiplexer due to stream ownership issue
-        // In a full implementation, handshake would return the stream
-        let multiplexer = None;
-
-        // Register protocol handlers with multiplexer
-        // (In a full implementation, this would be done properly)
-
-        // Update connection with multiplexer
-        {
-            let mut connections = self.connections.write().await;
-            if let Some(connection) = connections.get_mut(&connection_id) {
-                connection.multiplexer = multiplexer;
-                connection.state = ConnectionState::Authenticated;
-            }
-        }
-
-        // Update state to authenticated
-        {
-            let mut state_machines = self.state_machines.write().await;
-            if let Some(state_machine) = state_machines.get_mut(&connection_id) {
-                state_machine.transition(
-                    ConnectionState::Authenticated,
-                    TransitionReason::HandshakeComplete,
-                )?;
-            }
-        }
-
-        // Emit authenticated event
-        self.emit_connection_event(ConnectionEvent::Authenticated {
-            connection_id,
-            peer_id: peer_info.peer_id,
-            protocol_version,
-        }).await;
-
-        Ok(())
     }
 
     /// Close a connection
@@ -414,93 +325,9 @@ impl ConnectionManager {
         connection_id: ConnectionId,
         reason: TransitionReason,
     ) -> Result<()> {
-        let peer_id = {
-            let mut connections = self.connections.write().await;
-            let mut state_machines = self.state_machines.write().await;
-            let mut peer_connections = self.peer_connections.write().await;
-
-            // Get peer ID before removal
-            let peer_id = connections.get(&connection_id)
-                .map(|conn| conn.peer.peer_id);
-
-            // Update state machine
-            if let Some(state_machine) = state_machines.get_mut(&connection_id) {
-                let _ = state_machine.transition(ConnectionState::Closing, reason.clone());
-            }
-
-            // Remove from collections
-            connections.remove(&connection_id);
-            state_machines.remove(&connection_id);
-
-            if let Some(peer_id) = peer_id {
-                peer_connections.remove(&peer_id);
-            }
-
-            peer_id
-        };
-
-        // Emit disconnection event
-        if let Some(peer_id) = peer_id {
-            self.emit_connection_event(ConnectionEvent::Disconnected {
-                connection_id,
-                peer_id,
-                reason: reason.to_string(),
-            }).await;
-        }
-
-        Ok(())
-    }
-
-    /// Handle connection error
-    async fn handle_connection_error(
-        &self,
-        connection_id: ConnectionId,
-        error: ConnectionError,
-    ) -> Result<()> {
-        let peer_id = {
-            let connections = self.connections.read().await;
-            connections.get(&connection_id)
-                .map(|conn| conn.peer.peer_id)
-        };
-
-        if let Some(peer_id) = peer_id {
-            // Emit error event
-            self.emit_connection_event(ConnectionEvent::Error {
-                connection_id,
-                peer_id,
-                error: error.clone(),
-            }).await;
-
-            // Update state machine to failed
-            {
-                let mut state_machines = self.state_machines.write().await;
-                if let Some(state_machine) = state_machines.get_mut(&connection_id) {
-                    state_machine.fail(
-                        TransitionReason::NetworkError,
-                        error.to_string(),
-                    );
-                }
-            }
-
-            // Schedule reconnection if enabled
-            if self.config.reconnect.enabled {
-                self.schedule_reconnection(peer_id).await;
-            }
-        }
-
-        // Clean up connection
-        self.close_connection(connection_id, TransitionReason::NetworkError).await
-    }
-
-    /// Schedule automatic reconnection
-    async fn schedule_reconnection(&self, peer_id: PeerId) {
-        // Implementation would track reconnection attempts and delays
-        // For now, just emit event
-        self.emit_event(ManagementEvent::ReconnectionStarted {
-            peer_id,
-            attempt: 1,
-            delay: self.config.reconnect.initial_delay,
-        }).await;
+        self.clone_for_task()
+            .close_connection(connection_id, reason)
+            .await
     }
 
     /// Spawn connection management task
@@ -578,54 +405,6 @@ impl ConnectionManager {
         Ok(task)
     }
 
-    /// Perform periodic maintenance
-    async fn perform_maintenance(&self) {
-        // Clean up failed connections, update statistics, etc.
-        let current_count = self.connection_count().await;
-        let target_count = self.config.peer_selection.target_connections;
-
-        self.emit_event(ManagementEvent::PoolSizeChanged {
-            active_connections: current_count,
-            target_connections: target_count,
-        }).await;
-    }
-
-    /// Perform peer selection
-    async fn perform_peer_selection(&self) {
-        let current_count = self.connection_count().await;
-        let target_count = self.config.peer_selection.target_connections;
-
-        if current_count < target_count {
-            let needed = target_count - current_count;
-
-            // Get candidates from peer selector
-            let candidates = {
-                let mut selector = self.peer_selector.lock().await;
-                selector.select_connection_candidates(needed)
-            };
-
-            self.emit_event(ManagementEvent::PeerSelectionCompleted {
-                candidates: candidates.len(),
-                selected: needed.min(candidates.len()),
-            }).await;
-
-            // Initiate connections to selected candidates
-            for peer_id in candidates.into_iter().take(needed) {
-                // Convert PeerId to PeerInfo (placeholder address)
-                let peer_info = PeerInfo::new(peer_id, "127.0.0.1:3001".parse().unwrap());
-                if let Err(e) = self.initiate_connection(peer_info).await {
-                    eprintln!("Failed to initiate connection: {}", e);
-                }
-            }
-        }
-    }
-
-    /// Emit connection event
-    async fn emit_connection_event(&self, event: ConnectionEvent) {
-        // In a full implementation, this would forward to interested subscribers
-        println!("Connection event: {:?}", event);
-    }
-
     /// Emit management event
     async fn emit_event(&self, event: ManagementEvent) {
         let _ = self.event_tx.send(event);
@@ -637,10 +416,9 @@ impl ConnectionManager {
             connections: self.connections.clone(),
             state_machines: self.state_machines.clone(),
             peer_connections: self.peer_connections.clone(),
-            protocol_handlers: self.protocol_handlers.clone(),
             peer_selector: self.peer_selector.clone(),
-            monitor: self.monitor.clone(),
             event_tx: self.event_tx.clone(),
+            protocol_handlers: self.protocol_handlers.clone(),
             config: self.config.clone(),
         }
     }
@@ -652,41 +430,340 @@ struct ConnectionManagerHandle {
     connections: Arc<RwLock<HashMap<ConnectionId, Connection>>>,
     state_machines: Arc<RwLock<HashMap<ConnectionId, ConnectionStateMachine>>>,
     peer_connections: Arc<RwLock<HashMap<PeerId, ConnectionId>>>,
-    protocol_handlers: Arc<RwLock<HashMap<ProtocolId, Arc<dyn ProtocolHandler>>>>,
     peer_selector: Arc<Mutex<PeerSelector>>,
-    monitor: Arc<ConnectionMonitor>,
     event_tx: mpsc::UnboundedSender<ManagementEvent>,
+    protocol_handlers: Arc<RwLock<HashMap<ProtocolId, Arc<dyn ProtocolHandler>>>>,
     config: ConnectionConfig,
 }
 
 impl ConnectionManagerHandle {
-    async fn establish_connection(&self, connection_id: ConnectionId, peer_info: PeerInfo) -> Result<()> {
-        // Implementation similar to ConnectionManager::establish_connection
-        // but using the handle's state
-        Err(NetworkError::ConnectionError(
-            ConnectionError::ProtocolViolation("Not implemented".to_string())
-        ))
+    async fn initiate_connection(&self, peer_info: PeerInfo) -> Result<ConnectionId> {
+        let connection_id = ConnectionId::new();
+        let peer_id = peer_info.peer_id;
+
+        let connection = Connection::new(peer_info.clone(), peer_info.address);
+        let mut state_machine = ConnectionStateMachine::new(connection_id, peer_id);
+
+        state_machine.transition(ConnectionState::Connecting, TransitionReason::UserInitiated)?;
+
+        {
+            let mut connections = self.connections.write().await;
+            let mut state_machines = self.state_machines.write().await;
+            let mut peer_connections = self.peer_connections.write().await;
+
+            connections.insert(connection_id, connection);
+            state_machines.insert(connection_id, state_machine);
+            peer_connections.insert(peer_id, connection_id);
+        }
+
+        {
+            let mut selector = self.peer_selector.lock().await;
+            if let Some(peer) = selector.get_peer_mut(&peer_id) {
+                peer.set_connection_state(PeerConnectionState::Connecting);
+            }
+        }
+
+        self.emit_connection_event(ConnectionEvent::Connecting {
+            connection_id,
+            peer_id,
+            address: peer_info.address,
+        })
+        .await;
+
+        let handle = self.clone();
+        tokio::spawn(async move {
+            if let Err(e) = handle
+                .establish_connection(connection_id, peer_info.clone())
+                .await
+            {
+                warn!("Connection establishment failed: {}", e);
+                let connection_error = match e {
+                    NetworkError::ConnectionError(ce) => ce,
+                    _ => ConnectionError::ProtocolViolation(e.to_string()),
+                };
+                if let Err(err) = handle
+                    .handle_connection_error(connection_id, connection_error)
+                    .await
+                {
+                    error!("Connection error handling failed: {}", err);
+                }
+            }
+        });
+
+        Ok(connection_id)
     }
 
-    async fn handle_connection_error(&self, connection_id: ConnectionId, error: ConnectionError) -> Result<()> {
-        // Implementation similar to ConnectionManager::handle_connection_error
-        Err(NetworkError::ConnectionError(
-            ConnectionError::ProtocolViolation("Not implemented".to_string())
-        ))
+    async fn establish_connection(
+        &self,
+        connection_id: ConnectionId,
+        peer_info: PeerInfo,
+    ) -> Result<()> {
+        let connect_timeout = self.config.limits.connect_timeout;
+        let handshake_timeout = self.config.limits.handshake_timeout;
+
+        let mut stream = timeout(connect_timeout, TcpStream::connect(peer_info.address))
+            .await
+            .map_err(|_| ConnectionError::Timeout)?
+            .map_err(ConnectionError::from)?;
+
+        {
+            let mut state_machines = self.state_machines.write().await;
+            if let Some(state_machine) = state_machines.get_mut(&connection_id) {
+                state_machine
+                    .transition(ConnectionState::Connected, TransitionReason::TcpEstablished)?;
+            }
+        }
+
+        self.emit_connection_event(ConnectionEvent::Connected {
+            connection_id,
+            peer_id: peer_info.peer_id,
+        })
+        .await;
+
+        let handshake = HandshakeProtocol::new();
+        let protocol_version = timeout(handshake_timeout, handshake.perform_handshake(&mut stream))
+            .await
+            .map_err(|_| ConnectionError::Timeout)?
+            .map_err(ConnectionError::HandshakeError)?;
+
+        let mut multiplexer =
+            ConnectionMultiplexer::new(connection_id, stream, self.config.multiplexer.clone())?;
+
+        let handlers = {
+            let guard = self.protocol_handlers.read().await;
+            guard.values().cloned().collect::<Vec<_>>()
+        };
+
+        for handler in handlers {
+            multiplexer.register_protocol(handler).await?;
+        }
+
+        let multiplexer = Arc::new(multiplexer);
+
+        {
+            let mut connections = self.connections.write().await;
+            if let Some(connection) = connections.get_mut(&connection_id) {
+                connection.multiplexer = Some(multiplexer);
+                connection.state = ConnectionState::Authenticated;
+            }
+        }
+
+        {
+            let mut state_machines = self.state_machines.write().await;
+            if let Some(state_machine) = state_machines.get_mut(&connection_id) {
+                state_machine.transition(
+                    ConnectionState::Authenticated,
+                    TransitionReason::HandshakeComplete,
+                )?;
+            }
+        }
+
+        self.emit_connection_event(ConnectionEvent::Authenticated {
+            connection_id,
+            peer_id: peer_info.peer_id,
+            protocol_version,
+        })
+        .await;
+
+        {
+            let mut selector = self.peer_selector.lock().await;
+            if let Err(err) = selector.handle_connection_success(&peer_info.peer_id) {
+                warn!("Failed to update peer selection after connection: {}", err);
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn handle_connection_error(
+        &self,
+        connection_id: ConnectionId,
+        error: ConnectionError,
+    ) -> Result<()> {
+        let peer_id = {
+            let connections = self.connections.read().await;
+            connections
+                .get(&connection_id)
+                .map(|conn| conn.peer.peer_id)
+        };
+
+        if let Some(peer_id) = peer_id {
+            self.emit_connection_event(ConnectionEvent::Error {
+                connection_id,
+                peer_id,
+                error: error.clone(),
+            })
+            .await;
+
+            {
+                let mut state_machines = self.state_machines.write().await;
+                if let Some(state_machine) = state_machines.get_mut(&connection_id) {
+                    state_machine.fail(TransitionReason::NetworkError, error.to_string());
+                }
+            }
+
+            {
+                let mut selector = self.peer_selector.lock().await;
+                if let Err(err) = selector.handle_connection_failure(&peer_id, error.to_string()) {
+                    warn!("Failed to record connection failure: {}", err);
+                }
+            }
+
+            if self.config.reconnect.enabled {
+                self.schedule_reconnection(peer_id).await;
+            }
+        }
+
+        self.close_connection(connection_id, TransitionReason::NetworkError)
+            .await
     }
 
     async fn perform_maintenance(&self) {
-        // Maintenance implementation
+        let current_count = self.connection_count().await;
+        let target_count = self.config.peer_selection.target_connections;
+
+        self.emit_event(ManagementEvent::PoolSizeChanged {
+            active_connections: current_count,
+            target_connections: target_count,
+        })
+        .await;
     }
 
     async fn perform_peer_selection(&self) {
-        // Peer selection implementation
+        let current_count = self.connection_count().await;
+        let target_count = self.config.peer_selection.target_connections;
+
+        if current_count >= target_count {
+            return;
+        }
+
+        let needed = target_count - current_count;
+
+        let (candidates, peer_infos) = {
+            let mut selector = self.peer_selector.lock().await;
+            let candidate_ids = selector.select_connection_candidates(needed);
+            let infos = candidate_ids
+                .iter()
+                .filter_map(|peer_id| selector.get_peer(peer_id).cloned())
+                .collect::<Vec<_>>();
+            (candidate_ids, infos)
+        };
+
+        self.emit_event(ManagementEvent::PeerSelectionCompleted {
+            candidates: candidates.len(),
+            selected: needed.min(candidates.len()),
+        })
+        .await;
+
+        for peer_info in peer_infos.into_iter().take(needed) {
+            if let Err(e) = self.initiate_connection(peer_info).await {
+                warn!("Failed to initiate connection: {}", e);
+            }
+        }
+    }
+
+    async fn close_connection(
+        &self,
+        connection_id: ConnectionId,
+        reason: TransitionReason,
+    ) -> Result<()> {
+        let peer_id = {
+            let mut connections = self.connections.write().await;
+            let mut state_machines = self.state_machines.write().await;
+            let mut peer_connections = self.peer_connections.write().await;
+
+            let peer_id = connections
+                .get(&connection_id)
+                .map(|conn| conn.peer.peer_id);
+
+            if let Some(state_machine) = state_machines.get_mut(&connection_id) {
+                let _ = state_machine.transition(ConnectionState::Closing, reason.clone());
+            }
+
+            connections.remove(&connection_id);
+            state_machines.remove(&connection_id);
+
+            if let Some(peer_id) = peer_id {
+                peer_connections.remove(&peer_id);
+            }
+
+            peer_id
+        };
+
+        if let Some(peer_id) = peer_id {
+            self.emit_connection_event(ConnectionEvent::Disconnected {
+                connection_id,
+                peer_id,
+                reason: reason.to_string(),
+            })
+            .await;
+
+            let mut selector = self.peer_selector.lock().await;
+            selector.handle_disconnection(&peer_id);
+        }
+
+        Ok(())
+    }
+
+    async fn schedule_reconnection(&self, peer_id: PeerId) {
+        self.emit_event(ManagementEvent::ReconnectionStarted {
+            peer_id,
+            attempt: 1,
+            delay: self.config.reconnect.initial_delay,
+        })
+        .await;
+    }
+
+    async fn connection_count(&self) -> usize {
+        self.connections.read().await.len()
+    }
+
+    async fn emit_connection_event(&self, event: ConnectionEvent) {
+        println!("Connection event: {:?}", event);
+    }
+
+    async fn emit_event(&self, event: ManagementEvent) {
+        let _ = self.event_tx.send(event);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use blake2::{Blake2b512, Digest};
+    use bytes::Bytes;
+    use std::pin::Pin;
+    use std::sync::Arc;
+    use tokio::net::TcpListener;
+
+    struct DummyProtocolHandler {
+        id: ProtocolId,
+        name: &'static str,
+    }
+
+    impl DummyProtocolHandler {
+        fn new(id: ProtocolId, name: &'static str) -> Self {
+            Self { id, name }
+        }
+    }
+
+    impl ProtocolHandler for DummyProtocolHandler {
+        fn handle_message(
+            &self,
+            _connection_id: ConnectionId,
+            _message: Bytes,
+        ) -> Pin<Box<dyn std::future::Future<Output = Result<Option<Bytes>>> + Send>> {
+            Box::pin(async { Ok(None) })
+        }
+
+        fn protocol_id(&self) -> ProtocolId {
+            self.id
+        }
+
+        fn name(&self) -> &str {
+            self.name
+        }
+    }
 
     #[tokio::test]
     async fn test_connection_manager_creation() {
@@ -694,6 +771,98 @@ mod tests {
         let manager = ConnectionManager::new(config).await.unwrap();
 
         assert_eq!(manager.connection_count().await, 0);
+    }
+
+    #[tokio::test]
+    async fn test_connect_peer_success() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        tokio::spawn(async move {
+            if let Ok((stream, _)) = listener.accept().await {
+                let handshake = HandshakeProtocol::new();
+                let mut stream = stream;
+                let _ = handshake.handle_handshake(&mut stream).await;
+            }
+        });
+
+        let mut config = ConnectionConfig::default();
+        config.limits.connect_timeout = Duration::from_secs(2);
+        config.limits.handshake_timeout = Duration::from_secs(2);
+        config.peer_selection.target_connections = 1;
+        config.peer_selection.max_connections = 1;
+
+        let mut manager = ConnectionManager::new(config).await.unwrap();
+        let mut hasher = Blake2b512::new();
+        hasher.update(addr.to_string().as_bytes());
+        let digest = hasher.finalize();
+        let mut peer_id_bytes = [0u8; 32];
+        peer_id_bytes.copy_from_slice(&digest[..32]);
+        let peer_id = PeerId::new(peer_id_bytes);
+        let peer = PeerInfo::new(peer_id, addr);
+
+        manager.add_peer(peer).await.unwrap();
+        manager.start().await.unwrap();
+
+        manager.connect_peer(&peer_id).await.unwrap();
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(manager.connection_count().await, 1);
+
+        manager.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn test_multiplexer_registers_protocols() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        tokio::spawn(async move {
+            if let Ok((stream, _)) = listener.accept().await {
+                let handshake = HandshakeProtocol::new();
+                let mut stream = stream;
+                let _ = handshake.handle_handshake(&mut stream).await;
+            }
+        });
+
+        let mut config = ConnectionConfig::default();
+        config.limits.connect_timeout = Duration::from_secs(2);
+        config.limits.handshake_timeout = Duration::from_secs(2);
+        config.peer_selection.target_connections = 1;
+        config.peer_selection.max_connections = 1;
+
+        let mut manager = ConnectionManager::new(config).await.unwrap();
+        let handler = Arc::new(DummyProtocolHandler::new(ProtocolId::GOSSIP, "Dummy"));
+        manager.register_protocol(handler).await.unwrap();
+
+        let mut hasher = Blake2b512::new();
+        hasher.update(addr.to_string().as_bytes());
+        let digest = hasher.finalize();
+        let mut peer_id_bytes = [0u8; 32];
+        peer_id_bytes.copy_from_slice(&digest[..32]);
+        let peer_id = PeerId::new(peer_id_bytes);
+        let peer = PeerInfo::new(peer_id, addr);
+
+        manager.add_peer(peer).await.unwrap();
+        manager.start().await.unwrap();
+        manager.connect_peer(&peer_id).await.unwrap();
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let multiplexer = {
+            let connections = manager.connections.read().await;
+            let connection = connections.values().next().unwrap();
+            connection.multiplexer.clone()
+        };
+
+        assert!(multiplexer.is_some());
+
+        let registered = multiplexer.unwrap().registered_protocols().await;
+
+        assert!(registered.contains(&ProtocolId::CHAINSYNC));
+        assert!(registered.contains(&ProtocolId::GOSSIP));
+
+        manager.shutdown().await;
     }
 
     #[test]

@@ -4,12 +4,14 @@
 
 mod api;
 mod node;
-mod t082_node_lifecycle;
+mod node_lifecycle;
+mod network_integration;
 
 // Re-export test modules
 pub use api::*;
 pub use node::*;
-pub use t082_node_lifecycle::*;
+pub use node_lifecycle::*;
+pub use network_integration::*;
 
 // Node Integration Tests - T081 Configuration Loading Tests
 use cardano_node::NodeConfiguration;

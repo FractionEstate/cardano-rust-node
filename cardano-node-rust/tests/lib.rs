@@ -19,7 +19,7 @@ mod network;
 mod storage;
 mod api;
 mod node;
-mod node;
+mod common;
 
 // T066: LMDB Backend Tests - Export for integration testing
 pub use storage::test_lmdb_backend::*;

@@ -3,7 +3,6 @@ use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 
-
 /// Peer advertisement message for peer discovery
 #[derive(Debug, Clone, PartialEq)]
 pub struct PeerAdvertisement {
@@ -35,7 +34,7 @@ pub struct AdvertisedPeer {
 impl From<&PeerInfo> for AdvertisedPeer {
     fn from(peer: &PeerInfo) -> Self {
         Self {
-            peer_id: peer.peer_id.clone(),
+            peer_id: peer.peer_id,
             address: peer.address,
             is_relay: peer.is_relay,
             stake_pool_id: peer.stake_pool_id.clone(),
@@ -95,11 +94,8 @@ pub struct PeerGossip {
 }
 
 /// Unique identifier for an advertisement
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
-struct AdvertisementId {
-    source: PeerId,
-    timestamp_nanos: u64,
-}
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+struct AdvertisementId(u64);
 
 /// Cached advertisement information
 #[derive(Debug, Clone)]
@@ -129,11 +125,16 @@ pub struct GossipStats {
 impl PeerGossip {
     /// Create a new peer gossip manager
     pub fn new(config: GossipConfig, local_peer_id: PeerId) -> Self {
+        let now = Instant::now();
+        let last_advertisement = now
+            .checked_sub(config.advertisement_interval)
+            .unwrap_or(now);
+
         Self {
             config,
             local_peer_id,
             advertisement_cache: HashMap::new(),
-            last_advertisement: Instant::now(),
+            last_advertisement,
             peers_to_advertise: HashSet::new(),
             stats: GossipStats::default(),
         }
@@ -150,7 +151,10 @@ impl PeerGossip {
     }
 
     /// Create an advertisement for our known peers
-    pub fn create_advertisement(&mut self, peers: &HashMap<PeerId, PeerInfo>) -> Option<PeerAdvertisement> {
+    pub fn create_advertisement(
+        &mut self,
+        peers: &HashMap<PeerId, PeerInfo>,
+    ) -> Option<PeerAdvertisement> {
         let now = Instant::now();
 
         // Check if it's time to send an advertisement
@@ -159,13 +163,16 @@ impl PeerGossip {
         }
 
         // Select peers to advertise
-        let advertised_peers: Vec<AdvertisedPeer> = self.peers_to_advertise.iter()
+        let advertised_peers: Vec<AdvertisedPeer> = self
+            .peers_to_advertise
+            .iter()
             .filter_map(|peer_id| peers.get(peer_id))
             .filter(|peer| {
                 // Only advertise peers with good reputation
                 peer.reputation.value() >= self.config.min_advertisement_reputation
-                && peer.is_available()
-                && peer.peer_id != self.local_peer_id // Don't advertise ourselves
+                    && !peer.reputation.is_banned()
+                    && !matches!(peer.connection_state, ConnectionState::Banned)
+                    && peer.peer_id != self.local_peer_id // Don't advertise ourselves
             })
             .take(self.config.max_peers_per_advertisement)
             .map(AdvertisedPeer::from)
@@ -179,7 +186,7 @@ impl PeerGossip {
             peers: advertised_peers,
             ttl: self.config.max_ttl,
             timestamp: now,
-            source: self.local_peer_id.clone(),
+            source: self.local_peer_id,
         };
 
         self.last_advertisement = now;
@@ -187,11 +194,14 @@ impl PeerGossip {
 
         // Cache our own advertisement
         let ad_id = self.get_advertisement_id(&advertisement);
-        self.advertisement_cache.insert(ad_id, CachedAdvertisement {
-            advertisement: advertisement.clone(),
-            received_at: now,
-            forwarded_count: 0,
-        });
+        self.advertisement_cache.insert(
+            ad_id,
+            CachedAdvertisement {
+                advertisement: advertisement.clone(),
+                received_at: now,
+                forwarded_count: 0,
+            },
+        );
 
         Some(advertisement)
     }
@@ -209,8 +219,12 @@ impl PeerGossip {
 
         // Check if we've seen this advertisement before
         let ad_id = self.get_advertisement_id(&advertisement);
-        if let Some(_cached) = self.advertisement_cache.get(&ad_id) {
+        if let Some(cached) = self.advertisement_cache.get_mut(&ad_id) {
             self.stats.duplicate_advertisements += 1;
+            if advertisement.timestamp > cached.advertisement.timestamp {
+                cached.advertisement = advertisement.clone();
+                cached.received_at = now;
+            }
             return Ok(ProcessResult::Duplicate);
         }
 
@@ -229,7 +243,7 @@ impl PeerGossip {
 
             // Convert to PeerInfo
             let peer_info = PeerInfo {
-                peer_id: advertised_peer.peer_id.clone(),
+                peer_id: advertised_peer.peer_id,
                 address: advertised_peer.address,
                 connection_state: ConnectionState::Disconnected,
                 reputation: ReputationScore::default(),
@@ -242,6 +256,7 @@ impl PeerGossip {
                 last_successful_connection: None,
                 bytes_sent: 0,
                 bytes_received: 0,
+                critical_misbehavior_count: 0,
                 protocol_version: advertised_peer.protocol_version,
                 metadata: HashMap::new(),
             };
@@ -249,15 +264,18 @@ impl PeerGossip {
         }
 
         // Cache the advertisement
-        self.advertisement_cache.insert(ad_id, CachedAdvertisement {
-            advertisement: advertisement.clone(),
-            received_at: now,
-            forwarded_count: 0,
-        });
+        self.advertisement_cache.insert(
+            ad_id,
+            CachedAdvertisement {
+                advertisement: advertisement.clone(),
+                received_at: now,
+                forwarded_count: 0,
+            },
+        );
 
         // Determine if we should forward this advertisement
-        let should_forward = advertisement.ttl > 1
-            && self.should_forward_advertisement(&advertisement);
+        let should_forward =
+            advertisement.ttl > 1 && self.should_forward_advertisement(&advertisement);
 
         let result = ProcessResult::NewPeers {
             peers: new_peers,
@@ -270,7 +288,10 @@ impl PeerGossip {
     }
 
     /// Create a forwarded advertisement (decremented TTL)
-    pub fn create_forwarded_advertisement(&mut self, original: &PeerAdvertisement) -> Option<PeerAdvertisement> {
+    pub fn create_forwarded_advertisement(
+        &mut self,
+        original: &PeerAdvertisement,
+    ) -> Option<PeerAdvertisement> {
         if original.ttl <= 1 {
             return None;
         }
@@ -288,7 +309,7 @@ impl PeerGossip {
             peers: original.peers.clone(),
             ttl: original.ttl - 1,
             timestamp: original.timestamp,
-            source: original.source.clone(),
+            source: original.source,
         })
     }
 
@@ -298,15 +319,16 @@ impl PeerGossip {
         let cutoff = now - self.config.advertisement_cache_duration;
 
         // Remove old cached advertisements
-        self.advertisement_cache.retain(|_, cached| {
-            cached.received_at > cutoff
-        });
+        self.advertisement_cache
+            .retain(|_, cached| cached.received_at > cutoff);
 
         // Limit cache size
         if self.advertisement_cache.len() > self.config.max_cached_advertisements {
             // Remove oldest entries
-            let mut entries: Vec<_> = self.advertisement_cache.iter()
-                .map(|(id, cached)| (id.clone(), cached.received_at))
+            let mut entries: Vec<_> = self
+                .advertisement_cache
+                .iter()
+                .map(|(id, cached)| (*id, cached.received_at))
                 .collect();
 
             entries.sort_by_key(|(_, time)| *time);
@@ -362,10 +384,21 @@ impl PeerGossip {
     }
 
     fn get_advertisement_id(&self, advertisement: &PeerAdvertisement) -> AdvertisementId {
-        AdvertisementId {
-            source: advertisement.source.clone(),
-            timestamp_nanos: advertisement.timestamp.elapsed().as_nanos() as u64,
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let mut hasher = DefaultHasher::new();
+        advertisement.source.hash(&mut hasher);
+        advertisement.ttl.hash(&mut hasher);
+        for peer in &advertisement.peers {
+            peer.peer_id.hash(&mut hasher);
+            peer.address.hash(&mut hasher);
+            peer.is_relay.hash(&mut hasher);
+            peer.stake_pool_id.hash(&mut hasher);
+            peer.protocol_version.hash(&mut hasher);
         }
+
+        AdvertisementId(hasher.finish())
     }
 
     fn should_forward_advertisement(&self, _advertisement: &PeerAdvertisement) -> bool {
@@ -415,7 +448,9 @@ impl std::fmt::Display for GossipError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             GossipError::InvalidTtl(ttl) => write!(f, "Invalid TTL: {}", ttl),
-            GossipError::TooManyPeers(count) => write!(f, "Too many peers in advertisement: {}", count),
+            GossipError::TooManyPeers(count) => {
+                write!(f, "Too many peers in advertisement: {}", count)
+            }
             GossipError::EmptyAdvertisement => write!(f, "Advertisement contains no peers"),
             GossipError::InvalidAddress(addr) => write!(f, "Invalid peer address: {}", addr),
             GossipError::ValidationError(msg) => write!(f, "Validation error: {}", msg),
@@ -440,11 +475,7 @@ pub struct PeerDiscovery {
 
 impl PeerDiscovery {
     /// Create a new peer discovery service
-    pub fn new(
-        gossip_config: GossipConfig,
-        local_peer_id: PeerId,
-        dns_seeds: Vec<String>,
-    ) -> Self {
+    pub fn new(gossip_config: GossipConfig, local_peer_id: PeerId, dns_seeds: Vec<String>) -> Self {
         Self {
             gossip: PeerGossip::new(gossip_config, local_peer_id),
             dns_seeds,
@@ -482,7 +513,10 @@ impl PeerDiscovery {
         Ok(discovered_peers)
     }
 
-    async fn resolve_dns_seed(&self, seed: &str) -> Result<Vec<PeerInfo>, Box<dyn std::error::Error>> {
+    async fn resolve_dns_seed(
+        &self,
+        seed: &str,
+    ) -> Result<Vec<PeerInfo>, Box<dyn std::error::Error>> {
         // In a real implementation, this would perform DNS queries
         // For testing, we'll return empty or mock some peers
 
@@ -496,15 +530,13 @@ impl PeerDiscovery {
         let port: u16 = parts[1].parse()?;
 
         // Mock DNS resolution - in practice would use tokio::net::lookup_host
-        let mock_peers = vec![
-            PeerInfo::new(
-                PeerId::new([100; 32]),
-                std::net::SocketAddr::new(
-                    std::net::IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)),
-                    port
-                )
-            )
-        ];
+        let mock_peers = vec![PeerInfo::new(
+            PeerId::new([100; 32]),
+            std::net::SocketAddr::new(
+                std::net::IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)),
+                port,
+            ),
+        )];
 
         Ok(mock_peers)
     }
@@ -528,7 +560,7 @@ impl PeerDiscovery {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::net::{Ipv4Addr, IpAddr};
+    use std::net::{IpAddr, Ipv4Addr};
 
     fn create_test_peer_info(id: u8, port: u16) -> PeerInfo {
         let peer_id = PeerId::random(id);
@@ -554,8 +586,8 @@ mod tests {
         // Add some peers
         for i in 2..=5 {
             let peer = create_test_peer_info(i, 3000 + i as u16);
-            gossip.add_peer_to_advertise(peer.peer_id.clone());
-            peers.insert(peer.peer_id.clone(), peer);
+            gossip.add_peer_to_advertise(peer.peer_id);
+            peers.insert(peer.peer_id, peer);
         }
 
         let advertisement = gossip.create_advertisement(&peers).unwrap();
@@ -626,7 +658,10 @@ mod tests {
         let result = gossip.process_advertisement(advertisement.clone()).unwrap();
 
         match result {
-            ProcessResult::NewPeers { peers, should_forward: _ } => {
+            ProcessResult::NewPeers {
+                peers,
+                should_forward: _,
+            } => {
                 assert_eq!(peers.len(), 1);
                 assert_eq!(peers[0].peer_id, PeerId::random(2));
                 assert_eq!(peers[0].stake_pool_id, Some("pool123".to_string()));
@@ -638,7 +673,7 @@ mod tests {
         // Process same advertisement again - should be duplicate
         let result2 = gossip.process_advertisement(advertisement).unwrap();
         match result2 {
-            ProcessResult::Duplicate => {}, // Expected
+            ProcessResult::Duplicate => {} // Expected
             _ => panic!("Expected Duplicate result"),
         }
     }
@@ -667,10 +702,7 @@ mod tests {
         assert_eq!(forwarded.source, original.source);
 
         // TTL 1 should not be forwarded
-        let ttl_1_ad = PeerAdvertisement {
-            ttl: 1,
-            ..original
-        };
+        let ttl_1_ad = PeerAdvertisement { ttl: 1, ..original };
 
         assert!(gossip.create_forwarded_advertisement(&ttl_1_ad).is_none());
     }
@@ -682,8 +714,8 @@ mod tests {
 
         // Add peer to advertise
         let peer = create_test_peer_info(2, 3000);
-        gossip.add_peer_to_advertise(peer.peer_id.clone());
-        peers.insert(peer.peer_id.clone(), peer);
+        gossip.add_peer_to_advertise(peer.peer_id);
+        peers.insert(peer.peer_id, peer);
 
         // Create advertisement
         gossip.create_advertisement(&peers);
@@ -717,11 +749,7 @@ mod tests {
         let local_peer_id = PeerId::random(1);
         let dns_seeds = vec!["seed1.cardano.org:3001".to_string()];
 
-        let mut discovery = PeerDiscovery::new(
-            GossipConfig::default(),
-            local_peer_id,
-            dns_seeds,
-        );
+        let mut discovery = PeerDiscovery::new(GossipConfig::default(), local_peer_id, dns_seeds);
 
         // This would normally perform real DNS lookups
         // For now, it should return empty or mock results

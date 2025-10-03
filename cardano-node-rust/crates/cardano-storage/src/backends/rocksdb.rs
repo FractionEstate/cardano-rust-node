@@ -6,7 +6,7 @@
 use super::{BackendStats, BatchOperation, StorageBackend};
 use crate::{Result, StorageError};
 use async_trait::async_trait;
-use rocksdb::{DB, Options, WriteBatch, IteratorMode};
+use rocksdb::{IteratorMode, Options, WriteBatch, DB};
 use std::path::Path;
 use std::sync::Arc;
 use tokio::task;
@@ -50,9 +50,10 @@ impl Default for RocksDbConfig {
 impl RocksDbConfig {
     /// Create a new RocksDB configuration with the given path
     pub fn with_path<P: AsRef<Path>>(path: P) -> Self {
-        let mut config = Self::default();
-        config.path = path.as_ref().to_path_buf();
-        config
+        Self {
+            path: path.as_ref().to_path_buf(),
+            ..Default::default()
+        }
     }
 
     /// Convert to RocksDB Options
@@ -96,8 +97,9 @@ impl RocksDbBackend {
     /// Create a new RocksDB backend with the given configuration
     pub fn new(config: RocksDbConfig) -> Result<Self> {
         // Create directory if it doesn't exist
-        std::fs::create_dir_all(&config.path)
-            .map_err(|e| StorageError::DatabaseError(format!("Failed to create database directory: {}", e)))?;
+        std::fs::create_dir_all(&config.path).map_err(|e| {
+            StorageError::DatabaseError(format!("Failed to create database directory: {}", e))
+        })?;
 
         let opts = config.to_rocksdb_options();
         let db = DB::open(&opts, &config.path)
@@ -120,9 +122,15 @@ impl RocksDbBackend {
         &self.db
     }
 
+    /// Get a reference to the backend configuration
+    pub fn config(&self) -> &RocksDbConfig {
+        &self.config
+    }
+
     /// Flush all data to disk
     pub fn flush(&self) -> Result<()> {
-        self.db.flush()
+        self.db
+            .flush()
             .map_err(|e| StorageError::DatabaseError(format!("Failed to flush RocksDB: {}", e)))
     }
 
@@ -141,7 +149,8 @@ impl StorageBackend for RocksDbBackend {
         let db = Arc::clone(&self.db);
         task::spawn_blocking(move || -> Result<()> {
             // Test basic read operation to ensure DB is working
-            let _ = db.get(b"__health_check__")
+            let _ = db
+                .get(b"__health_check__")
                 .map_err(|e| StorageError::DatabaseError(format!("Health check failed: {}", e)))?;
             Ok(())
         })
@@ -155,8 +164,9 @@ impl StorageBackend for RocksDbBackend {
         // Flush any remaining data
         let db = Arc::clone(&self.db);
         task::spawn_blocking(move || -> Result<()> {
-            db.flush()
-                .map_err(|e| StorageError::DatabaseError(format!("Failed to flush during close: {}", e)))?;
+            db.flush().map_err(|e| {
+                StorageError::DatabaseError(format!("Failed to flush during close: {}", e))
+            })?;
 
             // RocksDB handles cleanup automatically when dropped
             Ok(())
@@ -214,12 +224,13 @@ impl StorageBackend for RocksDbBackend {
         let db = Arc::clone(&self.db);
         let key = key.to_vec();
 
-        let exists = task::spawn_blocking(move || {
-            match db.get(&key) {
-                Ok(Some(_)) => Ok(true),
-                Ok(None) => Ok(false),
-                Err(e) => Err(StorageError::DatabaseError(format!("Failed to check key existence: {}", e))),
-            }
+        let exists = task::spawn_blocking(move || match db.get(&key) {
+            Ok(Some(_)) => Ok(true),
+            Ok(None) => Ok(false),
+            Err(e) => Err(StorageError::DatabaseError(format!(
+                "Failed to check key existence: {}",
+                e
+            ))),
         })
         .await
         .map_err(|e| StorageError::DatabaseError(format!("Task join error: {}", e)))??;
@@ -244,8 +255,9 @@ impl StorageBackend for RocksDbBackend {
                 }
             }
 
-            db.write(batch)
-                .map_err(|e| StorageError::DatabaseError(format!("Failed to execute batch operations: {}", e)))
+            db.write(batch).map_err(|e| {
+                StorageError::DatabaseError(format!("Failed to execute batch operations: {}", e))
+            })
         })
         .await
         .map_err(|e| StorageError::DatabaseError(format!("Task join error: {}", e)))??;
@@ -282,7 +294,10 @@ impl StorageBackend for RocksDbBackend {
                         total_size += (key.len() + value.len()) as u64;
                     }
                     Err(e) => {
-                        return Err(StorageError::DatabaseError(format!("Failed to iterate database: {}", e)));
+                        return Err(StorageError::DatabaseError(format!(
+                            "Failed to iterate database: {}",
+                            e
+                        )));
                     }
                 }
             }
@@ -378,8 +393,14 @@ mod tests {
         backend.batch(operations).await.unwrap();
 
         // Verify results
-        assert_eq!(backend.get(b"key1").await.unwrap().as_deref(), Some(b"value1".as_slice()));
-        assert_eq!(backend.get(b"key2").await.unwrap().as_deref(), Some(b"value2".as_slice()));
+        assert_eq!(
+            backend.get(b"key1").await.unwrap().as_deref(),
+            Some(b"value1".as_slice())
+        );
+        assert_eq!(
+            backend.get(b"key2").await.unwrap().as_deref(),
+            Some(b"value2".as_slice())
+        );
         assert_eq!(backend.get(b"key3").await.unwrap(), None);
     }
 

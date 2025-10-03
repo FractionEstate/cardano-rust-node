@@ -4,9 +4,9 @@
 //! and enhanced address formats. This era forms the foundation for Cardano's
 //! proof-of-stake consensus mechanism with decentralized stake pools.
 
-use crate::{LedgerError, Result, Coin, Epoch, Slot};
-use cardano_crypto::{Blake2b256Hash, Ed25519KeyHash, Ed25519Signature, VrfOutput, VrfProof};
-use std::collections::{HashMap, BTreeMap, BTreeSet};
+use crate::{Coin, Epoch, LedgerError, Result, Slot};
+use cardano_crypto::{Blake2b256Hash, Ed25519KeyHash, Ed25519Signature};
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Shelley era transaction
 #[derive(Debug, Clone)]
@@ -52,8 +52,8 @@ pub enum NetworkId {
 /// Stake credential for addresses and certificates
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum StakeCredential {
-    Key(Ed25519KeyHash),     // Key-based credential
-    Script(Blake2b256Hash),  // Script-based credential
+    Key(Ed25519KeyHash),    // Key-based credential
+    Script(Blake2b256Hash), // Script-based credential
 }
 
 /// Reward address for staking rewards
@@ -132,7 +132,7 @@ pub enum Relay {
 /// Pool metadata reference
 #[derive(Debug, Clone)]
 pub struct PoolMetadata {
-    pub url: String,           // Max 64 characters
+    pub url: String, // Max 64 characters
     pub metadata_hash: Blake2b256Hash,
 }
 
@@ -170,10 +170,7 @@ pub enum NativeScript {
     /// Require any one of the nested scripts
     ScriptAny(Vec<NativeScript>),
     /// Require N of the nested scripts
-    ScriptNOfK {
-        n: u32,
-        scripts: Vec<NativeScript>,
-    },
+    ScriptNOfK { n: u32, scripts: Vec<NativeScript> },
 }
 
 /// Shelley ledger state
@@ -228,36 +225,43 @@ pub struct Pointer {
 /// Shelley protocol parameters
 #[derive(Debug, Clone)]
 pub struct ShelleyProtocolParameters {
-    pub min_fee_a: Coin,              // Linear fee coefficient
-    pub min_fee_b: Coin,              // Linear fee constant
-    pub max_block_body_size: u32,     // Maximum block body size
-    pub max_tx_size: u32,             // Maximum transaction size
-    pub max_block_header_size: u32,   // Maximum block header size
-    pub key_deposit: Coin,            // Deposit for stake key registration
-    pub pool_deposit: Coin,           // Deposit for pool registration
-    pub min_utxo: Coin,               // Minimum UTXO value
-    pub min_pool_cost: Coin,          // Minimum pool cost
-    pub price_mem: UnitInterval,      // Memory price for Plutus scripts
-    pub price_step: UnitInterval,     // Step price for Plutus scripts
-    pub max_tx_ex_mem: u64,           // Maximum transaction execution memory
-    pub max_tx_ex_steps: u64,         // Maximum transaction execution steps
-    pub max_block_ex_mem: u64,        // Maximum block execution memory
-    pub max_block_ex_steps: u64,      // Maximum block execution steps
-    pub max_val_size: u32,            // Maximum value size
-    pub collateral_percentage: u32,   // Collateral percentage
-    pub max_collateral_inputs: u32,   // Maximum collateral inputs
+    pub min_fee_a: Coin,            // Linear fee coefficient
+    pub min_fee_b: Coin,            // Linear fee constant
+    pub max_block_body_size: u32,   // Maximum block body size
+    pub max_tx_size: u32,           // Maximum transaction size
+    pub max_block_header_size: u32, // Maximum block header size
+    pub key_deposit: Coin,          // Deposit for stake key registration
+    pub pool_deposit: Coin,         // Deposit for pool registration
+    pub min_utxo: Coin,             // Minimum UTXO value
+    pub min_pool_cost: Coin,        // Minimum pool cost
+    pub price_mem: UnitInterval,    // Memory price for Plutus scripts
+    pub price_step: UnitInterval,   // Step price for Plutus scripts
+    pub max_tx_ex_mem: u64,         // Maximum transaction execution memory
+    pub max_tx_ex_steps: u64,       // Maximum transaction execution steps
+    pub max_block_ex_mem: u64,      // Maximum block execution memory
+    pub max_block_ex_steps: u64,    // Maximum block execution steps
+    pub max_val_size: u32,          // Maximum value size
+    pub collateral_percentage: u32, // Collateral percentage
+    pub max_collateral_inputs: u32, // Maximum collateral inputs
 }
 
 impl UnitInterval {
     /// Create a new unit interval (fraction between 0 and 1)
     pub fn new(numerator: u64, denominator: u64) -> Result<Self> {
         if denominator == 0 {
-            return Err(LedgerError::InvalidTransaction("Zero denominator in unit interval".to_string()));
+            return Err(LedgerError::InvalidTransaction(
+                "Zero denominator in unit interval".to_string(),
+            ));
         }
         if numerator > denominator {
-            return Err(LedgerError::InvalidTransaction("Unit interval numerator exceeds denominator".to_string()));
+            return Err(LedgerError::InvalidTransaction(
+                "Unit interval numerator exceeds denominator".to_string(),
+            ));
         }
-        Ok(Self { numerator, denominator })
+        Ok(Self {
+            numerator,
+            denominator,
+        })
     }
 
     /// Get the fraction as a floating point number
@@ -303,10 +307,7 @@ impl ShelleyAddress {
     }
 
     /// Create an enterprise address (no staking component)
-    pub fn new_enterprise(
-        network: NetworkId,
-        payment_credential: StakeCredential,
-    ) -> Self {
+    pub fn new_enterprise(network: NetworkId, payment_credential: StakeCredential) -> Self {
         Self {
             network,
             payment_credential,
@@ -346,23 +347,31 @@ impl ShelleyTransaction {
     pub fn validate(&self, protocol_params: &ShelleyProtocolParameters) -> Result<()> {
         // Check inputs not empty
         if self.inputs.is_empty() {
-            return Err(LedgerError::InvalidTransaction("Transaction has no inputs".to_string()));
+            return Err(LedgerError::InvalidTransaction(
+                "Transaction has no inputs".to_string(),
+            ));
         }
 
         // Check outputs not empty
         if self.outputs.is_empty() {
-            return Err(LedgerError::InvalidTransaction("Transaction has no outputs".to_string()));
+            return Err(LedgerError::InvalidTransaction(
+                "Transaction has no outputs".to_string(),
+            ));
         }
 
         // Check fee is non-zero
         if self.fee == 0 {
-            return Err(LedgerError::InvalidTransaction("Transaction fee is zero".to_string()));
+            return Err(LedgerError::InvalidTransaction(
+                "Transaction fee is zero".to_string(),
+            ));
         }
 
         // Check outputs meet minimum UTXO requirement
         for output in &self.outputs {
             if output.amount < protocol_params.min_utxo {
-                return Err(LedgerError::InvalidTransaction("Output below minimum UTXO".to_string()));
+                return Err(LedgerError::InvalidTransaction(
+                    "Output below minimum UTXO".to_string(),
+                ));
             }
         }
 
@@ -379,13 +388,15 @@ impl ShelleyTransaction {
         let mut total = 0u64;
 
         for output in &self.outputs {
-            total = total.checked_add(output.amount)
+            total = total
+                .checked_add(output.amount)
                 .ok_or_else(|| LedgerError::ValueOverflow("Output sum overflow".to_string()))?;
         }
 
         // Add withdrawals
         for &withdrawal in self.withdrawals.values() {
-            total = total.checked_add(withdrawal)
+            total = total
+                .checked_add(withdrawal)
                 .ok_or_else(|| LedgerError::ValueOverflow("Withdrawal sum overflow".to_string()))?;
         }
 
@@ -397,9 +408,11 @@ impl ShelleyTransaction {
         let mut total = 0u64;
 
         for input in &self.inputs {
-            let output = utxo.utxo_map.get(input)
-                .ok_or_else(|| LedgerError::InvalidInput("Input not found in UTxO set".to_string()))?;
-            total = total.checked_add(output.amount)
+            let output = utxo.utxo_map.get(input).ok_or_else(|| {
+                LedgerError::InvalidInput("Input not found in UTxO set".to_string())
+            })?;
+            total = total
+                .checked_add(output.amount)
                 .ok_or_else(|| LedgerError::ValueOverflow("Input sum overflow".to_string()))?;
         }
 
@@ -409,7 +422,9 @@ impl ShelleyTransaction {
     /// Calculate transaction fee
     pub fn calculate_min_fee(&self, protocol_params: &ShelleyProtocolParameters) -> Coin {
         let tx_size = self.estimate_size();
-        protocol_params.min_fee_a.saturating_mul(tx_size as u64)
+        protocol_params
+            .min_fee_a
+            .saturating_mul(tx_size as u64)
             .saturating_add(protocol_params.min_fee_b)
     }
 
@@ -442,9 +457,7 @@ impl Certificate {
                 // Delegation is always valid structurally
                 Ok(())
             }
-            Certificate::PoolRegistration(pool_reg) => {
-                pool_reg.validate()
-            }
+            Certificate::PoolRegistration(pool_reg) => pool_reg.validate(),
             Certificate::PoolRetirement { .. } => {
                 // Pool retirement is always valid structurally
                 Ok(())
@@ -476,22 +489,34 @@ impl PoolRegistration {
     pub fn validate(&self) -> Result<()> {
         // Check margin is valid unit interval
         if self.margin.numerator() > self.margin.denominator() {
-            return Err(LedgerError::InvalidCertificate("Invalid pool margin".to_string()));
+            return Err(LedgerError::InvalidCertificate(
+                "Invalid pool margin".to_string(),
+            ));
         }
 
         // Check pool has at least one owner
         if self.pool_owners.is_empty() {
-            return Err(LedgerError::InvalidCertificate("Pool must have at least one owner".to_string()));
+            return Err(LedgerError::InvalidCertificate(
+                "Pool must have at least one owner".to_string(),
+            ));
         }
 
         // Check metadata URL length
         if let Some(ref metadata) = self.pool_metadata {
             if metadata.url.len() > 64 {
-                return Err(LedgerError::InvalidCertificate("Metadata URL too long".to_string()));
+                return Err(LedgerError::InvalidCertificate(
+                    "Metadata URL too long".to_string(),
+                ));
             }
         }
 
         Ok(())
+    }
+}
+
+impl Default for ShelleyUtxo {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -528,9 +553,10 @@ impl ShelleyUtxo {
         // Remove consumed inputs
         for input in &tx.inputs {
             if !self.contains(input) {
-                return Err(LedgerError::InvalidInput(
-                    format!("Input {:?} not found in UTxO set", input.transaction_id)
-                ));
+                return Err(LedgerError::InvalidInput(format!(
+                    "Input {:?} not found in UTxO set",
+                    input.transaction_id
+                )));
             }
             self.remove_output(input);
         }
@@ -553,11 +579,18 @@ impl ShelleyUtxo {
         let mut total = 0u64;
 
         for output in self.utxo_map.values() {
-            total = total.checked_add(output.amount)
+            total = total
+                .checked_add(output.amount)
                 .ok_or_else(|| LedgerError::ValueOverflow("UTxO total overflow".to_string()))?;
         }
 
         Ok(total)
+    }
+}
+
+impl Default for ShelleyLedgerState {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -586,12 +619,13 @@ impl ShelleyLedgerState {
         // Check balance
         let input_value = tx.total_input_value(&self.utxo)?;
         let output_value = tx.total_output_value()?;
-        let total_output_with_fee = output_value.checked_add(tx.fee)
+        let total_output_with_fee = output_value
+            .checked_add(tx.fee)
             .ok_or_else(|| LedgerError::ValueOverflow("Output + fee overflow".to_string()))?;
 
         if input_value < total_output_with_fee {
             return Err(LedgerError::InsufficientFunds(
-                "Transaction outputs + fee exceed inputs".to_string()
+                "Transaction outputs + fee exceed inputs".to_string(),
             ));
         }
 
@@ -609,7 +643,9 @@ impl ShelleyLedgerState {
         self.utxo.apply_transaction(tx)?;
 
         // Add fee to collected fees
-        self.fees = self.fees.checked_add(tx.fee)
+        self.fees = self
+            .fees
+            .checked_add(tx.fee)
             .ok_or_else(|| LedgerError::ValueOverflow("Fee accumulation overflow".to_string()))?;
 
         Ok(())
@@ -624,38 +660,69 @@ impl ShelleyLedgerState {
         match cert {
             Certificate::StakeRegistration(stake_cred) => {
                 let deposit = protocol_params.key_deposit;
-                self.account_state.stake_credentials.insert(stake_cred.clone(), deposit);
-                self.deposited = self.deposited.checked_add(deposit)
+                self.account_state
+                    .stake_credentials
+                    .insert(stake_cred.clone(), deposit);
+                self.deposited = self
+                    .deposited
+                    .checked_add(deposit)
                     .ok_or_else(|| LedgerError::ValueOverflow("Deposit overflow".to_string()))?;
             }
             Certificate::StakeDeregistration(stake_cred) => {
                 if let Some(deposit) = self.account_state.stake_credentials.remove(stake_cred) {
-                    self.deposited = self.deposited.checked_sub(deposit)
-                        .ok_or_else(|| LedgerError::ValueUnderflow("Deposit underflow".to_string()))?;
+                    self.deposited = self.deposited.checked_sub(deposit).ok_or_else(|| {
+                        LedgerError::ValueUnderflow("Deposit underflow".to_string())
+                    })?;
                     // Refund goes to treasury (simplified)
-                    self.account_state.treasury = self.account_state.treasury.checked_add(deposit)
-                        .ok_or_else(|| LedgerError::ValueOverflow("Treasury overflow".to_string()))?;
+                    self.account_state.treasury = self
+                        .account_state
+                        .treasury
+                        .checked_add(deposit)
+                        .ok_or_else(|| {
+                            LedgerError::ValueOverflow("Treasury overflow".to_string())
+                        })?;
                 }
                 // Remove delegation
                 self.delegation_state.delegations.remove(stake_cred);
             }
-            Certificate::StakeDelegation { stake_credential, pool_id } => {
+            Certificate::StakeDelegation {
+                stake_credential,
+                pool_id,
+            } => {
                 // Check if stake credential is registered
-                if !self.account_state.stake_credentials.contains_key(stake_credential) {
-                    return Err(LedgerError::InvalidCertificate("Stake credential not registered".to_string()));
+                if !self
+                    .account_state
+                    .stake_credentials
+                    .contains_key(stake_credential)
+                {
+                    return Err(LedgerError::InvalidCertificate(
+                        "Stake credential not registered".to_string(),
+                    ));
                 }
-                self.delegation_state.delegations.insert(stake_credential.clone(), *pool_id);
+                self.delegation_state
+                    .delegations
+                    .insert(stake_credential.clone(), *pool_id);
             }
             Certificate::PoolRegistration(pool_reg) => {
                 let deposit = protocol_params.pool_deposit;
-                self.pool_state.pool_params.insert(pool_reg.pool_id, pool_reg.clone());
-                self.pool_state.pool_deposits.insert(pool_reg.pool_id, deposit);
-                self.deposited = self.deposited.checked_add(deposit)
-                    .ok_or_else(|| LedgerError::ValueOverflow("Pool deposit overflow".to_string()))?;
+                self.pool_state
+                    .pool_params
+                    .insert(pool_reg.pool_id, pool_reg.clone());
+                self.pool_state
+                    .pool_deposits
+                    .insert(pool_reg.pool_id, deposit);
+                self.deposited = self.deposited.checked_add(deposit).ok_or_else(|| {
+                    LedgerError::ValueOverflow("Pool deposit overflow".to_string())
+                })?;
             }
-            Certificate::PoolRetirement { pool_id, retirement_epoch } => {
+            Certificate::PoolRetirement {
+                pool_id,
+                retirement_epoch,
+            } => {
                 if self.pool_state.pool_params.contains_key(pool_id) {
-                    self.pool_state.retiring_pools.insert(*pool_id, *retirement_epoch);
+                    self.pool_state
+                        .retiring_pools
+                        .insert(*pool_id, *retirement_epoch);
                 }
             }
         }
@@ -664,16 +731,25 @@ impl ShelleyLedgerState {
 
     /// Process a reward withdrawal
     fn process_withdrawal(&mut self, reward_addr: &RewardAddress, amount: Coin) -> Result<()> {
-        let current_balance = self.account_state.reward_accounts.get(reward_addr).copied().unwrap_or(0);
+        let current_balance = self
+            .account_state
+            .reward_accounts
+            .get(reward_addr)
+            .copied()
+            .unwrap_or(0);
         if current_balance < amount {
-            return Err(LedgerError::InsufficientFunds("Insufficient reward balance".to_string()));
+            return Err(LedgerError::InsufficientFunds(
+                "Insufficient reward balance".to_string(),
+            ));
         }
 
         let new_balance = current_balance - amount;
         if new_balance == 0 {
             self.account_state.reward_accounts.remove(reward_addr);
         } else {
-            self.account_state.reward_accounts.insert(reward_addr.clone(), new_balance);
+            self.account_state
+                .reward_accounts
+                .insert(reward_addr.clone(), new_balance);
         }
 
         Ok(())
@@ -694,16 +770,32 @@ impl ShelleyLedgerState {
         }
 
         for stake_cred in self.delegation_state.delegations.keys() {
-            if let StakeCredential::Key(key_hash) = stake_cred {
+            if let StakeCredential::Key(_) = stake_cred {
                 let reward_addr = RewardAddress::new(NetworkId::Mainnet, stake_cred.clone());
-                let current_balance = self.account_state.reward_accounts.get(&reward_addr).copied().unwrap_or(0);
-                let new_balance = current_balance.checked_add(reward_per_delegator)
-                    .ok_or_else(|| LedgerError::ValueOverflow("Reward balance overflow".to_string()))?;
-                self.account_state.reward_accounts.insert(reward_addr, new_balance);
+                let current_balance = self
+                    .account_state
+                    .reward_accounts
+                    .get(&reward_addr)
+                    .copied()
+                    .unwrap_or(0);
+                let new_balance = current_balance
+                    .checked_add(reward_per_delegator)
+                    .ok_or_else(|| {
+                        LedgerError::ValueOverflow("Reward balance overflow".to_string())
+                    })?;
+                self.account_state
+                    .reward_accounts
+                    .insert(reward_addr, new_balance);
             }
         }
 
         Ok(())
+    }
+}
+
+impl Default for AccountState {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -719,6 +811,12 @@ impl AccountState {
     }
 }
 
+impl Default for PoolState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PoolState {
     /// Create new pool state
     pub fn new() -> Self {
@@ -731,9 +829,16 @@ impl PoolState {
 
     /// Get active pools (not retiring)
     pub fn active_pools(&self) -> Vec<&PoolId> {
-        self.pool_params.keys()
+        self.pool_params
+            .keys()
             .filter(|pool_id| !self.retiring_pools.contains_key(pool_id))
             .collect()
+    }
+}
+
+impl Default for DelegationState {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -756,32 +861,32 @@ impl ShelleyProtocolParameters {
     /// Create mainnet protocol parameters
     pub fn mainnet() -> Self {
         Self {
-            min_fee_a: 44,                  // 0.000044 ADA per byte
-            min_fee_b: 155381,              // 0.155381 ADA base fee
-            max_block_body_size: 90112,     // ~90KB
-            max_tx_size: 16384,             // 16KB
-            max_block_header_size: 1100,    // 1.1KB
-            key_deposit: 2_000_000,         // 2 ADA
-            pool_deposit: 500_000_000,      // 500 ADA
-            min_utxo: 1_000_000,            // 1 ADA
-            min_pool_cost: 340_000_000,     // 340 ADA
+            min_fee_a: 44,                                         // 0.000044 ADA per byte
+            min_fee_b: 155381,                                     // 0.155381 ADA base fee
+            max_block_body_size: 90112,                            // ~90KB
+            max_tx_size: 16384,                                    // 16KB
+            max_block_header_size: 1100,                           // 1.1KB
+            key_deposit: 2_000_000,                                // 2 ADA
+            pool_deposit: 500_000_000,                             // 500 ADA
+            min_utxo: 1_000_000,                                   // 1 ADA
+            min_pool_cost: 340_000_000,                            // 340 ADA
             price_mem: UnitInterval::new(577, 10000).unwrap(),     // 0.0577 per memory unit
             price_step: UnitInterval::new(721, 10000000).unwrap(), // 0.0000721 per step
-            max_tx_ex_mem: 14_000_000,      // 14M memory units
-            max_tx_ex_steps: 10_000_000_000, // 10B steps
-            max_block_ex_mem: 62_000_000,   // 62M memory units
-            max_block_ex_steps: 40_000_000_000, // 40B steps
-            max_val_size: 5000,             // 5000 bytes
-            collateral_percentage: 150,     // 150% (1.5x)
-            max_collateral_inputs: 3,       // Maximum 3 collateral inputs
+            max_tx_ex_mem: 14_000_000,                             // 14M memory units
+            max_tx_ex_steps: 10_000_000_000,                       // 10B steps
+            max_block_ex_mem: 62_000_000,                          // 62M memory units
+            max_block_ex_steps: 40_000_000_000,                    // 40B steps
+            max_val_size: 5000,                                    // 5000 bytes
+            collateral_percentage: 150,                            // 150% (1.5x)
+            max_collateral_inputs: 3,                              // Maximum 3 collateral inputs
         }
     }
 
     /// Create testnet protocol parameters
     pub fn testnet() -> Self {
         let mut params = Self::mainnet();
-        params.key_deposit = 2_000_000;      // 2 ADA
-        params.pool_deposit = 500_000_000;   // 500 ADA
+        params.key_deposit = 2_000_000; // 2 ADA
+        params.pool_deposit = 500_000_000; // 500 ADA
         params
     }
 }
@@ -836,14 +941,16 @@ mod tests {
         let pool_reg = PoolRegistration {
             pool_id: Ed25519KeyHash::from_test_data(b"pool"),
             vrf_key: VrfKey::from_bytes([1; 32]),
-            pledge: 1000_000_000, // 1000 ADA
-            cost: 340_000_000,    // 340 ADA
+            pledge: 1_000_000_000,                     // 1000 ADA
+            cost: 340_000_000,                         // 340 ADA
             margin: UnitInterval::new(1, 20).unwrap(), // 5%
             reward_account: RewardAddress::new(
                 NetworkId::Mainnet,
-                StakeCredential::Key(Ed25519KeyHash::from_test_data(b"pool_owner"))
+                StakeCredential::Key(Ed25519KeyHash::from_test_data(b"pool_owner")),
             ),
-            pool_owners: vec![Ed25519KeyHash::from_test_data(b"owner1")].into_iter().collect(),
+            pool_owners: vec![Ed25519KeyHash::from_test_data(b"owner1")]
+                .into_iter()
+                .collect(),
             relays: vec![],
             pool_metadata: None,
         };
@@ -864,11 +971,13 @@ mod tests {
             inputs: vec![ShelleyTxIn {
                 transaction_id: Blake2b256Hash::hash(b"input_tx"),
                 output_index: 0,
-            }].into_iter().collect(),
+            }]
+            .into_iter()
+            .collect(),
             outputs: vec![ShelleyTxOut {
                 address: ShelleyAddress::new_enterprise(
                     NetworkId::Testnet,
-                    StakeCredential::Key(Ed25519KeyHash::from_test_data(b"output"))
+                    StakeCredential::Key(Ed25519KeyHash::from_test_data(b"output")),
                 ),
                 amount: 2_000_000, // 2 ADA
             }],
@@ -898,7 +1007,7 @@ mod tests {
         let tx_out = ShelleyTxOut {
             address: ShelleyAddress::new_enterprise(
                 NetworkId::Testnet,
-                StakeCredential::Key(Ed25519KeyHash::from_test_data(b"test"))
+                StakeCredential::Key(Ed25519KeyHash::from_test_data(b"test")),
             ),
             amount: 1_000_000,
         };
@@ -927,7 +1036,7 @@ mod tests {
         let tx_out = ShelleyTxOut {
             address: ShelleyAddress::new_enterprise(
                 NetworkId::Testnet,
-                StakeCredential::Key(Ed25519KeyHash::from_test_data(b"genesis"))
+                StakeCredential::Key(Ed25519KeyHash::from_test_data(b"genesis")),
             ),
             amount: 10_000_000, // 10 ADA
         };
@@ -939,7 +1048,7 @@ mod tests {
             outputs: vec![ShelleyTxOut {
                 address: ShelleyAddress::new_enterprise(
                     NetworkId::Testnet,
-                    StakeCredential::Key(Ed25519KeyHash::from_test_data(b"output"))
+                    StakeCredential::Key(Ed25519KeyHash::from_test_data(b"output")),
                 ),
                 amount: 9_000_000, // 9 ADA
             }],
@@ -951,7 +1060,11 @@ mod tests {
         };
 
         let result = ledger.apply_transaction(&tx, &params);
-        assert!(result.is_ok(), "Transaction application failed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Transaction application failed: {:?}",
+            result.err()
+        );
 
         // Check that fee was collected
         assert_eq!(ledger.fees, 1_000_000);
@@ -971,7 +1084,10 @@ mod tests {
 
         // Check deposit was taken
         assert_eq!(ledger.deposited, params.key_deposit);
-        assert!(ledger.account_state.stake_credentials.contains_key(&stake_cred));
+        assert!(ledger
+            .account_state
+            .stake_credentials
+            .contains_key(&stake_cred));
 
         // Then delegate to pool
         let delegation_cert = Certificate::StakeDelegation {
@@ -981,7 +1097,10 @@ mod tests {
         assert!(ledger.apply_certificate(&delegation_cert, &params).is_ok());
 
         // Check delegation was recorded
-        assert_eq!(ledger.delegation_state.get_delegation(&stake_cred), Some(&pool_id));
+        assert_eq!(
+            ledger.delegation_state.get_delegation(&stake_cred),
+            Some(&pool_id)
+        );
     }
 
     #[test]
@@ -992,14 +1111,16 @@ mod tests {
         let pool_reg = PoolRegistration {
             pool_id: Ed25519KeyHash::from_test_data(b"pool"),
             vrf_key: VrfKey::from_bytes([1; 32]),
-            pledge: 1000_000_000,
+            pledge: 1_000_000_000,
             cost: 340_000_000,
             margin: UnitInterval::new(1, 20).unwrap(),
             reward_account: RewardAddress::new(
                 NetworkId::Testnet,
-                StakeCredential::Key(Ed25519KeyHash::from_test_data(b"pool_owner"))
+                StakeCredential::Key(Ed25519KeyHash::from_test_data(b"pool_owner")),
             ),
-            pool_owners: vec![Ed25519KeyHash::from_test_data(b"owner1")].into_iter().collect(),
+            pool_owners: vec![Ed25519KeyHash::from_test_data(b"owner1")]
+                .into_iter()
+                .collect(),
             relays: vec![],
             pool_metadata: None,
         };
@@ -1008,9 +1129,15 @@ mod tests {
         assert!(ledger.apply_certificate(&pool_cert, &params).is_ok());
 
         // Check pool was registered
-        assert!(ledger.pool_state.pool_params.contains_key(&pool_reg.pool_id));
+        assert!(ledger
+            .pool_state
+            .pool_params
+            .contains_key(&pool_reg.pool_id));
         assert_eq!(ledger.deposited, params.pool_deposit);
-        assert!(ledger.pool_state.active_pools().contains(&&pool_reg.pool_id));
+        assert!(ledger
+            .pool_state
+            .active_pools()
+            .contains(&&pool_reg.pool_id));
     }
 
     #[test]

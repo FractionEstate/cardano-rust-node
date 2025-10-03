@@ -6,28 +6,40 @@ use anyhow::Result;
 
 // Re-export CLI components from the cli module
 pub mod cli;
-pub use cli::{CardanoNodeCli, Commands, RunArgs, VersionArgs, ValidateArgs, InfoArgs, parse_cli, parse_cli_from, parse_cli_from_without_validation};
+pub use cli::{
+    parse_cli, parse_cli_from, parse_cli_from_without_validation, CardanoNodeCli, Commands,
+    InfoArgs, RunArgs, ValidateArgs, VersionArgs,
+};
+
+// Re-export command handlers
+pub mod commands;
+pub use commands::*;
+
+// Dashboard module
+pub mod dashboard;
+pub use dashboard::Dashboard;
 
 // Re-export configuration components from the config module
 pub mod config;
 pub use config::{
-    NodeConfiguration, NetworkTopology, TopologyProducer,
-    AdvancedNodeConfiguration, ProtocolVersion, LoggingConfiguration, TracingConfiguration,
-    ConfigurationManager, ConfigTestHelper
+    AccessPoint, BootstrapPeer, ConfigTestHelper, ConfigurationManager, LedgerDBConfig, LocalRoot,
+    LogRotationConfig, LoggingOptions, NetworkTopology, NodeConfiguration, PublicRoot,
+    SubtraceConfig, TopologyProducer,
 };
 
 // Re-export node runtime components
 pub mod run;
-pub use run::{NodeRuntime, NodeState, NodeEvent, NodeRuntimeError, run_node_runtime};
-
-
+pub use run::{run_node_runtime, NodeEvent, NodeRuntime, NodeRuntimeError, NodeState};
 
 /// Main node execution function
-/// 
+///
 /// This function initializes the configuration and starts the node runtime.
 /// It integrates with the new NodeRuntime for complete node functionality.
 pub async fn run_node(args: RunArgs) -> Result<()> {
-    tracing::info!("Starting Cardano Node with configuration: {:?}", args.config);
+    tracing::info!(
+        "Starting Cardano Node with configuration: {:?}",
+        args.config
+    );
 
     // Initialize configuration manager
     let mut config_manager = ConfigurationManager::new();
@@ -35,7 +47,10 @@ pub async fn run_node(args: RunArgs) -> Result<()> {
     // Load and validate configuration if provided
     if let Some(config_path) = &args.config {
         config_manager.load_config(config_path)?;
-        tracing::info!("Node configuration loaded successfully from: {:?}", config_path);
+        tracing::info!(
+            "Node configuration loaded successfully from: {:?}",
+            config_path
+        );
     } else {
         tracing::info!("No configuration file provided, using defaults");
     }
@@ -46,7 +61,10 @@ pub async fn run_node(args: RunArgs) -> Result<()> {
     // Load topology file if specified
     if let Some(topology_path) = &args.topology {
         config_manager.load_topology(topology_path)?;
-        tracing::info!("Network topology loaded successfully from: {:?}", topology_path);
+        tracing::info!(
+            "Network topology loaded successfully from: {:?}",
+            topology_path
+        );
     }
 
     // Validate all configurations
@@ -57,7 +75,8 @@ pub async fn run_node(args: RunArgs) -> Result<()> {
     run_node_runtime(config_manager).await?;
 
     Ok(())
-}#[cfg(test)]
+}
+#[cfg(test)]
 mod tests {
     use super::*;
 

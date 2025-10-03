@@ -244,13 +244,7 @@ impl ConnectionInfo {
         }
 
         // Create transition record
-        let transition = StateTransition::new(
-            self.id,
-            self.peer_id,
-            self.state,
-            new_state,
-            reason,
-        );
+        let transition = StateTransition::new(self.id, self.peer_id, self.state, new_state, reason);
 
         // Update state and timestamps
         self.state = new_state;
@@ -272,18 +266,9 @@ impl ConnectionInfo {
     }
 
     /// Force transition to failed state with error
-    pub fn fail_with_error(
-        &mut self,
-        reason: TransitionReason,
-        error: String,
-    ) -> StateTransition {
-        let transition = StateTransition::with_error(
-            self.id,
-            self.peer_id,
-            self.state,
-            reason,
-            error.clone(),
-        );
+    pub fn fail_with_error(&mut self, reason: TransitionReason, error: String) -> StateTransition {
+        let transition =
+            StateTransition::with_error(self.id, self.peer_id, self.state, reason, error.clone());
 
         self.state = ConnectionState::Failed;
         self.state_since = SystemTime::now();
@@ -302,11 +287,8 @@ impl ConnectionInfo {
 
     /// Get total connection time if connected
     pub fn connection_duration(&self) -> Option<Duration> {
-        self.connected_at.and_then(|connected| {
-            SystemTime::now()
-                .duration_since(connected)
-                .ok()
-        })
+        self.connected_at
+            .and_then(|connected| SystemTime::now().duration_since(connected).ok())
     }
 
     /// Check if connection has been authenticated
@@ -490,20 +472,20 @@ mod tests {
         assert_eq!(machine.current_state(), ConnectionState::Disconnected);
 
         // Valid transition sequence
-        assert!(machine.transition(
-            ConnectionState::Connecting,
-            TransitionReason::UserInitiated
-        ).is_ok());
+        assert!(machine
+            .transition(ConnectionState::Connecting, TransitionReason::UserInitiated)
+            .is_ok());
 
-        assert!(machine.transition(
-            ConnectionState::Connected,
-            TransitionReason::TcpEstablished
-        ).is_ok());
+        assert!(machine
+            .transition(ConnectionState::Connected, TransitionReason::TcpEstablished)
+            .is_ok());
 
-        assert!(machine.transition(
-            ConnectionState::Authenticated,
-            TransitionReason::HandshakeComplete
-        ).is_ok());
+        assert!(machine
+            .transition(
+                ConnectionState::Authenticated,
+                TransitionReason::HandshakeComplete
+            )
+            .is_ok());
 
         // Check final state
         assert_eq!(machine.current_state(), ConnectionState::Authenticated);
@@ -519,11 +501,14 @@ mod tests {
         // Try invalid transition
         let result = machine.transition(
             ConnectionState::Authenticated,
-            TransitionReason::UserInitiated
+            TransitionReason::UserInitiated,
         );
 
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), ConnectionError::InvalidState { .. }));
+        assert!(matches!(
+            result.unwrap_err(),
+            ConnectionError::InvalidState { .. }
+        ));
     }
 
     #[test]

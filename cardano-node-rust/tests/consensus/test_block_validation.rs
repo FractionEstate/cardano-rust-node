@@ -5,8 +5,19 @@
 //! ledger state transitions, and protocol compliance checks.
 
 use cardano_consensus::{ConsensusError, Result};
-use cardano_crypto::{Blake2b256Hash, Ed25519KeyHash, VrfProof, VrfOutput};
+use cardano_crypto::{
+    Blake2b256Hash,
+    Ed25519KeyHash,
+    VrfOutput,
+    VrfProof,
+    VRF_OUTPUT_LENGTH,
+};
 use std::collections::HashMap;
+
+#[path = "../common/mod.rs"]
+mod common;
+
+use common::vrf::{vrf_prove_message, vrf_public_key};
 
 pub use crate::test_ouroboros_protocol::{
     BlockHeader, SlotNumber, EpochNumber, ConsensusState, StakeDistribution,
@@ -270,7 +281,7 @@ impl ValidationPipeline {
         self.validate_operational_certificate(&header.operational_cert, header.slot)?;
 
         // VRF output validation
-        if header.vrf_output.as_bytes().len() != 32 {
+        if header.vrf_output.as_bytes().len() != VRF_OUTPUT_LENGTH {
             return Err(ConsensusError::InvalidVrfProof("Invalid VRF output length".to_string()));
         }
 
@@ -394,23 +405,32 @@ impl ValidationPipeline {
             return Err(ConsensusError::InvalidVrfProof("Empty VRF proof".to_string()));
         }
 
+        if header.vrf_proof != *proof {
+            return Err(ConsensusError::InvalidVrfProof(
+                "Proof of leadership does not match header".to_string(),
+            ));
+        }
+
         // Check pool is in stake distribution
         if !self.ledger_state.stake_distribution.pools.contains_key(&header.issuer_vkey) {
             return Err(ConsensusError::PoolNotFound("Pool not in stake distribution".to_string()));
         }
 
-        // In a real implementation, this would:
-        // 1. Reconstruct VRF input from epoch nonce and slot
-        // 2. Verify VRF proof cryptographically
-        // 3. Check that VRF output meets leadership threshold
+        // Reconstruct VRF payload from epoch nonce and slot
+        let mut payload = Vec::with_capacity(
+            self.consensus_state.epoch_nonce.as_bytes().len() + std::mem::size_of::<SlotNumber>(),
+        );
+        payload.extend_from_slice(self.consensus_state.epoch_nonce.as_bytes());
+        payload.extend_from_slice(&header.slot.to_le_bytes());
 
-        // Simplified validation
-        let pool_stake = &self.ledger_state.stake_distribution.pools[&header.issuer_vkey];
-        let relative_stake = pool_stake.stake as f64 / self.ledger_state.stake_distribution.total_stake as f64;
+        // Verify VRF proof using public key (test harness uses golden key)
+        let public_key = vrf_public_key();
+        let is_valid = public_key
+            .try_verify(&payload, &header.vrf_output, proof)
+            .map_err(|err| ConsensusError::InvalidVrfProof(format!("VRF verification error: {}", err)))?;
 
-        // Very basic threshold check (real implementation would use VRF output)
-        if relative_stake < 0.000001 { // Pool must have at least 0.0001% stake
-            return Err(ConsensusError::InvalidVrfProof("Pool stake too small for leadership".to_string()));
+        if !is_valid {
+            return Err(ConsensusError::InvalidVrfProof("VRF proof verification failed".to_string()));
         }
 
         Ok(())
@@ -641,25 +661,20 @@ impl ValidationLedgerState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_block_production::create_test_producer;
 
-    fn create_test_block() -> ForgedBlock {
-        let header = BlockHeader {
-            slot: 1000,
-            prev_hash: Blake2b256Hash::new(b"prev_hash"),
-            issuer_vkey: Ed25519KeyHash::new(b"test_pool"),
-            vrf_proof: VrfProof::new(b"vrf_proof_test"),
-            vrf_output: VrfOutput::new(b"vrf_output_123456789012345678901234567890"),
-            block_body_hash: Blake2b256Hash::new(b"body_hash"),
-            block_size: 1000,
-            operational_cert: OperationalCertificate {
-                hot_vkey: Ed25519KeyHash::new(b"hot_key"),
-                sequence_number: 1,
-                kes_period: 0,
-                sigma: Blake2b256Hash::new(b"cold_signature"),
-            },
-            protocol_magic: 764824073,
-        };
+    fn vrf_pair_for(consensus_state: &ConsensusState, slot: SlotNumber) -> (VrfOutput, VrfProof) {
+        let mut payload = Vec::with_capacity(
+            consensus_state.epoch_nonce.as_bytes().len() + std::mem::size_of::<SlotNumber>(),
+        );
+        payload.extend_from_slice(consensus_state.epoch_nonce.as_bytes());
+        payload.extend_from_slice(&slot.to_le_bytes());
+
+        super::vrf_prove_message(&payload)
+    }
+
+    fn create_test_block(consensus_state: &ConsensusState) -> ForgedBlock {
+        let slot = 1000;
+        let (vrf_output, vrf_proof) = vrf_pair_for(consensus_state, slot);
 
         let transactions = vec![
             Transaction {
@@ -683,22 +698,43 @@ mod tests {
             total_size: 300,
         };
 
+        let proof_of_leadership = vrf_proof.clone();
+
+        let header = BlockHeader {
+            slot,
+            prev_hash: Blake2b256Hash::new(b"prev_hash"),
+            issuer_vkey: Ed25519KeyHash::new(b"test_pool"),
+            vrf_proof,
+            vrf_output,
+            block_body_hash: Blake2b256Hash::new(b"body_hash"),
+            block_size: 1000,
+            operational_cert: OperationalCertificate {
+                hot_vkey: Ed25519KeyHash::new(b"hot_key"),
+                sequence_number: 1,
+                kes_period: slot / 129600,
+                sigma: Blake2b256Hash::new(b"cold_signature"),
+            },
+            protocol_magic: 764824073,
+        };
+
         ForgedBlock {
             header,
             body,
-            proof_of_leadership: VrfProof::new(b"leadership_proof"),
+            proof_of_leadership,
         }
     }
 
     fn create_test_pipeline() -> ValidationPipeline {
-        let consensus_state = ConsensusState::new();
+        let mut consensus_state = ConsensusState::new();
+        consensus_state.active_slot_coeff = 1.0; // ensure deterministic leadership in tests
         let mut ledger_state = ValidationLedgerState::new();
 
         // Add test pool to stake distribution
         let pool_id = Ed25519KeyHash::new(b"test_pool");
+        let vrf_key_hash = Blake2b256Hash::new(super::vrf_public_key().to_bytes());
         let pool_stake = crate::test_ouroboros_protocol::PoolStake {
             stake: 1_000_000_000_000, // 1M ADA
-            vrf_key: Blake2b256Hash::new(b"vrf_key"),
+            vrf_key: vrf_key_hash,
             pool_params: crate::test_ouroboros_protocol::PoolParams {
                 pledge: 100_000_000_000,
                 cost: 340_000_000,
@@ -725,7 +761,7 @@ mod tests {
     #[test]
     fn test_valid_block_validation() {
         let mut pipeline = create_test_pipeline();
-        let block = create_test_block();
+        let block = create_test_block(&pipeline.consensus_state);
 
         let result = pipeline.validate_block(&block).unwrap();
 
@@ -741,7 +777,7 @@ mod tests {
     #[test]
     fn test_invalid_header_validation() {
         let mut pipeline = create_test_pipeline();
-        let mut block = create_test_block();
+        let mut block = create_test_block(&pipeline.consensus_state);
 
         // Make header invalid - wrong protocol magic
         block.header.protocol_magic = 12345;
@@ -759,7 +795,7 @@ mod tests {
     #[test]
     fn test_invalid_transaction_validation() {
         let mut pipeline = create_test_pipeline();
-        let mut block = create_test_block();
+        let mut block = create_test_block(&pipeline.consensus_state);
 
         // Make transaction invalid - no inputs
         block.body.transactions[0].inputs.clear();
@@ -777,7 +813,8 @@ mod tests {
     #[test]
     fn test_fee_calculation() {
         let pipeline = create_test_pipeline();
-        let tx = &create_test_block().body.transactions[0];
+        let block = create_test_block(&pipeline.consensus_state);
+        let tx = &block.body.transactions[0];
 
         let min_fee = pipeline.calculate_minimum_fee(tx);
 
@@ -789,7 +826,7 @@ mod tests {
     #[test]
     fn test_insufficient_fee() {
         let mut pipeline = create_test_pipeline();
-        let mut block = create_test_block();
+        let mut block = create_test_block(&pipeline.consensus_state);
 
         // Set fee below minimum
         block.body.transactions[0].fee = 100_000; // Below minimum
@@ -813,7 +850,7 @@ mod tests {
     #[test]
     fn test_utxo_application() {
         let pipeline = create_test_pipeline();
-        let block = create_test_block();
+        let block = create_test_block(&pipeline.consensus_state);
 
         let initial_utxo_count = pipeline.ledger_state.utxo_set.len();
 
@@ -933,7 +970,8 @@ mod tests {
     #[test]
     fn test_vkey_witness_validation() {
         let pipeline = create_test_pipeline();
-        let tx = &create_test_block().body.transactions[0];
+        let block = create_test_block(&pipeline.consensus_state);
+        let tx = &block.body.transactions[0];
 
         // Valid witness
         let valid_witness = VKeyWitness {
@@ -955,7 +993,7 @@ mod tests {
     #[test]
     fn test_oversized_block_rejection() {
         let mut pipeline = create_test_pipeline();
-        let mut block = create_test_block();
+        let mut block = create_test_block(&pipeline.consensus_state);
 
         // Make block too large
         block.header.block_size = 100_000; // Exceeds max_block_size
@@ -981,7 +1019,7 @@ mod tests {
         let mut pipeline = create_test_pipeline();
         pipeline.validation_config.max_validation_time_ms = 1; // Very low limit
 
-        let block = create_test_block();
+        let block = create_test_block(&pipeline.consensus_state);
 
         let result = pipeline.validate_block(&block).unwrap();
 

@@ -20,6 +20,7 @@ fn test_ed25519_basic_functionality() {
 
     // Test deserialization
     let restored_private = Ed25519PrivateKey::from_bytes(private_bytes).unwrap();
+    assert_eq!(restored_private.to_bytes(), private_bytes);
     let restored_public = Ed25519PublicKey::from_bytes(public_bytes).unwrap();
     let restored_signature = Ed25519Signature::from_bytes(signature_bytes);
 

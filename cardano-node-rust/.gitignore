@@ -1,1 +1,97 @@
+# Rust build artifacts
 /target
+**/*.rs.bk
+*.pdb
+
+# Cargo.lock for libraries (keep for binaries)
+# Cargo.lock
+
+# Debug and profiling
+debug/
+*.profraw
+*.profdata
+flamegraph.svg
+perf.data
+perf.data.old
+
+# Testing
+coverage/
+tarpaulin-report.html
+*.gcda
+*.gcno
+*.gcov
+
+# IDE and Editor files
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.swp
+*.swo
+*~
+.DS_Store
+.idea/
+*.iml
+*.sublime-*
+.project
+.settings/
+.classpath
+
+# OS-specific
+Thumbs.db
+Desktop.ini
+.directory
+
+# Documentation
+/target/doc
+docs/_build/
+
+# Environment and config
+.env
+.env.local
+*.local
+
+# Cardano node specific
+*.sock
+db/
+node.db/
+logs/
+*.log
+mainnet-db/
+testnet-db/
+preprod-db/
+preview-db/
+
+# Network configs (downloaded)
+config.json
+topology.json
+*-genesis.json
+*.cert
+*.key
+*.vrf.skey
+*.vrf.vkey
+*.kes.skey
+*.kes.vkey
+*.opcert
+*.counter
+
+# Runtime and state
+state/
+tmp/
+*.pid
+
+# Benchmarking
+criterion/
+bench_results/
+
+# Distribution
+dist/
+*.tar.gz
+*.zip
+*.deb
+*.rpm
+
+# Docker
+.dockerignore
+docker-compose.override.yml

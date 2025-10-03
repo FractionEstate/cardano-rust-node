@@ -24,8 +24,7 @@
 use cardano_consensus::block_production::BlockBody;
 use cardano_consensus::ouroboros::SlotNo;
 use cardano_crypto::Blake2b256Hash;
-use std::collections::{HashMap, VecDeque};
-use std::sync::{Arc, Mutex};
+use std::collections::HashMap;
 use tokio::sync::mpsc;
 
 /// A point on the blockchain identified by slot and hash
@@ -112,13 +111,18 @@ pub enum BlockFetchMessage {
 impl PartialEq for BlockFetchMessage {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (BlockFetchMessage::RequestRange { range: r1 }, BlockFetchMessage::RequestRange { range: r2 }) => r1 == r2,
+            (
+                BlockFetchMessage::RequestRange { range: r1 },
+                BlockFetchMessage::RequestRange { range: r2 },
+            ) => r1 == r2,
             (BlockFetchMessage::ClientDone, BlockFetchMessage::ClientDone) => true,
             (BlockFetchMessage::StartBatch, BlockFetchMessage::StartBatch) => true,
             (BlockFetchMessage::Block { body: b1 }, BlockFetchMessage::Block { body: b2 }) => {
                 // Compare block bodies by their transaction count and fees
-                b1.transactions.len() == b2.transactions.len() && b1.total_fee == b2.total_fee && b1.total_size == b2.total_size
-            },
+                b1.transactions.len() == b2.transactions.len()
+                    && b1.total_fee == b2.total_fee
+                    && b1.total_size == b2.total_size
+            }
             (BlockFetchMessage::BatchDone, BlockFetchMessage::BatchDone) => true,
             (BlockFetchMessage::NoBlocks, BlockFetchMessage::NoBlocks) => true,
             _ => false,
@@ -145,7 +149,10 @@ pub enum BlockFetchError {
     /// Invalid range (from > to)
     InvalidRange { from: u64, to: u64 },
     /// Invalid state transition
-    InvalidState { current_state: BlockFetchState, message: String },
+    InvalidState {
+        current_state: BlockFetchState,
+        message: String,
+    },
     /// Requested block not found
     BlockNotFound { point: Point },
     /// Too many blocks received for range
@@ -164,17 +171,28 @@ impl std::fmt::Display for BlockFetchError {
             BlockFetchError::InvalidRange { from, to } => {
                 write!(f, "Invalid range: from slot {} > to slot {}", from, to)
             }
-            BlockFetchError::InvalidState { current_state, message } => {
+            BlockFetchError::InvalidState {
+                current_state,
+                message,
+            } => {
                 write!(f, "Invalid state {:?}: {}", current_state, message)
             }
             BlockFetchError::BlockNotFound { point } => {
                 write!(f, "Block not found at slot {}", point.slot.0)
             }
             BlockFetchError::TooManyBlocks { expected, received } => {
-                write!(f, "Too many blocks: expected {}, received {}", expected, received)
+                write!(
+                    f,
+                    "Too many blocks: expected {}, received {}",
+                    expected, received
+                )
             }
             BlockFetchError::IncompleteRange { expected, received } => {
-                write!(f, "Incomplete range: expected {} blocks, received {}", expected, received)
+                write!(
+                    f,
+                    "Incomplete range: expected {} blocks, received {}",
+                    expected, received
+                )
             }
             BlockFetchError::ProtocolViolation { message } => {
                 write!(f, "Protocol violation: {}", message)
@@ -195,28 +213,20 @@ pub struct BlockFetchClient {
     current_range: Option<ChainRange>,
     received_blocks: Vec<BlockBody>,
     sender: mpsc::UnboundedSender<BlockFetchMessage>,
-    receiver: Arc<Mutex<mpsc::UnboundedReceiver<BlockFetchMessage>>>,
 }
 
 impl BlockFetchClient {
     /// Create a new BlockFetch client
     pub fn new() -> (Self, mpsc::UnboundedReceiver<BlockFetchMessage>) {
         let (sender, receiver) = mpsc::unbounded_channel();
-        let receiver = Arc::new(Mutex::new(receiver));
-        let client_receiver = {
-            let (client_sender, client_receiver) = mpsc::unbounded_channel();
-            client_receiver
-        };
-
         let client = Self {
             state: BlockFetchState::Idle,
             current_range: None,
             received_blocks: Vec::new(),
             sender,
-            receiver: receiver.clone(),
         };
 
-        (client, client_receiver)
+        (client, receiver)
     }
 
     /// Request a range of blocks from the server
@@ -269,7 +279,10 @@ impl BlockFetchClient {
     }
 
     /// Process a message received from the server
-    pub async fn receive_message(&mut self, message: BlockFetchMessage) -> Result<(), BlockFetchError> {
+    pub async fn receive_message(
+        &mut self,
+        message: BlockFetchMessage,
+    ) -> Result<(), BlockFetchError> {
         match (&self.state, message) {
             (BlockFetchState::WaitingForBatch, BlockFetchMessage::StartBatch) => {
                 self.state = BlockFetchState::ReceivingBlocks;
@@ -292,7 +305,7 @@ impl BlockFetchClient {
             }
             _ => Err(BlockFetchError::InvalidState {
                 current_state: self.state.clone(),
-                message: format!("Unexpected message"),
+                message: "Unexpected message".to_string(),
             }),
         }
     }
@@ -305,6 +318,12 @@ impl BlockFetchClient {
                 return Err(BlockFetchError::TooManyBlocks {
                     expected: range.size(),
                     received: self.received_blocks.len() as u64 + 1,
+                });
+            }
+
+            if body.total_size == 0 {
+                return Err(BlockFetchError::ProtocolViolation {
+                    message: "Received block with zero size".to_string(),
                 });
             }
         }
@@ -357,30 +376,20 @@ impl BlockFetchClient {
 pub struct BlockFetchServer {
     available_blocks: HashMap<u64, BlockBody>, // slot -> block
     current_request: Option<ChainRange>,
-    blocks_to_send: VecDeque<BlockBody>,
     sender: mpsc::UnboundedSender<BlockFetchMessage>,
-    receiver: Arc<Mutex<mpsc::UnboundedReceiver<BlockFetchMessage>>>,
 }
 
 impl BlockFetchServer {
     /// Create a new BlockFetch server
     pub fn new() -> (Self, mpsc::UnboundedReceiver<BlockFetchMessage>) {
         let (sender, receiver) = mpsc::unbounded_channel();
-        let receiver = Arc::new(Mutex::new(receiver));
-        let server_receiver = {
-            let (server_sender, server_receiver) = mpsc::unbounded_channel();
-            server_receiver
-        };
-
         let server = Self {
             available_blocks: HashMap::new(),
             current_request: None,
-            blocks_to_send: VecDeque::new(),
             sender,
-            receiver: receiver.clone(),
         };
 
-        (server, server_receiver)
+        (server, receiver)
     }
 
     /// Add a block to the server's available blocks
@@ -410,11 +419,11 @@ impl BlockFetchServer {
 
         if blocks_in_range.is_empty() {
             // No blocks available, send NoBlocks
-            self.sender
-                .send(BlockFetchMessage::NoBlocks)
-                .map_err(|_| BlockFetchError::NetworkError {
+            self.sender.send(BlockFetchMessage::NoBlocks).map_err(|_| {
+                BlockFetchError::NetworkError {
                     message: "Failed to send NoBlocks".to_string(),
-                })?;
+                }
+            })?;
         } else {
             // Start the batch
             self.sender
@@ -426,7 +435,9 @@ impl BlockFetchServer {
             // Send all blocks
             for block in &blocks_in_range {
                 self.sender
-                    .send(BlockFetchMessage::Block { body: block.clone() })
+                    .send(BlockFetchMessage::Block {
+                        body: block.clone(),
+                    })
                     .map_err(|_| BlockFetchError::NetworkError {
                         message: "Failed to send Block".to_string(),
                     })?;
@@ -528,14 +539,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_invalid_range_request() {
-        let (mut client, _receiver) = BlockFetchClient::new();
+        let (_client, _receiver) = BlockFetchClient::new();
 
         let from = Point::new(20, &[1u8; 32]);
         let to = Point::new(10, &[2u8; 32]);
         let invalid_range = ChainRange::new(from, to).unwrap_err();
 
         match invalid_range {
-            BlockFetchError::InvalidRange { from: 20, to: 10 } => {},
+            BlockFetchError::InvalidRange { from: 20, to: 10 } => {}
             _ => panic!("Expected InvalidRange error"),
         }
     }

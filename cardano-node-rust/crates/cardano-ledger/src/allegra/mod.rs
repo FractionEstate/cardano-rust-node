@@ -3,13 +3,13 @@
 //! The Allegra era extends Shelley with native scripts support and validity intervals.
 //! This era introduces time-based transaction validation and multi-signature capabilities.
 
-use crate::{LedgerError, Result, Coin, Epoch, Slot};
 use crate::shelley::{
-    ShelleyTransaction, ShelleyTxIn, ShelleyTxOut, ShelleyAddress, Certificate,
-    RewardAddress, ShelleyWitnessSet, VKeyWitness, BootstrapWitness, NativeScript,
-    ShelleyLedgerState, ShelleyProtocolParameters, NetworkId, StakeCredential,
+    BootstrapWitness, Certificate, NativeScript, RewardAddress, ShelleyLedgerState,
+    ShelleyProtocolParameters, ShelleyTransaction, ShelleyTxIn, ShelleyTxOut, StakeCredential,
+    VKeyWitness,
 };
-use cardano_crypto::{Blake2b256Hash, Ed25519KeyHash, Ed25519Signature};
+use crate::{Coin, LedgerError, Result, Slot};
+use cardano_crypto::{Blake2b256Hash, Ed25519KeyHash};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Allegra era transaction
@@ -74,10 +74,7 @@ pub enum AllegraScript {
     /// Require any one of the nested scripts
     ScriptAny(Vec<AllegraScript>),
     /// Require N of the nested scripts
-    ScriptNOfK {
-        n: u32,
-        scripts: Vec<AllegraScript>,
-    },
+    ScriptNOfK { n: u32, scripts: Vec<AllegraScript> },
     /// Require transaction validity before slot
     ScriptInvalidBefore(Slot),
     /// Require transaction validity after slot
@@ -111,7 +108,7 @@ pub struct AllegraLedgerState {
 #[derive(Debug, Clone)]
 pub struct AllegraProtocolParameters {
     pub shelley_params: ShelleyProtocolParameters,
-    pub utxo_cost_per_word: Coin,         // Cost per word of UTxO storage
+    pub utxo_cost_per_word: Coin, // Cost per word of UTxO storage
 }
 
 impl AllegraTransaction {
@@ -122,7 +119,11 @@ impl AllegraTransaction {
     }
 
     /// Validate transaction structure and scripts
-    pub fn validate(&self, context: &ScriptContext, params: &AllegraProtocolParameters) -> Result<()> {
+    pub fn validate(
+        &self,
+        context: &ScriptContext,
+        params: &AllegraProtocolParameters,
+    ) -> Result<()> {
         // First validate basic structure
         self.body.validate(&params.shelley_params)?;
 
@@ -145,20 +146,20 @@ impl AllegraTransaction {
         // Check invalid_before constraint
         if let Some(invalid_before) = self.body.validity_interval_start {
             if current_slot < invalid_before {
-                return Err(LedgerError::ValidationError(
-                    format!("Transaction not yet valid (current slot: {}, invalid before: {})",
-                           current_slot, invalid_before)
-                ));
+                return Err(LedgerError::ValidationError(format!(
+                    "Transaction not yet valid (current slot: {}, invalid before: {})",
+                    current_slot, invalid_before
+                )));
             }
         }
 
         // Check ttl constraint (invalid_hereafter)
         if let Some(ttl) = self.body.ttl {
             if current_slot >= ttl {
-                return Err(LedgerError::ValidationError(
-                    format!("Transaction expired (current slot: {}, ttl: {})",
-                           current_slot, ttl)
-                ));
+                return Err(LedgerError::ValidationError(format!(
+                    "Transaction expired (current slot: {}, ttl: {})",
+                    current_slot, ttl
+                )));
             }
         }
 
@@ -172,7 +173,7 @@ impl AllegraTransaction {
             let computed_hash = script.hash();
             if computed_hash != *script_hash {
                 return Err(LedgerError::ValidationError(
-                    "Script hash mismatch".to_string()
+                    "Script hash mismatch".to_string(),
                 ));
             }
 
@@ -180,13 +181,14 @@ impl AllegraTransaction {
             match script.evaluate(context)? {
                 ScriptValidation::Valid => continue,
                 ScriptValidation::Invalid(reason) => {
-                    return Err(LedgerError::ValidationError(
-                        format!("Script validation failed: {}", reason)
-                    ));
+                    return Err(LedgerError::ValidationError(format!(
+                        "Script validation failed: {}",
+                        reason
+                    )));
                 }
                 ScriptValidation::RequiresSlotCheck(_) => {
                     return Err(LedgerError::ValidationError(
-                        "Script requires slot check outside validity interval".to_string()
+                        "Script requires slot check outside validity interval".to_string(),
                     ));
                 }
             }
@@ -200,7 +202,7 @@ impl AllegraTransaction {
         let mut signers = BTreeSet::new();
 
         // Add signers required by inputs (UTxO addresses)
-        for input in &self.body.inputs {
+        for _input in &self.body.inputs {
             // In practice, this would look up the UTxO and extract the required signers
             // For now, we'll assume it's handled elsewhere
         }
@@ -231,23 +233,31 @@ impl AllegraTransactionBody {
     pub fn validate(&self, protocol_params: &ShelleyProtocolParameters) -> Result<()> {
         // Check inputs not empty
         if self.inputs.is_empty() {
-            return Err(LedgerError::InvalidTransaction("Transaction has no inputs".to_string()));
+            return Err(LedgerError::InvalidTransaction(
+                "Transaction has no inputs".to_string(),
+            ));
         }
 
         // Check outputs not empty
         if self.outputs.is_empty() {
-            return Err(LedgerError::InvalidTransaction("Transaction has no outputs".to_string()));
+            return Err(LedgerError::InvalidTransaction(
+                "Transaction has no outputs".to_string(),
+            ));
         }
 
         // Check fee is non-zero
         if self.fee == 0 {
-            return Err(LedgerError::InvalidTransaction("Transaction fee is zero".to_string()));
+            return Err(LedgerError::InvalidTransaction(
+                "Transaction fee is zero".to_string(),
+            ));
         }
 
         // Check outputs meet minimum UTxO requirement
         for output in &self.outputs {
             if output.amount < protocol_params.min_utxo {
-                return Err(LedgerError::InvalidTransaction("Output below minimum UTxO".to_string()));
+                return Err(LedgerError::InvalidTransaction(
+                    "Output below minimum UTxO".to_string(),
+                ));
             }
         }
 
@@ -260,7 +270,7 @@ impl AllegraTransactionBody {
         if let (Some(start), Some(end)) = (self.validity_interval_start, self.ttl) {
             if start >= end {
                 return Err(LedgerError::InvalidTransaction(
-                    "Invalid validity interval: start >= end".to_string()
+                    "Invalid validity interval: start >= end".to_string(),
                 ));
             }
         }
@@ -279,13 +289,15 @@ impl AllegraTransactionBody {
         let mut total = 0u64;
 
         for output in &self.outputs {
-            total = total.checked_add(output.amount)
+            total = total
+                .checked_add(output.amount)
                 .ok_or_else(|| LedgerError::ValueOverflow("Output sum overflow".to_string()))?;
         }
 
         // Add withdrawals
         for &withdrawal in self.withdrawals.values() {
-            total = total.checked_add(withdrawal)
+            total = total
+                .checked_add(withdrawal)
                 .ok_or_else(|| LedgerError::ValueOverflow("Withdrawal sum overflow".to_string()))?;
         }
 
@@ -299,7 +311,11 @@ impl AllegraTransactionBody {
         let output_size = self.outputs.len() as u32 * 50;
         let cert_size = self.certificates.len() as u32 * 80;
         let withdrawal_size = self.withdrawals.len() as u32 * 40;
-        let validity_size = if self.validity_interval_start.is_some() { 10 } else { 0 };
+        let validity_size = if self.validity_interval_start.is_some() {
+            10
+        } else {
+            0
+        };
 
         base_size + input_size + output_size + cert_size + withdrawal_size + validity_size
     }
@@ -313,9 +329,10 @@ impl AllegraScript {
                 if context.signatures.contains(key_hash) {
                     Ok(ScriptValidation::Valid)
                 } else {
-                    Ok(ScriptValidation::Invalid(
-                        format!("Missing signature for key: {:?}", key_hash)
-                    ))
+                    Ok(ScriptValidation::Invalid(format!(
+                        "Missing signature for key: {:?}",
+                        key_hash
+                    )))
                 }
             }
             AllegraScript::ScriptAll(scripts) => {
@@ -337,12 +354,14 @@ impl AllegraScript {
                         return Ok(ScriptValidation::Valid);
                     }
                 }
-                Ok(ScriptValidation::Invalid("No script in ScriptAny satisfied".to_string()))
+                Ok(ScriptValidation::Invalid(
+                    "No script in ScriptAny satisfied".to_string(),
+                ))
             }
             AllegraScript::ScriptNOfK { n, scripts } => {
                 if *n as usize > scripts.len() {
                     return Ok(ScriptValidation::Invalid(
-                        "N greater than number of scripts".to_string()
+                        "N greater than number of scripts".to_string(),
                     ));
                 }
 
@@ -355,9 +374,10 @@ impl AllegraScript {
                         }
                     }
                 }
-                Ok(ScriptValidation::Invalid(
-                    format!("Only {} of {} required scripts satisfied", satisfied, n)
-                ))
+                Ok(ScriptValidation::Invalid(format!(
+                    "Only {} of {} required scripts satisfied",
+                    satisfied, n
+                )))
             }
             AllegraScript::ScriptInvalidBefore(slot) => {
                 if context.current_slot >= *slot {
@@ -370,10 +390,10 @@ impl AllegraScript {
                 if context.current_slot < *slot {
                     Ok(ScriptValidation::Valid)
                 } else {
-                    Ok(ScriptValidation::Invalid(
-                        format!("Current slot {} >= invalid_hereafter {}",
-                               context.current_slot, slot)
-                    ))
+                    Ok(ScriptValidation::Invalid(format!(
+                        "Current slot {} >= invalid_hereafter {}",
+                        context.current_slot, slot
+                    )))
                 }
             }
         }
@@ -382,9 +402,7 @@ impl AllegraScript {
     /// Get all required signers for this script
     pub fn required_signers(&self) -> BTreeSet<Ed25519KeyHash> {
         match self {
-            AllegraScript::ScriptPubkey(key_hash) => {
-                vec![*key_hash].into_iter().collect()
-            }
+            AllegraScript::ScriptPubkey(key_hash) => vec![*key_hash].into_iter().collect(),
             AllegraScript::ScriptAll(scripts) => {
                 scripts.iter().flat_map(|s| s.required_signers()).collect()
             }
@@ -417,9 +435,10 @@ impl NativeScript {
                 if context.signatures.contains(key_hash) {
                     Ok(ScriptValidation::Valid)
                 } else {
-                    Ok(ScriptValidation::Invalid(
-                        format!("Missing signature for key: {:?}", key_hash)
-                    ))
+                    Ok(ScriptValidation::Invalid(format!(
+                        "Missing signature for key: {:?}",
+                        key_hash
+                    )))
                 }
             }
             NativeScript::ScriptAll(scripts) => {
@@ -441,12 +460,14 @@ impl NativeScript {
                         return Ok(ScriptValidation::Valid);
                     }
                 }
-                Ok(ScriptValidation::Invalid("No script in ScriptAny satisfied".to_string()))
+                Ok(ScriptValidation::Invalid(
+                    "No script in ScriptAny satisfied".to_string(),
+                ))
             }
             NativeScript::ScriptNOfK { n, scripts } => {
                 if *n as usize > scripts.len() {
                     return Ok(ScriptValidation::Invalid(
-                        "N greater than number of scripts".to_string()
+                        "N greater than number of scripts".to_string(),
                     ));
                 }
 
@@ -459,9 +480,10 @@ impl NativeScript {
                         }
                     }
                 }
-                Ok(ScriptValidation::Invalid(
-                    format!("Only {} of {} required scripts satisfied", satisfied, n)
-                ))
+                Ok(ScriptValidation::Invalid(format!(
+                    "Only {} of {} required scripts satisfied",
+                    satisfied, n
+                )))
             }
         }
     }
@@ -469,9 +491,7 @@ impl NativeScript {
     /// Get required signers for Shelley native script
     pub fn required_signers(&self) -> BTreeSet<Ed25519KeyHash> {
         match self {
-            NativeScript::ScriptPubkey(key_hash) => {
-                vec![*key_hash].into_iter().collect()
-            }
+            NativeScript::ScriptPubkey(key_hash) => vec![*key_hash].into_iter().collect(),
             NativeScript::ScriptAll(scripts) => {
                 scripts.iter().flat_map(|s| s.required_signers()).collect()
             }
@@ -502,16 +522,16 @@ impl Certificate {
                     BTreeSet::new()
                 }
             }
-            Certificate::StakeDelegation { stake_credential, .. } => {
+            Certificate::StakeDelegation {
+                stake_credential, ..
+            } => {
                 if let StakeCredential::Key(key_hash) = stake_credential {
                     vec![*key_hash].into_iter().collect()
                 } else {
                     BTreeSet::new()
                 }
             }
-            Certificate::PoolRegistration(pool_reg) => {
-                pool_reg.pool_owners.clone()
-            }
+            Certificate::PoolRegistration(pool_reg) => pool_reg.pool_owners.clone(),
             Certificate::PoolRetirement { .. } => {
                 // Pool retirement requires pool owner signatures
                 // In practice, this would look up the pool registration
@@ -529,7 +549,7 @@ impl AuxiliaryData {
             let computed_hash = self.hash();
             if computed_hash != expected_hash {
                 return Err(LedgerError::ValidationError(
-                    "Auxiliary data hash mismatch".to_string()
+                    "Auxiliary data hash mismatch".to_string(),
                 ));
             }
         }
@@ -540,7 +560,7 @@ impl AuxiliaryData {
         }
 
         // Validate native scripts
-        for script in &self.native_scripts {
+        for _script in &self.native_scripts {
             // Scripts in auxiliary data are just stored, validation happens during execution
         }
 
@@ -559,14 +579,15 @@ impl TransactionMetadata {
     pub fn validate(&self) -> Result<()> {
         // Check metadata size constraints
         let serialized_size = self.estimate_size();
-        if serialized_size > 16384 { // 16KB limit
+        if serialized_size > 16384 {
+            // 16KB limit
             return Err(LedgerError::ValidationError(
-                "Metadata too large".to_string()
+                "Metadata too large".to_string(),
             ));
         }
 
         // Validate all values
-        for (key, value) in &self.map {
+        for value in self.map.values() {
             value.validate()?;
         }
 
@@ -586,14 +607,18 @@ impl MetadataValue {
             MetadataValue::Integer(_) => Ok(()),
             MetadataValue::Bytes(bytes) => {
                 if bytes.len() > 64 {
-                    Err(LedgerError::ValidationError("Metadata bytes too long".to_string()))
+                    Err(LedgerError::ValidationError(
+                        "Metadata bytes too long".to_string(),
+                    ))
                 } else {
                     Ok(())
                 }
             }
             MetadataValue::Text(text) => {
                 if text.len() > 64 {
-                    Err(LedgerError::ValidationError("Metadata text too long".to_string()))
+                    Err(LedgerError::ValidationError(
+                        "Metadata text too long".to_string(),
+                    ))
                 } else {
                     Ok(())
                 }
@@ -612,6 +637,12 @@ impl MetadataValue {
                 Ok(())
             }
         }
+    }
+}
+
+impl Default for AllegraLedgerState {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -646,7 +677,8 @@ impl AllegraLedgerState {
         };
 
         // Apply using Shelley rules
-        self.shelley_state.apply_transaction(&shelley_tx, &params.shelley_params)?;
+        self.shelley_state
+            .apply_transaction(&shelley_tx, &params.shelley_params)?;
 
         // Store native scripts
         for (hash, script) in &tx.witness_set.native_scripts {
@@ -683,6 +715,7 @@ impl AllegraProtocolParameters {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::shelley::NetworkId;
     use cardano_crypto::Ed25519KeyHash;
 
     #[test]
@@ -709,7 +742,10 @@ mod tests {
             signatures,
         };
 
-        assert!(matches!(script.evaluate(&context).unwrap(), ScriptValidation::Valid));
+        assert!(matches!(
+            script.evaluate(&context).unwrap(),
+            ScriptValidation::Valid
+        ));
     }
 
     #[test]
@@ -719,17 +755,29 @@ mod tests {
         // Test InvalidBefore
         let script_before = AllegraScript::ScriptInvalidBefore(500);
         let context = create_test_context(current_slot);
-        assert!(matches!(script_before.evaluate(&context).unwrap(), ScriptValidation::Valid));
+        assert!(matches!(
+            script_before.evaluate(&context).unwrap(),
+            ScriptValidation::Valid
+        ));
 
         let script_before_fail = AllegraScript::ScriptInvalidBefore(1500);
-        assert!(matches!(script_before_fail.evaluate(&context).unwrap(), ScriptValidation::RequiresSlotCheck(_)));
+        assert!(matches!(
+            script_before_fail.evaluate(&context).unwrap(),
+            ScriptValidation::RequiresSlotCheck(_)
+        ));
 
         // Test InvalidHereafter
         let script_after = AllegraScript::ScriptInvalidHereafter(1500);
-        assert!(matches!(script_after.evaluate(&context).unwrap(), ScriptValidation::Valid));
+        assert!(matches!(
+            script_after.evaluate(&context).unwrap(),
+            ScriptValidation::Valid
+        ));
 
         let script_after_fail = AllegraScript::ScriptInvalidHereafter(500);
-        assert!(matches!(script_after_fail.evaluate(&context).unwrap(), ScriptValidation::Invalid(_)));
+        assert!(matches!(
+            script_after_fail.evaluate(&context).unwrap(),
+            ScriptValidation::Invalid(_)
+        ));
     }
 
     #[test]
@@ -752,7 +800,10 @@ mod tests {
             signatures,
         };
 
-        assert!(matches!(script.evaluate(&context).unwrap(), ScriptValidation::Valid));
+        assert!(matches!(
+            script.evaluate(&context).unwrap(),
+            ScriptValidation::Valid
+        ));
 
         // Context with only one signature
         let mut signatures = BTreeSet::new();
@@ -763,7 +814,10 @@ mod tests {
             signatures,
         };
 
-        assert!(matches!(script.evaluate(&context_partial).unwrap(), ScriptValidation::Invalid(_)));
+        assert!(matches!(
+            script.evaluate(&context_partial).unwrap(),
+            ScriptValidation::Invalid(_)
+        ));
     }
 
     #[test]
@@ -785,7 +839,10 @@ mod tests {
             signatures,
         };
 
-        assert!(matches!(script.evaluate(&context).unwrap(), ScriptValidation::Valid));
+        assert!(matches!(
+            script.evaluate(&context).unwrap(),
+            ScriptValidation::Valid
+        ));
 
         // Context with no signatures
         let context_empty = ScriptContext {
@@ -794,7 +851,10 @@ mod tests {
             signatures: BTreeSet::new(),
         };
 
-        assert!(matches!(script.evaluate(&context_empty).unwrap(), ScriptValidation::Invalid(_)));
+        assert!(matches!(
+            script.evaluate(&context_empty).unwrap(),
+            ScriptValidation::Invalid(_)
+        ));
     }
 
     #[test]
@@ -822,7 +882,10 @@ mod tests {
             signatures,
         };
 
-        assert!(matches!(script.evaluate(&context).unwrap(), ScriptValidation::Valid));
+        assert!(matches!(
+            script.evaluate(&context).unwrap(),
+            ScriptValidation::Valid
+        ));
 
         // Context with 1 signature (should fail)
         let mut signatures = BTreeSet::new();
@@ -833,7 +896,10 @@ mod tests {
             signatures,
         };
 
-        assert!(matches!(script.evaluate(&context_insufficient).unwrap(), ScriptValidation::Invalid(_)));
+        assert!(matches!(
+            script.evaluate(&context_insufficient).unwrap(),
+            ScriptValidation::Invalid(_)
+        ));
     }
 
     #[test]
@@ -843,7 +909,6 @@ mod tests {
         tx.body.ttl = Some(1500);
 
         // Valid slot
-        let context = create_test_context(1000);
         assert!(tx.validate_validity_interval(1000).is_ok());
 
         // Too early
@@ -860,7 +925,9 @@ mod tests {
         };
 
         // Valid metadata
-        metadata.map.insert(1, MetadataValue::Text("Hello".to_string()));
+        metadata
+            .map
+            .insert(1, MetadataValue::Text("Hello".to_string()));
         metadata.map.insert(2, MetadataValue::Integer(42));
         assert!(metadata.validate().is_ok());
 
@@ -872,7 +939,6 @@ mod tests {
     #[test]
     fn test_allegra_transaction_validation() {
         let tx = create_test_allegra_tx();
-        let context = create_test_context(1000);
         let params = AllegraProtocolParameters::testnet();
 
         assert!(tx.body.validate(&params.shelley_params).is_ok());
@@ -905,11 +971,13 @@ mod tests {
                 inputs: vec![ShelleyTxIn {
                     transaction_id: Blake2b256Hash::hash(b"test"),
                     output_index: 0,
-                }].into_iter().collect(),
+                }]
+                .into_iter()
+                .collect(),
                 outputs: vec![ShelleyTxOut {
                     address: crate::shelley::ShelleyAddress::new_enterprise(
                         NetworkId::Testnet,
-                        StakeCredential::Key(Ed25519KeyHash::from_test_data(b"output"))
+                        StakeCredential::Key(Ed25519KeyHash::from_test_data(b"output")),
                     ),
                     amount: 2_000_000,
                 }],

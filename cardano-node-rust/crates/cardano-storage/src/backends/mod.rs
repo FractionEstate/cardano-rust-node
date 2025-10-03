@@ -9,7 +9,7 @@ pub mod rocksdb;
 pub use lmdb::{LmdbBackend, LmdbConfig};
 pub use rocksdb::{RocksDbBackend, RocksDbConfig};
 
-use crate::{Result, StorageError};
+use crate::Result;
 use async_trait::async_trait;
 
 /// Generic storage backend trait

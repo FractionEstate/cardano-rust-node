@@ -3,11 +3,11 @@
 //! Implements the Praos chain selection protocol with VRF tiebreakers,
 //! chain quality checks, and fork resolution mechanisms.
 
+use crate::ouroboros::{BlockNo, SlotNo};
 use crate::{ConsensusError, Result};
-use crate::ouroboros::{SlotNo, BlockNo, ChainQuality as OuroborosChainQuality};
 use cardano_crypto::{Blake2b256Hash, Ed25519KeyHash, VrfOutput};
 use std::collections::HashMap;
-use std::time::{SystemTime, Duration};
+use std::time::{Duration, SystemTime};
 
 /// VRF tiebreaker configuration
 #[derive(Debug, Clone)]
@@ -30,7 +30,7 @@ impl Default for ChainSelectionConfig {
     fn default() -> Self {
         Self {
             vrf_tiebreaker: VrfTiebreakerFlavor::Unrestricted,
-            security_parameter: 2160, // k parameter
+            security_parameter: 2160,      // k parameter
             active_slot_coefficient: 0.05, // f parameter
         }
     }
@@ -121,7 +121,8 @@ impl ChainSelector {
         let config = self.config.clone();
 
         // Sort candidates by preference
-        self.candidate_tips.sort_by(|a, b| Self::compare_chains_with_config(&config, a, b));
+        self.candidate_tips
+            .sort_by(|a, b| Self::compare_chains_with_config(&config, a, b));
 
         // Return the best candidate
         let best_candidate = self.candidate_tips.last().cloned();
@@ -142,12 +143,25 @@ impl ChainSelector {
     }
 
     /// Compare two chains according to Ouroboros selection rules
-    pub fn compare_chains(&self, chain_a: &ChainCandidate, chain_b: &ChainCandidate) -> std::cmp::Ordering {
+    pub fn compare_chains(
+        &self,
+        chain_a: &ChainCandidate,
+        chain_b: &ChainCandidate,
+    ) -> std::cmp::Ordering {
         Self::compare_chains_with_config(&self.config, chain_a, chain_b)
     }
 
+    /// Determine if VRF tiebreaker should be used for the given tips
+    pub fn should_use_vrf_tiebreaker(&self, tip_a: &ChainTip, tip_b: &ChainTip) -> bool {
+        Self::should_use_vrf_tiebreaker_with_config(&self.config, tip_a, tip_b)
+    }
+
     /// Static version of chain comparison to avoid borrowing issues
-    fn compare_chains_with_config(config: &ChainSelectionConfig, chain_a: &ChainCandidate, chain_b: &ChainCandidate) -> std::cmp::Ordering {
+    fn compare_chains_with_config(
+        config: &ChainSelectionConfig,
+        chain_a: &ChainCandidate,
+        chain_b: &ChainCandidate,
+    ) -> std::cmp::Ordering {
         use std::cmp::Ordering;
 
         // Rule 1: Prefer longer chain
@@ -170,16 +184,19 @@ impl ChainSelector {
         }
 
         // Rule 4: Final tiebreaker by hash (deterministic)
-        chain_a.tip.block_hash.as_bytes().cmp(chain_b.tip.block_hash.as_bytes())
-    }
-
-    /// Determine if VRF comparison should be used
-    fn should_use_vrf_tiebreaker(&self, tip_a: &ChainTip, tip_b: &ChainTip) -> bool {
-        Self::should_use_vrf_tiebreaker_with_config(&self.config, tip_a, tip_b)
+        chain_a
+            .tip
+            .block_hash
+            .as_bytes()
+            .cmp(chain_b.tip.block_hash.as_bytes())
     }
 
     /// Static version of VRF tiebreaker check
-    fn should_use_vrf_tiebreaker_with_config(config: &ChainSelectionConfig, tip_a: &ChainTip, tip_b: &ChainTip) -> bool {
+    fn should_use_vrf_tiebreaker_with_config(
+        config: &ChainSelectionConfig,
+        tip_a: &ChainTip,
+        tip_b: &ChainTip,
+    ) -> bool {
         match &config.vrf_tiebreaker {
             VrfTiebreakerFlavor::Unrestricted => true,
             VrfTiebreakerFlavor::Restricted { max_distance } => {
@@ -209,7 +226,10 @@ impl ChainSelector {
     }
 
     /// Calculate chain quality metrics
-    pub fn calculate_chain_quality(&self, candidate: &ChainCandidate) -> Result<SelectionChainQuality> {
+    pub fn calculate_chain_quality(
+        &self,
+        candidate: &ChainCandidate,
+    ) -> Result<SelectionChainQuality> {
         if candidate.blocks.is_empty() {
             return Ok(SelectionChainQuality {
                 density: 0.0,
@@ -272,18 +292,24 @@ impl ChainSelector {
     }
 
     /// Find the best fork point between chains
-    pub fn find_fork_point(&self, chain_a: &ChainCandidate, chain_b: &ChainCandidate) -> Result<Option<SlotNo>> {
+    pub fn find_fork_point(
+        &self,
+        chain_a: &ChainCandidate,
+        chain_b: &ChainCandidate,
+    ) -> Result<Option<SlotNo>> {
         let mut fork_slot = None;
 
         // Build hash maps for efficient lookup
-        let chain_a_hashes: HashMap<SlotNo, Blake2b256Hash> = chain_a.blocks
+        let chain_a_hashes: HashMap<SlotNo, Blake2b256Hash> = chain_a
+            .blocks
             .iter()
-            .map(|b| (b.slot, b.block_hash.clone()))
+            .map(|b| (b.slot, b.block_hash))
             .collect();
 
-        let chain_b_hashes: HashMap<SlotNo, Blake2b256Hash> = chain_b.blocks
+        let chain_b_hashes: HashMap<SlotNo, Blake2b256Hash> = chain_b
+            .blocks
             .iter()
-            .map(|b| (b.slot, b.block_hash.clone()))
+            .map(|b| (b.slot, b.block_hash))
             .collect();
 
         // Find the last common slot by iterating in reverse order
@@ -291,7 +317,9 @@ impl ChainSelector {
         all_slots.sort_by(|a, b| b.cmp(a)); // Sort in descending order for last-first search
 
         for slot_a in all_slots {
-            if let (Some(hash_a), Some(hash_b)) = (chain_a_hashes.get(&slot_a), chain_b_hashes.get(&slot_a)) {
+            if let (Some(hash_a), Some(hash_b)) =
+                (chain_a_hashes.get(&slot_a), chain_b_hashes.get(&slot_a))
+            {
                 if hash_a == hash_b {
                     fork_slot = Some(slot_a);
                     break; // Found the last (highest slot) common block
@@ -306,13 +334,13 @@ impl ChainSelector {
     pub fn validate_selection_parameters(&self) -> Result<()> {
         if self.config.security_parameter == 0 {
             return Err(ConsensusError::InvalidPoolParameters(
-                "Security parameter cannot be zero".to_string()
+                "Security parameter cannot be zero".to_string(),
             ));
         }
 
         if self.config.active_slot_coefficient <= 0.0 || self.config.active_slot_coefficient > 1.0 {
             return Err(ConsensusError::InvalidPoolParameters(
-                "Active slot coefficient must be between 0 and 1".to_string()
+                "Active slot coefficient must be between 0 and 1".to_string(),
             ));
         }
 
@@ -323,8 +351,14 @@ impl ChainSelector {
     pub fn get_chain_statistics(&self) -> HashMap<String, u64> {
         let mut stats = HashMap::new();
 
-        stats.insert("candidate_count".to_string(), self.candidate_tips.len() as u64);
-        stats.insert("security_parameter".to_string(), self.config.security_parameter);
+        stats.insert(
+            "candidate_count".to_string(),
+            self.candidate_tips.len() as u64,
+        );
+        stats.insert(
+            "security_parameter".to_string(),
+            self.config.security_parameter,
+        );
 
         if let Some(ref tip) = self.current_tip {
             stats.insert("current_slot".to_string(), tip.slot_no.0);
@@ -395,8 +429,8 @@ mod tests {
         let tip = create_test_tip(tip_slot, length, hash_seed);
         let blocks = vec![BlockSummary {
             slot: SlotNo(tip_slot),
-            block_hash: tip.block_hash.clone(),
-            issuer: tip.issuer.clone(),
+            block_hash: tip.block_hash,
+            issuer: tip.issuer,
             vrf_output: tip.vrf_output.clone(),
             timestamp: SystemTime::now(),
         }];
@@ -434,8 +468,6 @@ mod tests {
 
     #[test]
     fn test_slot_distance_calculation() {
-        let selector = ChainSelector::default();
-
         let distance1 = ChainSelector::calculate_slot_distance(SlotNo(100), SlotNo(90));
         assert_eq!(distance1, SlotNo(10));
 
@@ -460,7 +492,9 @@ mod tests {
     #[test]
     fn test_vrf_tiebreaker_restricted() {
         let config = ChainSelectionConfig {
-            vrf_tiebreaker: VrfTiebreakerFlavor::Restricted { max_distance: SlotNo(50) },
+            vrf_tiebreaker: VrfTiebreakerFlavor::Restricted {
+                max_distance: SlotNo(50),
+            },
             ..Default::default()
         };
         let selector = ChainSelector::new(config);
@@ -488,8 +522,10 @@ mod tests {
 
     #[test]
     fn test_selection_parameters_validation() {
-        let mut config = ChainSelectionConfig::default();
-        config.security_parameter = 0;
+        let config = ChainSelectionConfig {
+            security_parameter: 0,
+            ..Default::default()
+        };
         let selector = ChainSelector::new(config);
 
         let result = selector.validate_selection_parameters();
@@ -508,7 +544,7 @@ mod tests {
         for i in 1..=5 {
             let block = BlockSummary {
                 slot: SlotNo(i),
-                block_hash: Blake2b256Hash::hash(&format!("common_{}", i).as_bytes()),
+                block_hash: Blake2b256Hash::hash(format!("common_{}", i).as_bytes()),
                 issuer: Ed25519KeyHash::from_test_data(b"issuer"),
                 vrf_output: VrfOutput::from_bytes([0u8; 64]).unwrap(),
                 timestamp: SystemTime::now(),
@@ -534,19 +570,13 @@ mod tests {
             timestamp: SystemTime::now(),
         });
 
-        let candidate_a = ChainCandidate::new(
-            create_test_tip(6, 6, "chain_a"),
-            6,
-            blocks_a,
-        );
+        let candidate_a = ChainCandidate::new(create_test_tip(6, 6, "chain_a"), 6, blocks_a);
 
-        let candidate_b = ChainCandidate::new(
-            create_test_tip(6, 6, "chain_b"),
-            6,
-            blocks_b,
-        );
+        let candidate_b = ChainCandidate::new(create_test_tip(6, 6, "chain_b"), 6, blocks_b);
 
-        let fork_point = selector.find_fork_point(&candidate_a, &candidate_b).unwrap();
+        let fork_point = selector
+            .find_fork_point(&candidate_a, &candidate_b)
+            .unwrap();
         assert_eq!(fork_point, Some(SlotNo(5))); // Last common slot
     }
 }

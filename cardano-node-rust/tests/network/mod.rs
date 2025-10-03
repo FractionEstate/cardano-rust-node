@@ -6,13 +6,15 @@
 //! - TxSubmission mini-protocol for transaction propagation
 //! - P2P peer selection and network topology management
 
-pub mod test_chainsync;
+pub mod integration;
 pub mod test_blockfetch;
-pub mod test_txsubmission;
+pub mod test_chainsync;
 pub mod test_peer_selection;
+pub mod test_txsubmission;
 
 // Re-export all network protocol tests
-pub use test_chainsync::*;
+pub use integration::*;
 pub use test_blockfetch::*;
-pub use test_txsubmission::*;
+pub use test_chainsync::*;
 pub use test_peer_selection::*;
+pub use test_txsubmission::*;

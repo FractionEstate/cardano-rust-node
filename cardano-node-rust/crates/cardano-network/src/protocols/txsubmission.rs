@@ -31,7 +31,6 @@
 use cardano_consensus::block_production::Transaction;
 use cardano_crypto::Blake2b256Hash;
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 
 /// Transaction ID - unique identifier for a transaction
@@ -49,8 +48,8 @@ impl TxId {
         let mut bytes = [0u8; 32];
         bytes[0] = seed;
         bytes[31] = seed.wrapping_add(1);
-        for i in 1..31 {
-            bytes[i] = seed.wrapping_add(i as u8);
+        for (i, byte) in bytes.iter_mut().enumerate().take(31).skip(1) {
+            *byte = seed.wrapping_add(i as u8);
         }
         Self::new(&bytes)
     }
@@ -104,31 +103,29 @@ impl FlowControl {
 #[derive(Debug, Clone)]
 pub enum TxSubmissionMessage {
     /// Request transaction IDs from peer's mempool
-    RequestTxIds {
-        blocking: bool,
-        ack: u16,
-        req: u16,
-    },
+    RequestTxIds { blocking: bool, ack: u16, req: u16 },
     /// Reply with available transaction IDs
-    ReplyTxIds {
-        tx_ids: Vec<(TxId, TxSize)>,
-    },
+    ReplyTxIds { tx_ids: Vec<(TxId, TxSize)> },
     /// Request specific transaction data
-    RequestTxs {
-        tx_ids: Vec<TxId>,
-    },
+    RequestTxs { tx_ids: Vec<TxId> },
     /// Reply with transaction data
-    ReplyTxs {
-        txs: Vec<Transaction>,
-    },
+    ReplyTxs { txs: Vec<Transaction> },
 }
 
 impl PartialEq for TxSubmissionMessage {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (
-                TxSubmissionMessage::RequestTxIds { blocking: b1, ack: a1, req: r1 },
-                TxSubmissionMessage::RequestTxIds { blocking: b2, ack: a2, req: r2 },
+                TxSubmissionMessage::RequestTxIds {
+                    blocking: b1,
+                    ack: a1,
+                    req: r1,
+                },
+                TxSubmissionMessage::RequestTxIds {
+                    blocking: b2,
+                    ack: a2,
+                    req: r2,
+                },
             ) => b1 == b2 && a1 == a2 && r1 == r2,
             (
                 TxSubmissionMessage::ReplyTxIds { tx_ids: ids1 },
@@ -143,12 +140,12 @@ impl PartialEq for TxSubmissionMessage {
                 TxSubmissionMessage::ReplyTxs { txs: txs2 },
             ) => {
                 // Compare transactions by their input/output counts (simplified)
-                txs1.len() == txs2.len() &&
-                txs1.iter().zip(txs2.iter()).all(|(tx1, tx2)| {
-                    tx1.inputs.len() == tx2.inputs.len() &&
-                    tx1.outputs.len() == tx2.outputs.len()
-                })
-            },
+                txs1.len() == txs2.len()
+                    && txs1.iter().zip(txs2.iter()).all(|(tx1, tx2)| {
+                        tx1.inputs.len() == tx2.inputs.len()
+                            && tx1.outputs.len() == tx2.outputs.len()
+                    })
+            }
             _ => false,
         }
     }
@@ -169,9 +166,15 @@ pub enum TxSubmissionState {
 #[derive(Debug, Clone, PartialEq)]
 pub enum TxSubmissionError {
     /// Invalid state transition
-    InvalidState { current_state: TxSubmissionState, message: String },
+    InvalidState {
+        current_state: TxSubmissionState,
+        message: String,
+    },
     /// Flow control violation
-    FlowControlViolation { expected_ack: u16, received_ack: u16 },
+    FlowControlViolation {
+        expected_ack: u16,
+        received_ack: u16,
+    },
     /// Empty transaction request
     EmptyRequest,
     /// Transaction not found in mempool
@@ -187,11 +190,21 @@ pub enum TxSubmissionError {
 impl std::fmt::Display for TxSubmissionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TxSubmissionError::InvalidState { current_state, message } => {
+            TxSubmissionError::InvalidState {
+                current_state,
+                message,
+            } => {
                 write!(f, "Invalid state {:?}: {}", current_state, message)
             }
-            TxSubmissionError::FlowControlViolation { expected_ack, received_ack } => {
-                write!(f, "Flow control violation: expected ack {}, received {}", expected_ack, received_ack)
+            TxSubmissionError::FlowControlViolation {
+                expected_ack,
+                received_ack,
+            } => {
+                write!(
+                    f,
+                    "Flow control violation: expected ack {}, received {}",
+                    expected_ack, received_ack
+                )
             }
             TxSubmissionError::EmptyRequest => {
                 write!(f, "Empty transaction request")
@@ -200,7 +213,11 @@ impl std::fmt::Display for TxSubmissionError {
                 write!(f, "Transaction not found: {:?}", tx_id.0)
             }
             TxSubmissionError::IncorrectTxCount { expected, received } => {
-                write!(f, "Incorrect transaction count: expected {}, received {}", expected, received)
+                write!(
+                    f,
+                    "Incorrect transaction count: expected {}, received {}",
+                    expected, received
+                )
             }
             TxSubmissionError::InvalidRequest { message } => {
                 write!(f, "Invalid request: {}", message)
@@ -223,6 +240,12 @@ pub struct MockMempool {
     tx_sizes: HashMap<TxId, TxSize>,
     /// Set of known transaction IDs (including those we don't have full data for)
     known_tx_ids: HashSet<TxId>,
+}
+
+impl Default for MockMempool {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MockMempool {
@@ -259,14 +282,16 @@ impl MockMempool {
 
     /// Get all available transaction IDs and sizes
     pub fn get_available_tx_ids(&self) -> Vec<(TxId, TxSize)> {
-        self.tx_sizes.iter()
+        self.tx_sizes
+            .iter()
             .map(|(id, &size)| (id.clone(), size))
             .collect()
     }
 
     /// Find transaction IDs we don't know about from a peer's list
     pub fn get_unknown_tx_ids(&self, peer_tx_ids: &[(TxId, TxSize)]) -> Vec<TxId> {
-        peer_tx_ids.iter()
+        peer_tx_ids
+            .iter()
             .filter(|(id, _)| !self.known_tx_ids.contains(id))
             .map(|(id, _)| id.clone())
             .collect()
@@ -303,19 +328,12 @@ pub struct TxSubmissionNode {
     received_tx_ids: Vec<(TxId, TxSize)>,
     /// Message sender
     sender: mpsc::UnboundedSender<TxSubmissionMessage>,
-    /// Message receiver
-    receiver: Arc<Mutex<mpsc::UnboundedReceiver<TxSubmissionMessage>>>,
 }
 
 impl TxSubmissionNode {
     /// Create a new TxSubmission protocol node
     pub fn new() -> (Self, mpsc::UnboundedReceiver<TxSubmissionMessage>) {
         let (sender, receiver) = mpsc::unbounded_channel();
-        let receiver = Arc::new(Mutex::new(receiver));
-        let node_receiver = {
-            let (node_sender, node_receiver) = mpsc::unbounded_channel();
-            node_receiver
-        };
 
         let node = Self {
             state: TxSubmissionState::Idle,
@@ -324,10 +342,9 @@ impl TxSubmissionNode {
             pending_tx_requests: Vec::new(),
             received_tx_ids: Vec::new(),
             sender,
-            receiver: receiver.clone(),
         };
 
-        (node, node_receiver)
+        (node, receiver)
     }
 
     /// Request transaction IDs from peer
@@ -357,7 +374,10 @@ impl TxSubmissionNode {
     }
 
     /// Request specific transactions by ID
-    pub async fn request_transactions(&mut self, tx_ids: Vec<TxId>) -> Result<(), TxSubmissionError> {
+    pub async fn request_transactions(
+        &mut self,
+        tx_ids: Vec<TxId>,
+    ) -> Result<(), TxSubmissionError> {
         match self.state {
             TxSubmissionState::Idle => {
                 if tx_ids.is_empty() {
@@ -384,20 +404,19 @@ impl TxSubmissionNode {
     }
 
     /// Process a message received from peer
-    pub async fn receive_message(&mut self, message: TxSubmissionMessage) -> Result<(), TxSubmissionError> {
+    pub async fn receive_message(
+        &mut self,
+        message: TxSubmissionMessage,
+    ) -> Result<(), TxSubmissionError> {
         match message {
-            TxSubmissionMessage::RequestTxIds { blocking: _, ack, req } => {
-                self.handle_tx_ids_request(ack, req).await
-            }
-            TxSubmissionMessage::ReplyTxIds { tx_ids } => {
-                self.handle_tx_ids_reply(tx_ids).await
-            }
-            TxSubmissionMessage::RequestTxs { tx_ids } => {
-                self.handle_txs_request(tx_ids).await
-            }
-            TxSubmissionMessage::ReplyTxs { txs } => {
-                self.handle_txs_reply(txs).await
-            }
+            TxSubmissionMessage::RequestTxIds {
+                blocking: _,
+                ack,
+                req,
+            } => self.handle_tx_ids_request(ack, req).await,
+            TxSubmissionMessage::ReplyTxIds { tx_ids } => self.handle_tx_ids_reply(tx_ids).await,
+            TxSubmissionMessage::RequestTxs { tx_ids } => self.handle_txs_request(tx_ids).await,
+            TxSubmissionMessage::ReplyTxs { txs } => self.handle_txs_reply(txs).await,
         }
     }
 
@@ -414,11 +433,11 @@ impl TxSubmissionNode {
 
         // Get available transaction IDs (limited by req count)
         let available_tx_ids = self.mempool.get_available_tx_ids();
-        let tx_ids_to_send = available_tx_ids.into_iter()
-            .take(req as usize)
-            .collect();
+        let tx_ids_to_send = available_tx_ids.into_iter().take(req as usize).collect();
 
-        let reply = TxSubmissionMessage::ReplyTxIds { tx_ids: tx_ids_to_send };
+        let reply = TxSubmissionMessage::ReplyTxIds {
+            tx_ids: tx_ids_to_send,
+        };
         self.sender
             .send(reply)
             .map_err(|_| TxSubmissionError::NetworkError {
@@ -429,7 +448,10 @@ impl TxSubmissionNode {
     }
 
     /// Handle a reply with transaction IDs
-    async fn handle_tx_ids_reply(&mut self, tx_ids: Vec<(TxId, TxSize)>) -> Result<(), TxSubmissionError> {
+    async fn handle_tx_ids_reply(
+        &mut self,
+        tx_ids: Vec<(TxId, TxSize)>,
+    ) -> Result<(), TxSubmissionError> {
         match self.state {
             TxSubmissionState::WaitingForTxIds => {
                 // Update flow control
@@ -493,7 +515,8 @@ impl TxSubmissionNode {
                 // Add received transactions to mempool
                 for (tx_id, tx) in self.pending_tx_requests.iter().zip(txs.iter()) {
                     let size = calculate_tx_size(tx); // Simplified size calculation
-                    self.mempool.add_transaction(tx_id.clone(), tx.clone(), size);
+                    self.mempool
+                        .add_transaction(tx_id.clone(), tx.clone(), size);
                 }
 
                 // Clear pending requests and return to idle
@@ -546,25 +569,63 @@ fn calculate_tx_size(tx: &Transaction) -> TxSize {
 }
 
 /// Generate a mock transaction for testing
-pub fn generate_mock_transaction(tx_id: &TxId, input_count: usize, output_count: usize) -> Transaction {
+pub fn generate_mock_transaction(
+    tx_id: &TxId,
+    input_count: usize,
+    output_count: usize,
+) -> Transaction {
     use cardano_consensus::block_production::{TxInput, TxOutput};
 
     let inputs = (0..input_count)
         .map(|i| TxInput {
-            tx_hash: tx_id.0.clone(),
+            tx_hash: tx_id.0,
             output_index: i as u32,
         })
         .collect();
 
     let outputs = (0..output_count)
         .map(|i| TxOutput {
-            address: Blake2b256Hash::from_bytes(&[(i as u8), 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]).unwrap(),
+            address: Blake2b256Hash::from_bytes(&[
+                (i as u8),
+                0u8,
+                0u8,
+                0u8,
+                0u8,
+                0u8,
+                0u8,
+                0u8,
+                0u8,
+                0u8,
+                0u8,
+                0u8,
+                0u8,
+                0u8,
+                0u8,
+                0u8,
+                0u8,
+                0u8,
+                0u8,
+                0u8,
+                0u8,
+                0u8,
+                0u8,
+                0u8,
+                0u8,
+                0u8,
+                0u8,
+                0u8,
+                0u8,
+                0u8,
+                0u8,
+                0u8,
+            ])
+            .unwrap(),
             value: (i + 1) as u64 * 1000000, // 1-n ADA
         })
         .collect();
 
     Transaction {
-        tx_id: tx_id.0.clone(),
+        tx_id: tx_id.0,
         inputs,
         outputs,
         fee: 200000, // 0.2 ADA fee

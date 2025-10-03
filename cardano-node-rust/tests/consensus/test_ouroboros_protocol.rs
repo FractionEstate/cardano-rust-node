@@ -5,8 +5,22 @@
 //! and stake distribution calculations following the Ouroboros protocol specification.
 
 use cardano_consensus::{ConsensusError, Result};
-use cardano_crypto::{Blake2b256Hash, Ed25519KeyHash, VrfProof, VrfOutput};
+use cardano_crypto::{
+    Blake2b256Hash,
+    Ed25519KeyHash,
+    VrfOutput,
+    VrfProof,
+};
 use std::collections::HashMap;
+
+#[path = "../common/mod.rs"]
+mod common;
+
+use common::vrf::{
+    vrf_fixture_output,
+    vrf_fixture_proof,
+    vrf_prove_message,
+};
 
 /// Slot number in the blockchain
 pub type SlotNumber = u64;
@@ -179,10 +193,36 @@ impl BlockHeader {
         })
     }
 
-    fn evaluate_vrf(&self, _context: &VrfContext, _vrf_key: &Blake2b256Hash) -> Result<VrfOutput> {
-        // Simplified VRF evaluation - in practice this involves cryptographic operations
-        // VRF(SK, seed || slot_number)
-        Ok(VrfOutput::new(b"vrf_output_placeholder"))
+    fn evaluate_vrf(&self, context: &VrfContext, _vrf_key: &Blake2b256Hash) -> Result<VrfOutput> {
+        let extra_capacity = context.extra_entropy.as_ref().map(|_| 32).unwrap_or(0);
+        let mut payload = Vec::with_capacity(
+            context.epoch_nonce.as_bytes().len()
+                + std::mem::size_of::<SlotNumber>()
+                + extra_capacity,
+        );
+
+        payload.extend_from_slice(context.epoch_nonce.as_bytes());
+        payload.extend_from_slice(&context.slot.to_le_bytes());
+
+        if let Some(extra) = context.extra_entropy.as_ref() {
+            payload.extend_from_slice(extra.as_bytes());
+        }
+
+        let (output, proof) = vrf_prove_message(&payload);
+
+        if self.vrf_proof != proof {
+            return Err(ConsensusError::InvalidVrfProof(
+                "VRF proof does not match payload".to_string(),
+            ));
+        }
+
+        if self.vrf_output != output {
+            return Err(ConsensusError::InvalidVrfProof(
+                "VRF output does not match payload".to_string(),
+            ));
+        }
+
+        Ok(output)
     }
 
     fn vrf_output_to_natural(&self, vrf_output: &VrfOutput) -> f64 {
@@ -451,6 +491,16 @@ impl EpochBoundary {
 mod tests {
     use super::*;
 
+    fn vrf_pair_for(consensus_state: &ConsensusState, slot: SlotNumber) -> (VrfOutput, VrfProof) {
+        let mut payload = Vec::with_capacity(
+            consensus_state.epoch_nonce.as_bytes().len() + std::mem::size_of::<SlotNumber>(),
+        );
+        payload.extend_from_slice(consensus_state.epoch_nonce.as_bytes());
+        payload.extend_from_slice(&slot.to_le_bytes());
+
+        super::vrf_prove_message(&payload)
+    }
+
     fn create_test_pool_stake() -> PoolStake {
         PoolStake {
             stake: 1_000_000_000_000, // 1M ADA
@@ -532,18 +582,22 @@ mod tests {
     #[test]
     fn test_block_header_validation() {
         let mut consensus_state = ConsensusState::new();
+        consensus_state.active_slot_coeff = 1.0; // deterministic leadership for tests
 
         // Add a test pool to stake distribution
         let pool_id = Ed25519KeyHash::new(b"test_pool");
         let pool_stake = create_test_pool_stake();
         consensus_state.stake_distribution.add_pool(pool_id, pool_stake);
 
+        let target_slot = 1000;
+        let (vrf_output, vrf_proof) = vrf_pair_for(&consensus_state, target_slot);
+
         let block_header = BlockHeader {
-            slot: 1000,
+            slot: target_slot,
             prev_hash: Blake2b256Hash::new(b"prev_block_hash"),
             issuer_vkey: pool_id,
-            vrf_proof: VrfProof::new(b"vrf_proof"),
-            vrf_output: VrfOutput::new(b"vrf_output"),
+            vrf_proof,
+            vrf_output,
             block_body_hash: Blake2b256Hash::new(b"block_body"),
             block_size: 65536,
             operational_cert: OperationalCertificate {
@@ -555,24 +609,10 @@ mod tests {
             protocol_magic: 764824073, // Mainnet magic
         };
 
-        consensus_state.current_slot = 999; // Block is from next slot
+        consensus_state.current_slot = target_slot - 1; // Block is from next slot
 
-        // Note: This test will fail until we implement proper VRF evaluation
-        // and slot leadership determination - this is expected for TDD
         let result = block_header.validate(&consensus_state);
-
-        // The validation should fail because we haven't implemented proper
-        // cryptographic VRF validation yet - this demonstrates TDD approach
-        match result {
-            Ok(_) => {
-                // If validation passes, check that basic rules are working
-                assert!(true, "Basic validation rules are working");
-            }
-            Err(_) => {
-                // Expected to fail until full implementation
-                assert!(true, "Expected failure until VRF implementation");
-            }
-        }
+        assert!(result.is_ok(), "block header should validate with matching VRF payload: {:?}", result);
     }
 
     #[test]
@@ -584,12 +624,15 @@ mod tests {
         let pool_stake = create_test_pool_stake();
         consensus_state.stake_distribution.add_pool(pool_id, pool_stake);
 
+        let past_slot = 999;
+        let (vrf_output, vrf_proof) = vrf_pair_for(&consensus_state, past_slot);
+
         let block_header = BlockHeader {
-            slot: 999, // Past slot
+            slot: past_slot, // Past slot
             prev_hash: Blake2b256Hash::new(b"prev_block_hash"),
             issuer_vkey: pool_id,
-            vrf_proof: VrfProof::new(b"vrf_proof"),
-            vrf_output: VrfOutput::new(b"vrf_output"),
+            vrf_proof,
+            vrf_output,
             block_body_hash: Blake2b256Hash::new(b"block_body"),
             block_size: 65536,
             operational_cert: OperationalCertificate {
@@ -691,8 +734,8 @@ mod tests {
             slot: 1000,
             prev_hash: Blake2b256Hash::new(b"prev_hash"),
             issuer_vkey: Ed25519KeyHash::new(b"issuer"),
-            vrf_proof: VrfProof::new(b"proof"),
-            vrf_output: VrfOutput::new(b"output12"), // 8 bytes for conversion
+            vrf_proof: vrf_fixture_proof("ouroboros-conversion-proof"),
+            vrf_output: vrf_fixture_output("ouroboros-conversion-output"),
             block_body_hash: Blake2b256Hash::new(b"body_hash"),
             block_size: 1000,
             operational_cert: OperationalCertificate {
@@ -714,12 +757,15 @@ mod tests {
         let pool_id = Ed25519KeyHash::new(b"test_pool");
         consensus_state.stake_distribution.add_pool(pool_id, create_test_pool_stake());
 
+        let slot = 1000;
+        let (vrf_output, vrf_proof) = vrf_pair_for(&consensus_state, slot);
+
         let block_header = BlockHeader {
-            slot: 1000,
+            slot,
             prev_hash: Blake2b256Hash::new(b"prev_hash"),
             issuer_vkey: pool_id,
-            vrf_proof: VrfProof::new(b"proof"),
-            vrf_output: VrfOutput::new(b"output"),
+            vrf_proof,
+            vrf_output,
             block_body_hash: Blake2b256Hash::new(b"body"),
             block_size: 1000,
             operational_cert: OperationalCertificate {

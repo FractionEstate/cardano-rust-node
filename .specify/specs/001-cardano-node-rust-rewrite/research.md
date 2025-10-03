@@ -189,6 +189,32 @@
 - Careful review of cryptographic implementations
 - Incident response plan for security issues
 
+## Compatibility Research (2025-02-14)
+
+### VRF reference mapping
+- **Primary Haskell modules**:
+	- `Cardano.Crypto.VRF.Class` (cardano-base/cardano-crypto-class) – defines the `VRFAlgorithm` type class, raw serialisation helpers, and the `CertifiedVRF` wrapper.
+	- `Cardano.Crypto.VRF.Praos` (cardano-base/cardano-crypto-praos) – production ECVRF implementation via libsodium FFI, exposing the `PraosVRF` instance used throughout the node.
+	- `Cardano.Crypto.VRF.PraosBatchCompat` – legacy batch-proof variant (128-byte proofs) retained for compatibility; mirrors Rust constant `VRF_BATCH_PROOF_LENGTH`.
+	- `Test.Crypto.VRF` (cardano-base/cardano-crypto-tests) – QuickCheck properties plus golden vectors validating key generation, evaluation, verification, CBOR size expressions, and proof hashing.
+- **Rust counterparts**:
+	- `crates/cardano-crypto/src/vrf/mod.rs` – public API surface that enforces expected byte lengths (`VRF_*_LENGTH`) and exposes safe wrappers around proofs, outputs, and keys.
+	- `crates/cardano-crypto/src/vrf/backend.rs` – pure-Rust ECVRF implementation on edwards25519 closely following libsodium draft-03 transcript construction.
+- **Size and constant alignment**:
+	- Haskell `verKeySizeVRF`, `signKeySizeVRF`, `certSizeVRF`, and `crypto_vrf_outputbytes` correspond exactly to Rust constants 32, 64, 80, and 64 respectively.
+	- Seed length is 32 bytes in both implementations; batch proofs are 128 bytes (`PraosBatchCompat`) and tracked in Rust as `VRF_BATCH_PROOF_LENGTH` pending API exposure.
+- **Operational semantics**:
+	- Deterministic nonce derivation (seeded from secret scalar + hashed message) is implemented in both backends, so repeated proofs for identical inputs must match byte-for-byte.
+	- `proof_to_hash` output mirrors Haskell’s `crypto_vrf_proof_to_hash`, producing a 64-byte digest used for Ouroboros randomness; Rust’s `VrfProof::to_hash` already enforces this length.
+- **Test vectors**:
+	- Golden files under `cardano-base/cardano-crypto-tests/test_vectors/vrf_ver03_*` cover zero/standard seeds from the libsodium ECVRF draft-03 reference. These should be mirrored in `tests/crypto/test_vrf_compat.rs` to assert compatibility.
+	- Haskell QuickCheck suites assert raw serialisation round-trips, CBOR envelope sizes, and negative verification cases; Rust property tests (proptest) need to align with the same expectations.
+
+### Immediate follow-ups
+- Replace placeholder VRF vectors in Rust tests with the Praos golden files and validate outputs, proofs, and `proof_to_hash` values.
+- Extend Rust property tests to cover error paths (altered proofs, mismatched inputs, malformed key lengths) consistent with Haskell test coverage.
+- Decide whether to expose a batch-compatible VRF API akin to `PraosBatchCompatVRF` or to defer until we require federated leader election compatibility.
+
 ## Unknown Mitigation
 
 All technical unknowns from the specification have been resolved through this research phase. No remaining NEEDS CLARIFICATION items.

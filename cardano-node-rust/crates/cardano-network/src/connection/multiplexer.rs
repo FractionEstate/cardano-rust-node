@@ -8,13 +8,11 @@ use std::collections::HashMap;
 use std::fmt;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::task::{Context, Poll};
 
 use bytes::{Buf, BufMut, Bytes, BytesMut};
-use minicbor::{Decoder, Encoder};
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
-use tokio::sync::{mpsc, oneshot, RwLock};
+use tokio::sync::{mpsc, RwLock};
 use tokio::task::JoinHandle;
 
 use super::{ConnectionError, ConnectionId};
@@ -108,7 +106,8 @@ impl MessageFrame {
             return Err(MultiplexerError::InvalidFrameSize {
                 expected: 4,
                 actual: data.len(),
-            }.into());
+            }
+            .into());
         }
 
         let protocol_id = ProtocolId::new(data.get_u16());
@@ -118,7 +117,8 @@ impl MessageFrame {
             return Err(MultiplexerError::InvalidFrameSize {
                 expected: payload_len,
                 actual: data.len(),
-            }.into());
+            }
+            .into());
         }
 
         let payload = data.slice(..payload_len);
@@ -132,6 +132,7 @@ pub trait ProtocolHandler: Send + Sync {
     /// Handle incoming message for this protocol
     fn handle_message(
         &self,
+        connection_id: ConnectionId,
         message: Bytes,
     ) -> Pin<Box<dyn std::future::Future<Output = Result<Option<Bytes>>> + Send>>;
 
@@ -207,7 +208,10 @@ impl fmt::Debug for ConnectionMultiplexer {
         f.debug_struct("ConnectionMultiplexer")
             .field("connection_id", &self.connection_id)
             .field("config", &self.config)
-            .field("handlers_count", &self.handlers.try_read().map(|h| h.len()).unwrap_or(0))
+            .field(
+                "handlers_count",
+                &self.handlers.try_read().map(|h| h.len()).unwrap_or(0),
+            )
             .finish()
     }
 }
@@ -243,10 +247,7 @@ impl ConnectionMultiplexer {
     }
 
     /// Register protocol handler
-    pub async fn register_protocol(
-        &mut self,
-        handler: Arc<dyn ProtocolHandler>,
-    ) -> Result<()> {
+    pub async fn register_protocol(&mut self, handler: Arc<dyn ProtocolHandler>) -> Result<()> {
         let protocol_id = handler.protocol_id();
         let mut handlers = self.handlers.write().await;
 
@@ -269,7 +270,8 @@ impl ConnectionMultiplexer {
     pub fn send_message(&self, protocol_id: ProtocolId, payload: Bytes) -> Result<()> {
         let frame = MessageFrame::new(protocol_id, payload);
 
-        self.outbound_tx.send(frame)
+        self.outbound_tx
+            .send(frame)
             .map_err(|_| MultiplexerError::SendQueueFull)?;
 
         Ok(())
@@ -337,11 +339,8 @@ impl ConnectionMultiplexer {
                             match MessageFrame::decode(frame_data.freeze()) {
                                 Ok(frame) => {
                                     // Handle frame
-                                    Self::handle_incoming_frame(
-                                        connection_id,
-                                        frame,
-                                        &handlers,
-                                    ).await;
+                                    Self::handle_incoming_frame(connection_id, frame, &handlers)
+                                        .await;
                                 }
                                 Err(e) => {
                                     eprintln!("Frame decode error: {}", e);
@@ -404,19 +403,20 @@ impl ConnectionMultiplexer {
             let frame_payload = frame.payload.clone();
 
             tokio::spawn(async move {
-                match handler.handle_message(frame_payload).await {
+                match handler.handle_message(connection_id, frame_payload).await {
                     Ok(Some(response)) => {
-                        // TODO: Send response back through multiplexer
-                        // This would require a back-channel to the multiplexer
+                        tracing::debug!(
+                            protocol = %frame_protocol,
+                            response_len = response.len(),
+                            "Protocol handler produced response without back-channel"
+                        );
+                        // TODO: Send response back through multiplexer when back-channel is implemented
                     }
                     Ok(None) => {
                         // No response needed
                     }
                     Err(e) => {
-                        eprintln!(
-                            "Protocol {} handler error: {}",
-                            frame_protocol, e
-                        );
+                        eprintln!("Protocol {} handler error: {}", frame_protocol, e);
                     }
                 }
             });
@@ -481,6 +481,7 @@ impl EchoProtocolHandler {
 impl ProtocolHandler for EchoProtocolHandler {
     fn handle_message(
         &self,
+        _connection_id: ConnectionId,
         message: Bytes,
     ) -> Pin<Box<dyn std::future::Future<Output = Result<Option<Bytes>>> + Send>> {
         let response = message.clone(); // Echo the message back
@@ -499,7 +500,6 @@ impl ProtocolHandler for EchoProtocolHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
     use crate::NetworkError;
 
     #[test]
@@ -539,18 +539,21 @@ mod tests {
         let result = MessageFrame::decode(invalid_data);
 
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), NetworkError::MultiplexerError(MultiplexerError::InvalidFrameSize { .. })));
+        assert!(matches!(
+            result.unwrap_err(),
+            NetworkError::MultiplexerError(MultiplexerError::InvalidFrameSize { .. })
+        ));
     }
 
     #[tokio::test]
     async fn test_echo_protocol_handler() {
-        let handler = EchoProtocolHandler::new(
-            ProtocolId::CHAINSYNC,
-            "TestEcho".to_string(),
-        );
+        let handler = EchoProtocolHandler::new(ProtocolId::CHAINSYNC, "TestEcho".to_string());
 
         let message = Bytes::from_static(b"test");
-        let response = handler.handle_message(message.clone()).await.unwrap();
+        let response = handler
+            .handle_message(ConnectionId::new(), message.clone())
+            .await
+            .unwrap();
 
         assert_eq!(response, Some(message));
         assert_eq!(handler.protocol_id(), ProtocolId::CHAINSYNC);

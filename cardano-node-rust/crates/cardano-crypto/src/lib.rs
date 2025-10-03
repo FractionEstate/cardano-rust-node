@@ -9,15 +9,15 @@
 //! All implementations must maintain byte-for-byte compatibility
 //! with the Haskell Cardano Node.
 
-pub mod ed25519;
-pub mod vrf;
-pub mod hash;
 pub mod bls;
+pub mod ed25519;
+pub mod hash;
+pub mod vrf;
 
-pub use ed25519::*;
-pub use vrf::*;
-pub use hash::*;
 pub use bls::*;
+pub use ed25519::*;
+pub use hash::*;
+pub use vrf::*;
 
 /// Cardano-specific error types for cryptographic operations
 #[derive(Debug, thiserror::Error)]
@@ -36,6 +36,12 @@ pub enum CryptoError {
 
     #[error("BLS operation failed: {0}")]
     BlsError(String),
+
+    #[error("Library initialization failed: {0}")]
+    LibraryInitializationFailed(String),
+
+    #[error("VRF error: {0}")]
+    VrfError(String),
 
     #[error("Invalid key length")]
     InvalidKeyLength,

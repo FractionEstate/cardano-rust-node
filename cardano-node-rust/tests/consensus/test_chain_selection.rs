@@ -5,8 +5,22 @@
 //! and chain quality validation according to the Ouroboros protocol.
 
 use cardano_consensus::{ConsensusError, Result};
-use cardano_crypto::{Blake2b256Hash, Ed25519KeyHash};
+use cardano_crypto::{
+    Blake2b256Hash,
+    Ed25519KeyHash,
+    VrfOutput,
+    VrfProof,
+    VRF_OUTPUT_LENGTH,
+};
 use std::collections::{HashMap, VecDeque};
+
+#[path = "../common/mod.rs"]
+mod common;
+
+use common::vrf::{
+    vrf_fixture_output,
+    vrf_fixture_proof,
+};
 
 pub use crate::test_ouroboros_protocol::{
     BlockHeader, SlotNumber, EpochNumber, ConsensusState, OperationalCertificate
@@ -491,15 +505,19 @@ impl ChainSync {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cardano_crypto::VrfProof;
+
+    fn uniform_vrf_output(byte: u8) -> VrfOutput {
+        let bytes = vec![byte; VRF_OUTPUT_LENGTH];
+        VrfOutput::from_bytes(&bytes).expect("uniform VRF output is valid")
+    }
 
     fn create_test_header(slot: SlotNumber, prev_hash: Blake2b256Hash, issuer: Ed25519KeyHash) -> BlockHeader {
         BlockHeader {
             slot,
             prev_hash,
             issuer_vkey: issuer,
-            vrf_proof: VrfProof::new(b"test_vrf_proof"),
-            vrf_output: cardano_crypto::VrfOutput::new(b"test_vrf_output"),
+            vrf_proof: vrf_fixture_proof("chain-selection-proof"),
+            vrf_output: vrf_fixture_output("chain-selection-output"),
             block_body_hash: Blake2b256Hash::new(&format!("body_{}", slot).as_bytes()),
             block_size: 1024,
             operational_cert: OperationalCertificate {
@@ -733,7 +751,7 @@ mod tests {
             let mut header_b = create_test_header(slot, prev_hash_b, issuer);
 
             // Give chain B higher work by modifying VRF output
-            header_b.vrf_output = cardano_crypto::VrfOutput::new(b"\x00\x00\x00\x00\x00\x00\x00\x00"); // Lower VRF = higher work
+            header_b.vrf_output = uniform_vrf_output(0x00); // Lower VRF = higher work
 
             prev_hash_a = chain_a.extend(header_a).unwrap();
             prev_hash_b = chain_b.extend(header_b).unwrap();

@@ -7,11 +7,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
-use tokio::sync::{mpsc, RwLock, Mutex};
+use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio::task::JoinHandle;
-use tokio::time::{interval, sleep, timeout};
 
-use super::{ConnectionId, ConnectionError, ProtocolId};
+use super::ConnectionId;
 use crate::diffusion::PeerId;
 use crate::Result;
 
@@ -120,9 +119,9 @@ impl ConnectionMetrics {
     pub fn update_health(&mut self, config: &MonitorConfig) {
         let idle_time = self.idle_time();
 
-        self.health = if self.failed_keepalives >= config.max_failed_keepalives {
-            HealthStatus::Unhealthy
-        } else if idle_time > config.unhealthy_threshold {
+        self.health = if self.failed_keepalives >= config.max_failed_keepalives
+            || idle_time > config.unhealthy_threshold
+        {
             HealthStatus::Unhealthy
         } else if idle_time > config.degraded_threshold || self.failed_keepalives > 0 {
             HealthStatus::Degraded
@@ -504,12 +503,10 @@ impl KeepAliveProtocol {
     }
 
     /// Handle keepalive response
-    pub async fn handle_response(
-        &self,
-        connection_id: ConnectionId,
-        response: KeepAliveResponse,
-    ) {
-        self.monitor.handle_keepalive_response(connection_id, response).await;
+    pub async fn handle_response(&self, connection_id: ConnectionId, response: KeepAliveResponse) {
+        self.monitor
+            .handle_keepalive_response(connection_id, response)
+            .await;
         self.monitor.update_activity(connection_id).await;
     }
 }

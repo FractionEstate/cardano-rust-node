@@ -41,9 +41,26 @@ anyhow.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 
+# Hashing utilities
+blake2.workspace = true
+
 # Serialization
 serde.workspace = true
 serde_json.workspace = true
+
+# Time handling
+chrono.workspace = true
+
+# TUI and CLI enhancements
+ratatui.workspace = true
+crossterm.workspace = true
+tui-input.workspace = true
+
+# Web and API
+axum.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+tokio-tungstenite.workspace = true
 
 # Testing utilities (used by ConfigTestHelper)
 tempfile.workspace = true
@@ -55,4 +72,4 @@ tokio-test.workspace = true
 
 [[test]]
 name = "t082_node_lifecycle"
-path = "../../tests/t082_node_lifecycle.rs"
+path = "../../tests/node_lifecycle.rs"

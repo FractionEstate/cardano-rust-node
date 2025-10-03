@@ -5,8 +5,27 @@
 //! operational certificate management, and KES (Key Evolving Signatures).
 
 use cardano_consensus::{ConsensusError, Result};
-use cardano_crypto::{Blake2b256Hash, Ed25519KeyHash, VrfProof, VrfOutput};
+use cardano_crypto::{
+    Blake2b256Hash,
+    Ed25519KeyHash,
+    VrfOutput,
+    VrfPrivateKey,
+    VrfProof,
+    VrfPublicKey,
+    VRF_PROOF_LENGTH,
+    VRF_OUTPUT_LENGTH,
+};
 use std::collections::HashMap;
+
+#[path = "../common/mod.rs"]
+mod common;
+
+use common::vrf::{
+    vrf_fixture_output,
+    vrf_fixture_proof,
+    vrf_private_key,
+    vrf_public_key,
+};
 
 pub use crate::test_ouroboros_protocol::{
     BlockHeader, SlotNumber, EpochNumber, ConsensusState, StakeDistribution,
@@ -27,8 +46,8 @@ pub struct BlockProducer {
 /// VRF (Verifiable Random Function) key for slot leadership
 #[derive(Debug, Clone)]
 pub struct VrfKey {
-    pub public_key: Blake2b256Hash,
-    pub private_key: Blake2b256Hash, // Simplified for testing
+    pub public_key: VrfPublicKey,
+    pub private_key: VrfPrivateKey,
 }
 
 /// KES (Key Evolving Signature) key for block signing
@@ -107,22 +126,20 @@ pub struct BlockBody {
 impl VrfKey {
     pub fn new() -> Self {
         Self {
-            public_key: Blake2b256Hash::new(b"vrf_public_key"),
-            private_key: Blake2b256Hash::new(b"vrf_private_key"),
+            public_key: vrf_public_key(),
+            private_key: vrf_private_key(),
         }
     }
 
     /// Evaluate VRF for slot leadership
     pub fn evaluate_leadership(&self, slot: SlotNumber, epoch_nonce: &Blake2b256Hash) -> Result<(VrfOutput, VrfProof)> {
-        // Create VRF input: epoch_nonce || slot_number
-        let input = format!("{:?}{}", epoch_nonce, slot);
-        let input_bytes = input.as_bytes();
+        let mut payload = Vec::with_capacity(epoch_nonce.as_bytes().len() + std::mem::size_of::<SlotNumber>());
+        payload.extend_from_slice(epoch_nonce.as_bytes());
+        payload.extend_from_slice(&slot.to_le_bytes());
 
-        // Simplified VRF evaluation - in practice this involves cryptographic operations
-        let output = VrfOutput::new(&Blake2b256Hash::new(input_bytes).as_bytes()[..32]);
-        let proof = VrfProof::new(&Blake2b256Hash::new(&format!("proof_{}", input).as_bytes()).as_bytes()[..64]);
-
-        Ok((output, proof))
+        self.private_key
+            .try_prove(&payload)
+            .map_err(|err| ConsensusError::InvalidVrfProof(format!("VRF evaluation failed: {}", err)))
     }
 }
 
@@ -202,7 +219,12 @@ impl BlockProducer {
     }
 
     /// Check if this producer is slot leader for given slot
-    pub fn check_slot_leadership(&self, context: &ForgingContext, total_stake: u64, active_slot_coeff: f64) -> Result<Option<VrfProof>> {
+    pub fn check_slot_leadership(
+        &self,
+        context: &ForgingContext,
+        total_stake: u64,
+        active_slot_coeff: f64,
+    ) -> Result<Option<(VrfOutput, VrfProof)>> {
         // Evaluate VRF for slot leadership
         let (vrf_output, vrf_proof) = self.vrf_key.evaluate_leadership(context.current_slot, &context.epoch_nonce)?;
 
@@ -214,14 +236,14 @@ impl BlockProducer {
         let vrf_natural = self.vrf_output_to_natural(&vrf_output);
 
         if vrf_natural < threshold {
-            Ok(Some(vrf_proof))
+            Ok(Some((vrf_output, vrf_proof)))
         } else {
             Ok(None)
         }
     }
 
     fn vrf_output_to_natural(&self, vrf_output: &VrfOutput) -> f64 {
-        let bytes = vrf_output.as_bytes();
+        let bytes = vrf_output.to_bytes();
         let mut value = 0u64;
 
         // Take first 8 bytes and convert to u64
@@ -230,7 +252,11 @@ impl BlockProducer {
         }
 
         // Normalize to [0,1)
-        value as f64 / (u64::MAX as f64)
+        if value == u64::MAX {
+            1.0 - f64::EPSILON
+        } else {
+            (value as f64) / ((u64::MAX as f64) + 1.0)
+        }
     }
 
     /// Forge a new block for the given slot
@@ -239,8 +265,10 @@ impl BlockProducer {
         let total_stake = 1_000_000_000_000_000; // 1 billion ADA (simplified)
         let active_slot_coeff = 0.05; // 5% active slot coefficient
 
-        let proof_of_leadership = self.check_slot_leadership(context, total_stake, active_slot_coeff)?
+        let (vrf_output, vrf_proof) = self
+            .check_slot_leadership(context, total_stake, active_slot_coeff)?
             .ok_or_else(|| ConsensusError::NotSlotLeader("Producer not elected for this slot".to_string()))?;
+        let proof_of_leadership = vrf_proof.clone();
 
         // Select transactions from mempool
         let (selected_txs, total_fee) = self.select_transactions(&context.mempool)?;
@@ -267,8 +295,8 @@ impl BlockProducer {
             slot: context.current_slot,
             prev_hash: context.prev_block_hash,
             issuer_vkey: self.pool_id,
-            vrf_proof: proof_of_leadership.clone(),
-            vrf_output: self.vrf_key.evaluate_leadership(context.current_slot, &context.epoch_nonce)?.0,
+            vrf_proof,
+            vrf_output,
             block_body_hash: body.hash(),
             block_size: body.total_size,
             operational_cert: self.operational_cert.clone(),
@@ -371,6 +399,8 @@ pub struct ProductionScheduler {
 }
 
 impl ProductionScheduler {
+    const MAINNET_EPOCH_LENGTH: SlotNumber = 432_000;
+
     pub fn new() -> Self {
         Self {
             producers: HashMap::new(),
@@ -385,7 +415,17 @@ impl ProductionScheduler {
 
     /// Calculate slot leadership schedule for an epoch
     pub fn calculate_epoch_schedule(&mut self, epoch: EpochNumber, stake_distribution: &StakeDistribution) -> Result<()> {
-        let epoch_length = 432000; // 5 days in 1-second slots
+        self.calculate_epoch_schedule_with_length(epoch, stake_distribution, Self::MAINNET_EPOCH_LENGTH)
+    }
+
+    pub fn calculate_epoch_schedule_with_length(
+        &mut self,
+        epoch: EpochNumber,
+        stake_distribution: &StakeDistribution,
+        epoch_length: SlotNumber,
+    ) -> Result<()> {
+        assert!(epoch_length > 0, "epoch length must be positive");
+
         let start_slot = epoch * epoch_length;
         let end_slot = start_slot + epoch_length - 1;
 
@@ -407,7 +447,9 @@ impl ProductionScheduler {
                 let total_stake = stake_distribution.total_stake;
                 let active_slot_coeff = 0.05;
 
-                if let Ok(Some(_proof)) = producer.check_slot_leadership(&context, total_stake, active_slot_coeff) {
+                if let Ok(Some((_output, _proof))) =
+                    producer.check_slot_leadership(&context, total_stake, active_slot_coeff)
+                {
                     self.schedule.insert(slot, *pool_id);
                     break; // First producer wins (simplified - real protocol handles ties differently)
                 }
@@ -437,6 +479,11 @@ impl ProductionScheduler {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn uniform_vrf_output(byte: u8) -> VrfOutput {
+        let bytes = vec![byte; VRF_OUTPUT_LENGTH];
+        VrfOutput::from_bytes(&bytes).expect("uniform VRF output is valid")
+    }
 
     fn create_test_producer() -> BlockProducer {
         let pool_id = Ed25519KeyHash::new(b"test_pool");
@@ -526,10 +573,11 @@ mod tests {
         let result = producer.check_slot_leadership(&context, total_stake, active_slot_coeff);
         assert!(result.is_ok());
 
-        // Result will be Some(proof) if leader, None if not leader
+        // Result will be Some((output, proof)) if leader, None if not leader
         match result.unwrap() {
-            Some(proof) => {
-                assert!(!proof.as_bytes().is_empty());
+            Some((output, proof)) => {
+                assert_eq!(output.to_bytes().len(), VRF_OUTPUT_LENGTH);
+                assert_eq!(proof.to_bytes().len(), VRF_PROOF_LENGTH);
                 println!("Producer elected as slot leader!");
             }
             None => {
@@ -613,8 +661,8 @@ mod tests {
         stake_dist.total_stake = 15_000_000_000_000; // Sum of both producers
 
         // Calculate schedule for a small epoch (just a few slots for testing)
-        // Note: This is probabilistic, so we mainly test that it doesn't crash
-        let result = scheduler.calculate_epoch_schedule(1, &stake_dist);
+    // Note: This is probabilistic, so we mainly test that it doesn't crash
+    let result = scheduler.calculate_epoch_schedule_with_length(1, &stake_dist, 8);
         assert!(result.is_ok());
 
         // Get statistics
@@ -632,9 +680,9 @@ mod tests {
 
         // Test with different VRF outputs
         let outputs = vec![
-            VrfOutput::new(&[0u8; 32]),           // All zeros
-            VrfOutput::new(&[255u8; 32]),         // All ones
-            VrfOutput::new(&[128u8; 32]),         // Mid-range
+            uniform_vrf_output(0),
+            uniform_vrf_output(0xFF),
+            uniform_vrf_output(0x80),
         ];
 
         for output in outputs {
@@ -653,8 +701,8 @@ mod tests {
             slot: 50000, // Should be in KES period 0
             prev_hash: Blake2b256Hash::new(b"prev"),
             issuer_vkey: producer.pool_id,
-            vrf_proof: VrfProof::new(b"proof"),
-            vrf_output: VrfOutput::new(b"output123456789012345678901234567890"),
+            vrf_proof: vrf_fixture_proof("kes-proof"),
+            vrf_output: vrf_fixture_output("kes-output"),
             block_body_hash: Blake2b256Hash::new(b"body"),
             block_size: 1000,
             operational_cert: producer.operational_cert.clone(),

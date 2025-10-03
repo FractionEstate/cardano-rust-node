@@ -6,19 +6,19 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tokio::net::{UnixListener, UnixStream};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::net::{UnixListener, UnixStream};
 use tracing::{debug, error, info, warn};
 
 use crate::{ApiError, Result};
 
-pub mod protocol;
-pub mod handlers;
 pub mod client;
+pub mod handlers;
+pub mod protocol;
 
-pub use protocol::*;
-pub use handlers::*;
 pub use client::*;
+pub use handlers::*;
+pub use protocol::*;
 
 /// Configuration for the local socket server
 #[derive(Debug, Clone)]
@@ -62,21 +62,26 @@ impl LocalSocketServer {
     pub async fn start(&mut self) -> Result<()> {
         // Remove existing socket file
         if self.config.socket_path.exists() {
-            std::fs::remove_file(&self.config.socket_path)
-                .map_err(|e| ApiError::InternalError(format!("Failed to remove existing socket: {}", e)))?;
+            std::fs::remove_file(&self.config.socket_path).map_err(|e| {
+                ApiError::InternalError(format!("Failed to remove existing socket: {}", e))
+            })?;
         }
 
         // Create parent directory if it doesn't exist
         if let Some(parent) = self.config.socket_path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| ApiError::InternalError(format!("Failed to create socket directory: {}", e)))?;
+            std::fs::create_dir_all(parent).map_err(|e| {
+                ApiError::InternalError(format!("Failed to create socket directory: {}", e))
+            })?;
         }
 
         // Bind to Unix socket
         let listener = UnixListener::bind(&self.config.socket_path)
             .map_err(|e| ApiError::InternalError(format!("Failed to bind socket: {}", e)))?;
 
-        info!("Local socket server listening on {:?}", self.config.socket_path);
+        info!(
+            "Local socket server listening on {:?}",
+            self.config.socket_path
+        );
 
         self.listener = Some(listener);
         Ok(())
@@ -84,7 +89,8 @@ impl LocalSocketServer {
 
     /// Run the server event loop
     pub async fn run(&self) -> Result<()> {
-        let listener = self.listener
+        let listener = self
+            .listener
             .as_ref()
             .ok_or_else(|| ApiError::InternalError("Server not started".to_string()))?;
 
@@ -133,17 +139,18 @@ impl LocalSocketServer {
             line.clear();
 
             // Read request with timeout
-            let bytes_read = match tokio::time::timeout(timeout_duration, reader.read_line(&mut line)).await {
-                Ok(Ok(bytes)) => bytes,
-                Ok(Err(e)) => {
-                    debug!("Connection read error: {}", e);
-                    break;
-                }
-                Err(_) => {
-                    debug!("Connection timeout");
-                    break;
-                }
-            };
+            let bytes_read =
+                match tokio::time::timeout(timeout_duration, reader.read_line(&mut line)).await {
+                    Ok(Ok(bytes)) => bytes,
+                    Ok(Err(e)) => {
+                        debug!("Connection read error: {}", e);
+                        break;
+                    }
+                    Err(_) => {
+                        debug!("Connection timeout");
+                        break;
+                    }
+                };
 
             if bytes_read == 0 {
                 debug!("Connection closed by client");
@@ -156,7 +163,10 @@ impl LocalSocketServer {
                 .map_err(|e| ApiError::SerializationError(e.to_string()))?;
 
             // Send response
-            if let Err(e) = writer.write_all(format!("{}\n", response_json).as_bytes()).await {
+            if let Err(e) = writer
+                .write_all(format!("{}\n", response_json).as_bytes())
+                .await
+            {
                 debug!("Failed to write response: {}", e);
                 break;
             }
@@ -173,11 +183,12 @@ impl LocalSocketServer {
 
     /// Stop the server and cleanup
     pub fn stop(&mut self) -> Result<()> {
-        if let Some(_) = self.listener.take() {
+        if self.listener.take().is_some() {
             // Remove socket file
             if self.config.socket_path.exists() {
-                std::fs::remove_file(&self.config.socket_path)
-                    .map_err(|e| ApiError::InternalError(format!("Failed to remove socket: {}", e)))?;
+                std::fs::remove_file(&self.config.socket_path).map_err(|e| {
+                    ApiError::InternalError(format!("Failed to remove socket: {}", e))
+                })?;
             }
             info!("Local socket server stopped");
         }
@@ -199,7 +210,6 @@ impl Drop for LocalSocketServer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::net::UnixStream;
 
     #[tokio::test]
     async fn test_socket_server_creation() {

@@ -3,14 +3,14 @@
 //! Client implementation for connecting to the Cardano Node local socket
 //! and sending requests. Compatible with cardano-cli and other tools.
 
-use std::path::Path;
-use tokio::net::UnixStream;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use serde_json::Value;
+use std::path::Path;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::net::UnixStream;
 use tracing::debug;
 
-use crate::{ApiError, Result};
 use super::protocol::*;
+use crate::{ApiError, Result};
 
 /// Client for communicating with local socket
 pub struct LocalSocketClient {
@@ -39,11 +39,13 @@ impl LocalSocketClient {
         debug!("Sending request: {}", request_json);
 
         // Send request
-        stream.write_all(format!("{}\n", request_json).as_bytes())
+        stream
+            .write_all(format!("{}\n", request_json).as_bytes())
             .await
             .map_err(|e| ApiError::RequestError(format!("Failed to send request: {}", e)))?;
 
-        stream.flush()
+        stream
+            .flush()
             .await
             .map_err(|e| ApiError::RequestError(format!("Failed to flush request: {}", e)))?;
 
@@ -51,15 +53,18 @@ impl LocalSocketClient {
         let mut reader = BufReader::new(&mut stream);
         let mut response_line = String::new();
 
-        reader.read_line(&mut response_line)
+        reader
+            .read_line(&mut response_line)
             .await
             .map_err(|e| ApiError::RequestError(format!("Failed to read response: {}", e)))?;
 
         debug!("Received response: {}", response_line);
 
         // Parse response
-        let response: LocalSocketResponse = serde_json::from_str(response_line.trim())
-            .map_err(|e| ApiError::SerializationError(format!("Failed to parse response: {}", e)))?;
+        let response: LocalSocketResponse =
+            serde_json::from_str(response_line.trim()).map_err(|e| {
+                ApiError::SerializationError(format!("Failed to parse response: {}", e))
+            })?;
 
         Ok(response)
     }
@@ -99,7 +104,9 @@ impl LocalSocketClient {
         } else if let Some(error) = response.error {
             Err(ApiError::RequestError(error.message))
         } else {
-            Err(ApiError::RequestError("Invalid response format".to_string()))
+            Err(ApiError::RequestError(
+                "Invalid response format".to_string(),
+            ))
         }
     }
 
@@ -116,7 +123,9 @@ impl LocalSocketClient {
         } else if let Some(error) = response.error {
             Err(ApiError::RequestError(error.message))
         } else {
-            Err(ApiError::RequestError("Invalid response format".to_string()))
+            Err(ApiError::RequestError(
+                "Invalid response format".to_string(),
+            ))
         }
     }
 
@@ -126,14 +135,18 @@ impl LocalSocketClient {
             "txId": tx_id
         });
 
-        let response = self.send_request_with_params("queryTransaction", params).await?;
+        let response = self
+            .send_request_with_params("queryTransaction", params)
+            .await?;
 
         if let Some(result) = response.result {
             Ok(result)
         } else if let Some(error) = response.error {
             Err(ApiError::RequestError(error.message))
         } else {
-            Err(ApiError::RequestError("Invalid response format".to_string()))
+            Err(ApiError::RequestError(
+                "Invalid response format".to_string(),
+            ))
         }
     }
 
@@ -150,20 +163,26 @@ impl LocalSocketClient {
         } else if let Some(error) = response.error {
             Err(ApiError::RequestError(error.message))
         } else {
-            Err(ApiError::RequestError("Invalid response format".to_string()))
+            Err(ApiError::RequestError(
+                "Invalid response format".to_string(),
+            ))
         }
     }
 
     /// Submit a transaction
     pub async fn submit_transaction(&self, tx_data: Value) -> Result<Value> {
-        let response = self.send_request_with_params("submitTransaction", tx_data).await?;
+        let response = self
+            .send_request_with_params("submitTransaction", tx_data)
+            .await?;
 
         if let Some(result) = response.result {
             Ok(result)
         } else if let Some(error) = response.error {
             Err(ApiError::RequestError(error.message))
         } else {
-            Err(ApiError::RequestError("Invalid response format".to_string()))
+            Err(ApiError::RequestError(
+                "Invalid response format".to_string(),
+            ))
         }
     }
 
@@ -176,7 +195,9 @@ impl LocalSocketClient {
         } else if let Some(error) = response.error {
             Err(ApiError::RequestError(error.message))
         } else {
-            Err(ApiError::RequestError("Invalid response format".to_string()))
+            Err(ApiError::RequestError(
+                "Invalid response format".to_string(),
+            ))
         }
     }
 
@@ -189,7 +210,9 @@ impl LocalSocketClient {
         } else if let Some(error) = response.error {
             Err(ApiError::RequestError(error.message))
         } else {
-            Err(ApiError::RequestError("Invalid response format".to_string()))
+            Err(ApiError::RequestError(
+                "Invalid response format".to_string(),
+            ))
         }
     }
 }

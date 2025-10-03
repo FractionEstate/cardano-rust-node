@@ -2,12 +2,25 @@
 //!
 //! Cryptographic hash functions used throughout Cardano
 
+use crate::{CryptoError, Result};
 use serde::{Deserialize, Serialize};
 use std::hash::{Hash, Hasher};
-use crate::{CryptoError, Result};
 
 /// Blake2b 256-bit hash
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Copy, PartialOrd, Ord, Default, minicbor::Encode, minicbor::Decode)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    Copy,
+    PartialOrd,
+    Ord,
+    Default,
+    minicbor::Encode,
+    minicbor::Decode,
+)]
 pub struct Blake2b256Hash(#[n(0)] [u8; 32]);
 
 /// Blake2b 512-bit hash
@@ -76,9 +89,10 @@ impl Blake2b256Hash {
     /// Create hash from bytes
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
         if bytes.len() != 32 {
-            return Err(CryptoError::HashError(
-                format!("Invalid Blake2b256 hash length: expected 32, got {}", bytes.len())
-            ));
+            return Err(CryptoError::HashError(format!(
+                "Invalid Blake2b256 hash length: expected 32, got {}",
+                bytes.len()
+            )));
         }
         let mut hash = [0u8; 32];
         hash.copy_from_slice(bytes);
@@ -105,9 +119,10 @@ impl Sha256Hash {
     /// Create hash from bytes
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
         if bytes.len() != 32 {
-            return Err(CryptoError::HashError(
-                format!("Invalid SHA256 hash length: expected 32, got {}", bytes.len())
-            ));
+            return Err(CryptoError::HashError(format!(
+                "Invalid SHA256 hash length: expected 32, got {}",
+                bytes.len()
+            )));
         }
         let mut hash = [0u8; 32];
         hash.copy_from_slice(bytes);
@@ -135,7 +150,7 @@ impl Blake2b512Hash {
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
         if bytes.len() != 64 {
             return Err(CryptoError::HashError(
-                "BLAKE2b-512 hash must be 64 bytes".to_string()
+                "BLAKE2b-512 hash must be 64 bytes".to_string(),
             ));
         }
         let mut hash = [0u8; 64];
