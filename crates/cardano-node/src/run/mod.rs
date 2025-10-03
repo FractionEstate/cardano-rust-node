@@ -551,14 +551,31 @@ impl NodeRuntime {
         connection_config.peer_selection.max_connections =
             node_config.max_connections.unwrap_or(10) as usize;
 
-        // Extract producers from topology (P2P or legacy mode)
-        let producers = topology
-            .as_ref()
-            .and_then(|topo| topo.producers.clone())
-            .unwrap_or_default();
+        // Extract peers from topology (P2P bootstrap peers or legacy producers)
+        let mut peer_addresses = Vec::new();
 
-        if !producers.is_empty() {
-            connection_config.peer_selection.target_connections = producers
+        if let Some(topo) = topology.as_ref() {
+            // Try P2P bootstrap peers first
+            if let Some(bootstrap_peers) = &topo.bootstrap_peers {
+                for peer in bootstrap_peers {
+                    peer_addresses.push((peer.address.clone(), peer.port));
+                }
+                info!("Using {} P2P bootstrap peer(s)", bootstrap_peers.len());
+            }
+
+            // Also add legacy producers if present
+            if let Some(producers) = &topo.producers {
+                for producer in producers {
+                    peer_addresses.push((producer.addr.clone(), producer.port));
+                }
+                if !producers.is_empty() {
+                    info!("Using {} legacy producer(s)", producers.len());
+                }
+            }
+        }
+
+        if !peer_addresses.is_empty() {
+            connection_config.peer_selection.target_connections = peer_addresses
                 .len()
                 .min(node_config.max_connections.unwrap_or(10) as usize);
         } else {
@@ -568,22 +585,22 @@ impl NodeRuntime {
         let mut manager = ConnectionManager::new(connection_config).await?;
         let mut registered_peers = Vec::new();
 
-        if producers.is_empty() {
-            warn!("No network topology producers configured; network subsystem idle");
+        if peer_addresses.is_empty() {
+            warn!("No network topology peers configured; network subsystem idle");
         } else {
-            for producer in producers {
-                match parse_producer_address(&producer.addr, producer.port) {
+            for (addr, port) in peer_addresses {
+                match parse_producer_address(&addr, port).await {
                     Ok(address) => {
                         let peer_id = peer_id_from_address(&address);
                         let peer_info = PeerInfo::new(peer_id, address);
                         if let Err(err) = manager.add_peer(peer_info).await {
-                            warn!(addr = %producer.addr, port = producer.port, error = %err, "Failed to register peer");
+                            warn!(addr = %addr, port = port, error = %err, "Failed to register peer");
                             continue;
                         }
                         registered_peers.push(peer_id);
                     }
                     Err(err) => {
-                        warn!(addr = %producer.addr, port = producer.port, %err, "Invalid producer address");
+                        warn!(addr = %addr, port = port, %err, "Invalid peer address");
                     }
                 }
             }
@@ -757,11 +774,24 @@ fn peer_id_from_address(address: &SocketAddr) -> PeerId {
     PeerId::new(id)
 }
 
-fn parse_producer_address(addr: &str, port: u16) -> Result<SocketAddr> {
-    let socket = format!("{}:{}", addr, port);
-    socket
-        .parse::<SocketAddr>()
-        .map_err(|err| anyhow!("{}", err))
+async fn parse_producer_address(addr: &str, port: u16) -> Result<SocketAddr> {
+    // Try parsing as direct IP:port first
+    let socket_str = format!("{}:{}", addr, port);
+    if let Ok(socket_addr) = socket_str.parse::<SocketAddr>() {
+        return Ok(socket_addr);
+    }
+
+    // If not an IP address, try DNS resolution
+    let addresses: Vec<SocketAddr> = tokio::net::lookup_host(&socket_str)
+        .await
+        .map_err(|err| anyhow!("DNS resolution failed for {}: {}", socket_str, err))?
+        .collect();
+
+    // Return the first resolved address
+    addresses
+        .into_iter()
+        .next()
+        .ok_or_else(|| anyhow!("No addresses found for {}", socket_str))
 }
 
 #[cfg(test)]

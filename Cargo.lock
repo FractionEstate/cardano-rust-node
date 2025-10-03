@@ -405,7 +405,7 @@ dependencies = [
 
 [[package]]
 name = "cardano-api"
-version = "8.7.3"
+version = "10.5.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -439,7 +439,7 @@ dependencies = [
 
 [[package]]
 name = "cardano-consensus"
-version = "8.7.3"
+version = "10.5.1"
 dependencies = [
  "anyhow",
  "cardano-crypto",
@@ -458,7 +458,7 @@ dependencies = [
 
 [[package]]
 name = "cardano-crypto"
-version = "8.7.3"
+version = "10.5.1"
 dependencies = [
  "anyhow",
  "blake2",
@@ -504,7 +504,7 @@ dependencies = [
 
 [[package]]
 name = "cardano-ledger"
-version = "8.7.3"
+version = "10.5.1"
 dependencies = [
  "anyhow",
  "cardano-crypto",
@@ -521,7 +521,7 @@ dependencies = [
 
 [[package]]
 name = "cardano-network"
-version = "8.7.3"
+version = "10.5.1"
 dependencies = [
  "anyhow",
  "blake2",
@@ -545,7 +545,7 @@ dependencies = [
 
 [[package]]
 name = "cardano-node"
-version = "8.7.3"
+version = "10.5.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -578,7 +578,7 @@ dependencies = [
 
 [[package]]
 name = "cardano-storage"
-version = "8.7.3"
+version = "10.5.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -598,7 +598,7 @@ dependencies = [
 
 [[package]]
 name = "cardano-testnet"
-version = "8.7.3"
+version = "10.5.1"
 dependencies = [
  "anyhow",
  "cardano-crypto",
@@ -613,7 +613,7 @@ dependencies = [
 
 [[package]]
 name = "cardano-tracing"
-version = "8.7.3"
+version = "10.5.1"
 dependencies = [
  "anyhow",
  "serde",
