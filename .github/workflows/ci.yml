@@ -2,19 +2,24 @@ name: CI
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main, develop, "001-*" ]
   pull_request:
     branches: [ main, develop ]
+  schedule:
+    # Run weekly security audits every Monday at 00:00 UTC
+    - cron: '0 0 * * 1'
 
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  RUSTFLAGS: -D warnings
 
 jobs:
   test:
     name: Test Suite
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         rust: [stable, 1.75.0]
@@ -30,22 +35,31 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-${{ matrix.rust }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.rust }}-cargo-registry-
 
       - name: Cache cargo index
         uses: actions/cache@v4
         with:
           path: ~/.cargo/git
-          key: ${{ runner.os }}-cargo-git-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-${{ matrix.rust }}-cargo-git-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.rust }}-cargo-git-
 
       - name: Cache cargo build
         uses: actions/cache@v4
         with:
           path: target
-          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-${{ matrix.rust }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.rust }}-cargo-build-
+
+      - name: Check build
+        run: cargo check --workspace --all-targets --all-features
 
       - name: Run tests
-        run: cargo test --workspace --verbose
+        run: cargo test --workspace --verbose --all-features
 
       - name: Run doc tests
         run: cargo test --doc --workspace
@@ -80,21 +94,27 @@ jobs:
         with:
           path: ~/.cargo/registry
           key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
 
       - name: Cache cargo index
         uses: actions/cache@v4
         with:
           path: ~/.cargo/git
           key: ${{ runner.os }}-cargo-git-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-git-
 
       - name: Cache cargo build
         uses: actions/cache@v4
         with:
           path: target
-          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-build-
 
       - name: Run clippy
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings -D clippy::all
 
   docs:
     name: Documentation
@@ -110,17 +130,79 @@ jobs:
         with:
           path: ~/.cargo/registry
           key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
 
       - name: Cache cargo index
         uses: actions/cache@v4
         with:
           path: ~/.cargo/git
           key: ${{ runner.os }}-cargo-git-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-git-
 
       - name: Check documentation
         run: cargo doc --workspace --no-deps --all-features
         env:
           RUSTDOCFLAGS: -D warnings
+
+      - name: Upload docs artifact
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: documentation
+          path: target/doc/
+
+  dependency-check:
+    name: Dependency Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-deny
+        run: cargo install cargo-deny
+
+      - name: Check dependencies
+        run: cargo deny check
+
+  vrf-migration-check:
+    name: VRF Migration Verification
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify no local curve25519-dalek fork
+        run: |
+          if [ -d "curve25519-dalek" ]; then
+            echo "❌ ERROR: Local curve25519-dalek fork still exists!"
+            echo "This should have been removed during cardano-base-rust migration."
+            exit 1
+          fi
+          echo "✅ No local curve25519-dalek fork found"
+
+      - name: Verify no [patch.crates-io] in Cargo.toml
+        run: |
+          if grep -q "^\[patch.crates-io\]" Cargo.toml; then
+            echo "❌ ERROR: [patch.crates-io] section still exists in Cargo.toml!"
+            echo "This should have been removed during cardano-base-rust migration."
+            exit 1
+          fi
+          echo "✅ No [patch.crates-io] section found in Cargo.toml"
+
+      - name: Verify cardano-base-rust dependencies
+        run: |
+          if ! grep -q "cardano-vrf-pure" Cargo.toml; then
+            echo "❌ ERROR: cardano-vrf-pure dependency not found!"
+            exit 1
+          fi
+          if ! grep -q "cardano-crypto-class" Cargo.toml; then
+            echo "❌ ERROR: cardano-crypto-class dependency not found!"
+            exit 1
+          fi
+          echo "✅ cardano-base-rust dependencies verified"
 
   haskell-compat:
     name: Haskell Compatibility
@@ -152,7 +234,7 @@ jobs:
         run: cargo install cargo-audit
 
       - name: Run security audit
-        run: cargo audit
+        run: cargo audit --deny warnings
 
   coverage:
     name: Code Coverage
@@ -167,10 +249,53 @@ jobs:
         run: cargo install cargo-tarpaulin
 
       - name: Generate coverage
-        run: cargo tarpaulin --workspace --out Xml --output-dir coverage
+        run: cargo tarpaulin --workspace --out Xml --output-dir coverage --all-features
 
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v4
         with:
           file: coverage/cobertura.xml
           fail_ci_if_error: false
+
+  build-release:
+    name: Build Release Binary
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release
+        run: cargo build --release --package cardano-node
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cardano-node-${{ matrix.os }}
+          path: |
+            target/release/cardano-node
+            target/release/cardano-node.exe
+
+  status-check:
+    name: Status Check
+    runs-on: ubuntu-latest
+    needs: [test, fmt, clippy, docs, dependency-check, vrf-migration-check, security-audit]
+    if: always()
+    steps:
+      - name: Check all jobs
+        run: |
+          if [[ "${{ needs.test.result }}" != "success" ]] || \
+             [[ "${{ needs.fmt.result }}" != "success" ]] || \
+             [[ "${{ needs.clippy.result }}" != "success" ]] || \
+             [[ "${{ needs.docs.result }}" != "success" ]] || \
+             [[ "${{ needs.dependency-check.result }}" != "success" ]] || \
+             [[ "${{ needs.vrf-migration-check.result }}" != "success" ]] || \
+             [[ "${{ needs.security-audit.result }}" != "success" ]]; then
+            echo "❌ One or more checks failed"
+            exit 1
+          fi
+          echo "✅ All checks passed"

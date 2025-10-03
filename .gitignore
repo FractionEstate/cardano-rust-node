@@ -95,3 +95,58 @@ dist/
 # Docker
 .dockerignore
 docker-compose.override.yml
+
+# Backup files
+*.bak
+*.backup
+*.orig
+*.rej
+
+# Lock files for tools
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Temporary directories
+temp/
+.temp/
+.tmp/
+
+# CI/CD artifacts
+.github/artifacts/
+.github/cache/
+
+# Security scanning results
+.trivy/
+audit-results/
+
+# Profiling and performance
+*.perf
+*.folded
+*.svg
+
+# Dependencies (if vendored, comment these out)
+# vendor/
+# .cargo/
+
+# Generated files
+*.generated.rs
+codegen/
+
+# macOS specific
+.AppleDouble
+.LSOverride
+Icon
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows specific
+ehthumbs.db
+ehthumbs_vista.db
+[Dd]esktop.ini
+$RECYCLE.BIN/
+
+# Linux specific
+.fuse_hidden*
+.nfs*
