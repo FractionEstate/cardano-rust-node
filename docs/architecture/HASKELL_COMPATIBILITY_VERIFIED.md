@@ -61,7 +61,7 @@ pub struct LedgerDBConfig {
     pub query_batch_size: Option<u32>,
     pub snapshot_interval: Option<u32>,
 }
-```
+```text
 
 #### Tracing Flags (40+ implemented)
 - `TraceAcceptPolicy` ✅
@@ -137,7 +137,7 @@ pub struct NetworkTopology {
     // Legacy Mode (backward compatible)
     pub producers: Option<Vec<TopologyProducer>>,
 }
-```
+```text
 
 #### Bootstrap Peers ✅
 ```json
@@ -146,7 +146,7 @@ pub struct NetworkTopology {
     {"address": "backbone.cardano.iog.io", "port": 3001}
   ]
 }
-```
+```text
 
 #### Local Roots ✅
 ```json
@@ -160,7 +160,7 @@ pub struct NetworkTopology {
     }
   ]
 }
-```
+```text
 
 #### Public Roots ✅
 ```json
@@ -172,7 +172,7 @@ pub struct NetworkTopology {
     }
   ]
 }
-```
+```text
 
 ---
 
@@ -185,16 +185,16 @@ curl -o /tmp/mainnet-config.json \
   https://book.world.dev.cardano.org/environments/mainnet/config.json
 
 cargo test test_real_mainnet_config -- --ignored --nocapture
-```
+```text
 
 **Result**:
-```
+```text
 ✅ Successfully parsed official mainnet config!
   Protocol: Some("Cardano")
   ConsensusMode: Some("PraosMode")
   EnableP2P: Some(true)
   LedgerDB Backend: Some("V2InMemory")
-```
+```text
 
 ### Test 2: Official Mainnet Topology Parsing ✅
 
@@ -203,15 +203,15 @@ curl -o /tmp/mainnet-topology.json \
   https://book.world.dev.cardano.org/environments/mainnet/topology.json
 
 cargo test test_real_mainnet_topology -- --ignored --nocapture
-```
+```text
 
 **Result**:
-```
+```text
 ✅ Successfully parsed official mainnet topology!
   Bootstrap peers: Some(3)
   Use ledger after slot: Some(157852837)
   Validation: PASSED
-```
+```text
 
 ### Test 3: Configuration Validation ✅
 
@@ -237,7 +237,7 @@ pub struct NodeConfiguration {
     pub alonzo_genesis_hash: Option<String>,
     // ... (see file for complete implementation)
 }
-```
+```text
 
 #### Genesis Validation
 ```rust
@@ -252,7 +252,7 @@ pub fn validate(&self) -> Result<()> {
     }
     // ... (validates all genesis files)
 }
-```
+```text
 
 #### P2P Topology Support
 ```rust
@@ -264,7 +264,7 @@ pub struct NetworkTopology {
     pub peer_snapshot_file: Option<String>,
     pub producers: Option<Vec<TopologyProducer>>,  // Legacy
 }
-```
+```text
 
 ---
 
@@ -298,7 +298,7 @@ All official configurations can be loaded:
   "database_path": "/db",
   "socket_path": "/socket"
 }
-```
+```text
 
 **New Format** (Haskell-compatible):
 ```json
@@ -321,7 +321,7 @@ All official configurations can be loaded:
   "hasEKG": 12788,
   "hasPrometheus": ["127.0.0.1", 12798]
 }
-```
+```text
 
 ---
 
@@ -388,7 +388,7 @@ All official configurations can be loaded:
 ### 1. Build Release Binary
 ```bash
 cargo build --release --bin cardano-node
-```
+```text
 
 ### 2. Download Official Configs
 ```bash
@@ -399,7 +399,7 @@ curl -o byron-genesis.json https://book.world.dev.cardano.org/environments/mainn
 curl -o shelley-genesis.json https://book.world.dev.cardano.org/environments/mainnet/shelley-genesis.json
 curl -o alonzo-genesis.json https://book.world.dev.cardano.org/environments/mainnet/alonzo-genesis.json
 curl -o conway-genesis.json https://book.world.dev.cardano.org/environments/mainnet/conway-genesis.json
-```
+```text
 
 ### 3. Run Node
 ```bash
@@ -408,7 +408,7 @@ curl -o conway-genesis.json https://book.world.dev.cardano.org/environments/main
   --topology topology.json \
   --database-path /path/to/db \
   --socket-path /path/to/socket
-```
+```text
 
 ---
 

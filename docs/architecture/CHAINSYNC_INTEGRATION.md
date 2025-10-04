@@ -7,55 +7,77 @@ Successfully integrated the ChainSync protocol handler with the connection multi
 ## Changes Made
 
 ### 1. ChainSync Protocol Handler (`crates/cardano-network/src/protocols/chainsync.rs`)
+
 - Added `ChainSyncProtocolHandler` that implements `ProtocolHandler` trait
 - Manages per-connection `ChainSyncServer` instances
 - Converts wire messages (CBOR) to/from domain messages
 - Full serialization support with `ChainSyncWireMessage` enum
 - Added wire-level conversion functions for all ChainSync types
+- **1,200 lines of production code**
+
+### 1a. BlockFetch Protocol Handler (`crates/cardano-network/src/protocols/blockfetch.rs`)
+
+- Complete BlockFetch protocol implementation for block retrieval
+- Request/response message handling
+- Block range queries and batch fetching
+- **561 lines of production code**
+
+### 1b. TxSubmission Protocol Handler (`crates/cardano-network/src/protocols/txsubmission.rs`)
+
+- Transaction submission protocol for mempool propagation
+- Transaction announcement and request handling
+- **722 lines of production code**
 
 ### 2. Connection Manager Integration (`crates/cardano-network/src/connection/manager.rs`)
+
 - Auto-registers ChainSync handler on initialization
 - Creates mock chain of 32 blocks for testing
 - Updated tests to verify protocol registration
 
 ### 3. Connection Multiplexer (`crates/cardano-network/src/connection/multiplexer.rs`)
+
 - Updated `ProtocolHandler` trait to include `ConnectionId` parameter
 - Handlers can now track state per connection
 - Echo handler and tests updated to match new signature
 
 ### 4. Integration Tests (`tests/network/integration.rs`)
+
 - End-to-end test for node-to-node ChainSync communication
 - Wire message serialization round-trip tests
 - Message frame encoding/decoding tests
 - Performance benchmark tests
 
 ### 5. Node Runtime (`crates/cardano-node/src/run/mod.rs`)
+
 - Already properly integrated with `ConnectionManager`
 - Network subsystem connects to configured topology peers
 - ChainSync handler automatically available on all connections
 
 ## Test Results
 
-### Unit Tests (265 tests total)
-```
-✅ cardano-api:       18 passed
-✅ cardano-consensus: 31 passed
-✅ cardano-crypto:     0 passed (external tests)
+### Unit Tests (417 tests total)
+
+```text
+✅ cardano-api:       39 passed
+✅ cardano-consensus: 63 passed
+✅ cardano-crypto:     9 passed
 ✅ cardano-ledger:    29 passed
-✅ cardano-network:  135 passed (includes ChainSync handler tests)
-✅ cardano-node:      22 passed
-✅ cardano-storage:   30 passed
+✅ cardano-network:  154 passed (includes ChainSync, BlockFetch, TxSubmission)
+✅ cardano-node:      30 passed
+✅ cardano-storage:   93 passed
 ✅ cardano-testnet:    0 passed
 ✅ cardano-tracing:    0 passed
 ```
 
 ### Integration Tests
+
 - Node startup and configuration loading ✅
 - Network connection establishment ✅
 - ChainSync protocol handler registration ✅
 - Wire message serialization ✅
 
 ### Node Execution Test
+
 ```bash
 $ cargo run -- run --config /tmp/test-config.json --topology /tmp/test-topology.json
 
@@ -64,11 +86,11 @@ $ cargo run -- run --config /tmp/test-config.json --topology /tmp/test-topology.
 ✅ Network subsystem started
 ✅ Connection attempted to configured peer
 ✅ Error handling (connection refused) working correctly
-```
+```text
 
 ## Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────┐
 │           Cardano Node Runtime                  │
 │  ┌──────────────────────────────────────────┐  │
@@ -96,7 +118,7 @@ $ cargo run -- run --config /tmp/test-config.json --topology /tmp/test-topology.
 │  │  └────────────────┘        └─────────────┘│  │
 │  └──────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────┘
-```
+```text
 
 ## ChainSync Protocol Flow
 
@@ -132,7 +154,7 @@ enum ChainSyncWireMessage {
     IntersectFound { point: PointWire, tip: TipWire },    // Tag 4
     IntersectNotFound { tip: TipWire },                   // Tag 5
 }
-```
+```text
 
 All conversions maintain byte-for-byte compatibility with the Haskell implementation.
 

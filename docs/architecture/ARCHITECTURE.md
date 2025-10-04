@@ -6,7 +6,7 @@
 
 The official Haskell Cardano implementation uses **two separate binaries**:
 
-```
+```text
 ┌──────────────┐     ┌─────────────┐
 │ cardano-node │     │ cardano-cli │
 ├──────────────┤     ├─────────────┤
@@ -16,11 +16,11 @@ The official Haskell Cardano implementation uses **two separate binaries**:
 └──────────────┘     │ • stake-pool│
                      │ • governance│
                      └─────────────┘
-```
+```text
 
 Our Rust implementation provides a **unified binary** that combines both:
 
-```
+```text
 ┌────────────────────────────────────┐
 │        cardano-node (Rust)         │
 ├────────────────────────────────────┤
@@ -41,7 +41,7 @@ Our Rust implementation provides a **unified binary** that combines both:
 │  • dashboard  - Interactive TUI    │
 │  • admin      - Administration     │
 └────────────────────────────────────┘
-```
+```text
 
 ## Why This Design?
 
@@ -87,7 +87,7 @@ cardano-node info --socket-path ./node.socket
 
 # Show version
 cardano-node version
-```
+```text
 
 ### 2. Query Commands (from cardano-cli)
 
@@ -99,7 +99,7 @@ cardano-node query protocol-parameters --socket-path ./node.socket
 cardano-node query utxo --address addr1... --socket-path ./node.socket
 cardano-node query stake-pools --socket-path ./node.socket
 cardano-node query leadership-schedule --socket-path ./node.socket
-```
+```text
 
 ### 3. Transaction Commands (from cardano-cli)
 
@@ -111,7 +111,7 @@ cardano-node transaction build ...
 cardano-node transaction sign ...
 cardano-node transaction submit ...
 cardano-node transaction view ...
-```
+```text
 
 ### 4. Address Commands (from cardano-cli)
 
@@ -125,7 +125,7 @@ cardano-node address key-gen \
 cardano-node address build \
   --payment-verification-key-file payment.vkey \
   --out-file payment.addr
-```
+```text
 
 ### 5. Stake Pool Commands (from cardano-cli)
 
@@ -140,7 +140,7 @@ cardano-node stake-pool registration \
 
 cardano-node stake-pool id \
   --cold-verification-key-file cold.vkey
-```
+```text
 
 ### 6. Stake Address Commands (from cardano-cli)
 
@@ -155,7 +155,7 @@ cardano-node stake-address delegation \
   --stake-verification-key-file stake.vkey \
   --pool-id pool1... \
   --out-file delegation.cert
-```
+```text
 
 ### 7. Governance Commands (from cardano-cli)
 
@@ -165,7 +165,7 @@ Compatible with `cardano-cli governance`:
 cardano-node governance create-proposal ...
 cardano-node governance vote ...
 cardano-node governance query-proposals ...
-```
+```text
 
 ### 8. Extension Commands (Rust-exclusive)
 
@@ -179,7 +179,7 @@ cardano-node dashboard --socket-path ./node.socket
 cardano-node admin db compact
 cardano-node admin metrics
 cardano-node admin shutdown
-```
+```text
 
 ## API Compatibility
 
@@ -212,7 +212,7 @@ export CARDANO_NODE_SOCKET_PATH=./node.socket
 cardano-cli query tip
 cardano-cli query protocol-parameters
 cardano-cli transaction submit --tx-file tx.signed
-```
+```text
 
 Similarly, our CLI can connect to official cardano-node:
 
@@ -222,7 +222,7 @@ export CARDANO_NODE_SOCKET_PATH=/path/to/haskell/node.socket
 
 cardano-node query tip
 cardano-node transaction build ...
-```
+```text
 
 ## Migration from Official Cardano
 
@@ -238,7 +238,7 @@ cardano-node run --config config.json --topology topology.json --socket-path nod
 # In another terminal, use cardano-cli
 cardano-cli query tip --socket-path node.socket
 cardano-cli transaction build ...
-```
+```text
 
 **After (Rust):**
 ```bash
@@ -251,7 +251,7 @@ cardano-node transaction build ...
 
 # Or use the official cardano-cli (still works!)
 cardano-cli query tip --socket-path node.socket
-```
+```text
 
 ### Command Translation
 
@@ -267,7 +267,7 @@ cardano-cli query tip --socket-path node.socket
 
 ### Crate Structure
 
-```
+```text
 crates/
 ├── cardano-node/          # Main binary
 │   ├── src/
@@ -284,7 +284,7 @@ crates/
 ├── cardano-ledger/        # Ledger state
 ├── cardano-crypto/        # Cryptography
 └── ...
-```
+```text
 
 ### CLI Parser Architecture
 
@@ -308,7 +308,7 @@ enum Commands {
     Dashboard(DashboardArgs),
     Admin(AdminArgs),
 }
-```
+```text
 
 ### Socket Communication
 
@@ -324,7 +324,7 @@ let socket = UnixStream::connect(&socket_path)?;
 // Same protocol as Haskell implementation
 send_cbor_message(&socket, message)?;
 let response = receive_cbor_message(&socket)?;
-```
+```text
 
 ## Future Enhancements
 

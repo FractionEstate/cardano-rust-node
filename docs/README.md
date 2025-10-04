@@ -81,8 +81,6 @@ permalink: /docs/
 
 | Document | Description | Audience |
 
-|----------|-------------|----------|| [Quick Start Guide](../QUICKSTART.md) | Get running in 10 minutes | 10 min | `/` |- [**Haskell Compatibility Gaps**](architecture/HASKELL_COMPATIBILITY_GAPS.md) - Known differences from Haskell node
-
 | [Getting Started Guide](guides/GETTING_STARTED.md) | Complete setup and first steps | New Users |
 
 | [Quick Reference](reference/QUICK_REFERENCE.md) | Common commands cheatsheet | All Users || [Installation Guide](../INSTALLATION_GUIDE.md) | Complete installation instructions | 15 min | `/` |- [**Haskell Compatibility Verified**](architecture/HASKELL_COMPATIBILITY_VERIFIED.md) - Verified compatibility features
@@ -149,8 +147,6 @@ permalink: /docs/
 
 | [Protocol Design](architecture/PROTOCOL_DESIGN.md) | Protocol specifications | Developers |
 
-| [Ledger State Alignment](architecture/LEDGER_STATE_ALIGNMENT.md) | Ledger implementation details | Developers || Guide | Description | Audience |- [**Mission Accomplished**](reports/MISSION_ACCOMPLISHED.md) - ✅ 110% Cryptographic Accuracy Achievement
-
 | [Haskell Compatibility](architecture/HASKELL_COMPATIBILITY_VERIFIED.md) | Compatibility verification | All |
 
 | [ChainSync Integration](architecture/CHAINSYNC_INTEGRATION.md) | ChainSync protocol implementation | Developers ||-------|-------------|----------|- [**Documentation Cleanup**](reports/DOCUMENTATION_CLEANUP.md) - Documentation organization report
@@ -160,8 +156,6 @@ permalink: /docs/
 | [Cardano Base Rust Migration](architecture/CARDANO_BASE_RUST_MIGRATION.md) | Migration documentation | Developers || [Getting Started](guides/GETTING_STARTED.md) | Initial setup and configuration | All Users |- [**Final Implementation Report**](reports/FINAL_IMPLEMENTATION_REPORT.md) - Complete implementation status
 
 | [Curve25519 Dalek Explanation](architecture/CURVE25519_DALEK_EXPLANATION.md) | Cryptographic library usage | Developers |
-
-| [Haskell Compatibility Gaps](architecture/HASKELL_COMPATIBILITY_GAPS.md) | Known differences | Developers || [Crypto Integration Guide](guides/CRYPTO_INTEGRATION_GUIDE.md) | Working with cardano-base-rust | Developers |- [**Implementation Status**](reports/IMPLEMENTATION_STATUS.md) - Detailed implementation progress
 
 | [Sync Roadmap](architecture/sync-roadmap.md) | Synchronization roadmap | Developers |
 
@@ -181,8 +175,6 @@ permalink: /docs/
 
 
 
-| Document | Description | Audience |- [**Critical Issues Report**](reports/CRITICAL_ISSUES_REPORT.md) - Critical issues identified and resolved
-
 |----------|-------------|----------|
 
 | [CLI Reference](api/CLI_REFERENCE.md) | All CLI commands and options | All Users |**Technical reports and project status:**- [**Audit Report**](reports/AUDIT_REPORT.md) - Security and code audit
@@ -201,8 +193,6 @@ permalink: /docs/
 
 
 
-**Production operations, monitoring, and maintenance:**| [Production Readiness Report](reports/PRODUCTION_READINESS_REPORT.md) | Complete production readiness assessment | ✅ 90% |---
-
 
 
 | Document | Description | Audience || [Final Audit Report](reports/FINAL_AUDIT_REPORT.md) | Comprehensive crypto audit (130/130) | ✅ 100% |
@@ -212,8 +202,6 @@ permalink: /docs/
 | [Monitoring and Metrics](operations/MONITORING_AND_METRICS.md) | Prometheus integration and metrics | Operators || [API/CLI Alignment Report](reports/CARDANO_API_CLI_ALIGNMENT.md) | Compatibility with Haskell implementation | ✅ 95% |## 📂 Documentation Structure
 
 
-
----| [Mission Accomplished](reports/MISSION_ACCOMPLISHED.md) | Cryptographic accuracy achievement | ✅ 110% |
 
 
 
@@ -244,8 +232,6 @@ permalink: /docs/
 | [Phase 2: VRF Deep Dive](reports/audits/phase2-vrf-deep-dive.md) | VRF implementation audit | Archive |**Technical architecture and design decisions:**│   ├── CHAINSYNC_INTEGRATION.md
 
 | [Phase 3: Ed25519 Assessment](reports/audits/phase3-ed25519-assessment-REFACTORED.md) | Ed25519 cryptography audit | Archive |
-
-| [Phase 4: Blake2b Assessment](reports/audits/phase4-blake2b-assessment-FIXED.md) | Blake2b hash function audit | Archive |│   ├── HASKELL_COMPATIBILITY_GAPS.md
 
 | [Phase 5: KES Assessment](reports/audits/phase5-kes-assessment-REFACTORED.md) | KES signature audit | Archive |
 
@@ -307,25 +293,15 @@ permalink: /docs/
 
 |----------|-------------|------|| [CLI Reference](api/CLI_REFERENCE.md) | All CLI commands and options | All Users |│   └── QUALITY_CHECK_SUMMARY.md
 
-| [Mission Accomplished](reports/MISSION_ACCOMPLISHED.md) | ✅ 110% Cryptographic Accuracy | Current |
-
-| [Production Readiness Report](reports/PRODUCTION_READINESS_REPORT.md) | Complete production readiness assessment | Current || [API Reference](api/API_REFERENCE.md) | Rust API documentation | Developers |└── reports/                    # Status and progress reports
-
 | [Final Implementation Report](reports/FINAL_IMPLEMENTATION_REPORT.md) | Implementation summary | Current |
-
-| [Project Status October 2025](reports/PROJECT_STATUS_OCTOBER_2025.md) | Current project status | Current || [Quick Reference](reference/QUICK_REFERENCE.md) | Command quick reference | All Users |    ├── MISSION_ACCOMPLISHED.md
 
 | [Cardano API/CLI Alignment](reports/CARDANO_API_CLI_ALIGNMENT.md) | API/CLI compatibility report | Current |
 
 | [Reorganization Complete](reports/REORGANIZATION_COMPLETE.md) | Documentation reorganization | Current |    ├── FINAL_IMPLEMENTATION_REPORT.md
 
-| [Critical Issues Report](reports/CRITICAL_ISSUES_REPORT.md) | Critical issues tracking | Current |
-
 | [Infrastructure Improvements Complete](reports/INFRASTRUCTURE_IMPROVEMENTS_COMPLETE.md) | Infrastructure updates | Current |### 📊 Monitoring & Operations    ├── IMPLEMENTATION_STATUS.md
 
 | [Node Live Test Report](reports/NODE_LIVE_TEST_REPORT.md) | Live testing results | Archive |
-
-| [Node Test v10.5.1](reports/NODE_TEST_V10_5_1.md) | Version 10.5.1 testing | Archive |    ├── PRODUCTION_READY.md
 
 | [Session Summary Infrastructure](reports/SESSION_SUMMARY_INFRASTRUCTURE.md) | Infrastructure session summary | Archive |
 
@@ -409,8 +385,6 @@ Located in `reports/archive/` - 23+ archived reports including:
 
 3. [Dashboard Visual Guide](guides/DASHBOARD_VISUAL_GUIDE.md) - Use dashboard
 
-4. [Production Readiness Report](reports/PRODUCTION_READINESS_REPORT.md) - Production checklist## 🗂️ Documentation by Audience2. **Update this README** - Add links to new documents
-
 
 
 ### 🏊 **Stake Pool Operators** (SPOs)3. **Use clear titles** - Make it easy to find
@@ -445,8 +419,6 @@ Located in `reports/archive/` - 23+ archived reports including:
 
 3. [Alignment with Official Node](architecture/ALIGNMENT_WITH_OFFICIAL.md) - Feature parity
 
-4. [Haskell Compatibility Gaps](architecture/HASKELL_COMPATIBILITY_GAPS.md) - Known differences### For Node Operators✅ **Cryptography**: 110% Accurate - Production Ready
-
 
 
 ---1. [Installation Guide](../INSTALLATION_GUIDE.md) - Production setup✅ **Hardcoded Values**: Eliminated - Zero Mock Data
@@ -461,19 +433,13 @@ Located in `reports/archive/` - 23+ archived reports including:
 
 docs/
 
-├── README.md ⭐                # This file - documentation index4. [Production Readiness](reports/PRODUCTION_READINESS_REPORT.md) - Verify readiness
-
 │
-
-├── api/                        # API and CLI referencesSee [Mission Accomplished](reports/MISSION_ACCOMPLISHED.md) for the complete achievement summary.
 
 │   ├── API_REFERENCE.md
 
 │   └── CLI_REFERENCE.md### For Stake Pool Operators
 
 │1. [Migration Guide](../MIGRATION_GUIDE.md) - Migrate from Haskell
-
-├── architecture/               # System architecture and design2. [Production Readiness](reports/PRODUCTION_READINESS_REPORT.md) - Assessment
 
 │   ├── ARCHITECTURE.md3. [Monitoring and Metrics](MONITORING_AND_METRICS.md) - Track performance
 
@@ -494,8 +460,6 @@ docs/
 │   ├── CARDANO_BASE_RUST_MIGRATION_COMPLETE.md5. [Haskell Compatibility](architecture/HASKELL_COMPATIBILITY_VERIFIED.md) - Compatibility
 
 │   ├── CURVE25519_DALEK_EXPLANATION.md
-
-│   ├── HASKELL_COMPATIBILITY_GAPS.md### For Migrating from Haskell
 
 │   ├── sync-roadmap.md1. [Migration Guide](../MIGRATION_GUIDE.md) - **START HERE**
 
@@ -559,13 +523,9 @@ docs/
 
     │   ├── phase5-kes-assessment-REFACTORED.md│   ├── reports/                   # Status reports
 
-    │   ├── ED25519_REFACTORING_SUMMARY.md│   │   ├── PRODUCTION_READINESS_REPORT.md
-
     │   ├── KES_REFACTORING_SUMMARY.md│   │   ├── FINAL_AUDIT_REPORT.md
 
     │   └── PHASES_1-4_COMPREHENSIVE_SUMMARY.md│   │   ├── CARDANO_API_CLI_ALIGNMENT.md
-
-    ││   │   ├── MISSION_ACCOMPLISHED.md
 
     ├── protocol/               # Protocol implementation reports│   │   └── archive/              # Archived old reports
 
@@ -597,11 +557,7 @@ docs/
 
     ││   ├── development/               # Development docs
 
-    ├── MISSION_ACCOMPLISHED.md│   │   └── CI_CD_CONFIGURATION.md
-
     ├── FINAL_AUDIT_REPORT.md│   │
-
-    ├── PRODUCTION_READINESS_REPORT.md│   ├── MONITORING_AND_METRICS.md  # Operations
 
     ├── FINAL_IMPLEMENTATION_REPORT.md│   ├── PROTOCOL_DESIGN.md         # Protocol specs
 
@@ -611,13 +567,9 @@ docs/
 
     ├── REORGANIZATION_COMPLETE.md├── crates/                        # Rust source code
 
-    ├── CRITICAL_ISSUES_REPORT.md├── tests/                         # Test files
-
     ├── INFRASTRUCTURE_IMPROVEMENTS_COMPLETE.md├── scripts/                       # Utility scripts
 
     ├── NODE_LIVE_TEST_REPORT.md└── config/                        # Configuration files
-
-    ├── NODE_TEST_V10_5_1.md```
 
     └── SESSION_SUMMARY_INFRASTRUCTURE.md
 
@@ -652,8 +604,6 @@ docs/
 - **Monitor my node** → [Monitoring Guide](operations/MONITORING_AND_METRICS.md)- **Report an issue** → [GitHub Issues](https://github.com/FractionEstate/cardano-rust-node/issues)
 
 - **See audit results** → [Final Audit Report](reports/FINAL_AUDIT_REPORT.md)- **Ask a question** → [FAQ](../FAQ.md)
-
-- **Check production readiness** → [Production Readiness Report](reports/PRODUCTION_READINESS_REPORT.md)
 
 - **Migrate from Haskell** → [Migration Guide](../MIGRATION_GUIDE.md)---
 

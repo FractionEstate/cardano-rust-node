@@ -97,7 +97,6 @@ Complete API and command-line interface documentation.
 ### 📊 [Operations]({% link operations/MONITORING_AND_METRICS.md %})
 Monitoring, metrics, and production operations.
 
-### 📋 [Reports]({% link reports/MISSION_ACCOMPLISHED.md %})
 Audit reports, test results, and status updates.
 
 </div>
@@ -133,13 +132,10 @@ Audit reports, test results, and status updates.
 
 1. [Getting Started]({% link guides/GETTING_STARTED.md %}) - Setup guide
 2. [Monitoring & Metrics]({% link operations/MONITORING_AND_METRICS.md %}) - Monitor nodes
-3. [Production Readiness]({% link reports/PRODUCTION_READINESS_REPORT.md %}) - Production checklist
-
 ### 🏊 Stake Pool Operators (SPOs)
 {: .text-purple-100 }
 
 1. [SPO Setup Guide]({% link guides/GETTING_STARTED.md %}) - Complete setup
-2. [Block Production]({% link reports/MISSION_ACCOMPLISHED.md %}) - Block forging info
 3. [Monitoring Dashboard]({% link guides/DASHBOARD_VISUAL_GUIDE.md %}) - Track performance
 
 ### 👨‍💻 Developers (Contributing)
@@ -154,8 +150,6 @@ Audit reports, test results, and status updates.
 
 1. [Migration Guide]({% link MIGRATION_GUIDE.md %}) - Step-by-step migration
 2. [Compatibility Report]({% link architecture/HASKELL_COMPATIBILITY_VERIFIED.md %}) - Feature parity
-3. [Known Differences]({% link architecture/HASKELL_COMPATIBILITY_GAPS.md %}) - What's different
-
 ---
 
 ## Latest Updates

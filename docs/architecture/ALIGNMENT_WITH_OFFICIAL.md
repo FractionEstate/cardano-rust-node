@@ -15,7 +15,7 @@ cardano-node run --config config.json --topology topology.json
 
 # Validate configuration
 cardano-node validate-config --config config.json
-```
+```text
 
 **Purpose:** Runs the blockchain node, validates blocks, maintains ledger state
 
@@ -32,7 +32,7 @@ cardano-cli transaction submit ...
 # Manage addresses and keys
 cardano-cli address build ...
 cardano-cli stake-pool registration ...
-```
+```text
 
 **Purpose:** Command-line tool to interact with a running cardano-node
 
@@ -40,7 +40,7 @@ cardano-cli stake-pool registration ...
 
 We provide a **unified binary** that combines both tools:
 
-```
+```text
 ┌─────────────────────────────────────────────┐
 │         cardano-node (Rust)                 │
 ├─────────────────────────────────────────────┤
@@ -56,7 +56,7 @@ We provide a **unified binary** that combines both tools:
 │   ➕ dashboard, admin                       │
 │                                              │
 └─────────────────────────────────────────────┘
-```
+```text
 
 ## Command Mapping
 
@@ -156,7 +156,7 @@ We provide a **unified binary** that combines both tools:
 # Use official Haskell cardano-cli to interact
 cardano-cli query tip --socket-path node.socket
 cardano-cli transaction submit --tx-file tx.signed --socket-path node.socket
-```
+```text
 
 **Result:** ✅ **Works perfectly** - Official cardano-cli can connect to our Rust node
 
@@ -169,7 +169,7 @@ cardano-node run --config config.json --socket-path node.socket
 # Use our Rust CLI to interact
 ./cardano-node query chain-tip --socket-path node.socket
 ./cardano-node transaction submit --tx-file tx.signed --socket-path node.socket
-```
+```text
 
 **Result:** ✅ **Works perfectly** - Our Rust CLI can connect to official Haskell node
 

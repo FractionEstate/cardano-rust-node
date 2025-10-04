@@ -18,7 +18,7 @@ The VRF (Verifiable Random Function) implementation used **private internal APIs
 
 ```rust
 use curve25519_dalek::field::FieldElement;  // ❌ Private in crates.io version
-```
+```text
 
 ### How Was It Resolved? ✅
 **Migrated to official cardano-base-rust library** (January 10, 2025):
@@ -34,13 +34,13 @@ use curve25519_dalek::field::FieldElement;  // ❌ Private in crates.io version
 ## 🔬 Technical Details (Historical)
 
 ### Error That Required Local Copy
-```
+```text
 error[E0603]: module `field` is private
   --> crates/cardano-crypto/src/vrf/backend.rs:11:23
    |
 11 | use curve25519_dalek::field::FieldElement;
    |                       ^^^^^ private module
-```
+```text
 
 ### VRF Implementation Before Migration
 The VRF backend (`crates/cardano-crypto/src/vrf/backend.rs`) extensively used `FieldElement`:
@@ -52,12 +52,12 @@ The VRF backend (`crates/cardano-crypto/src/vrf/backend.rs`) extensively used `F
 - Critical for Cardano's Ouroboros Praos consensus
 
 ### Dependencies
-```
+```text
 curve25519-dalek v4.1.3 (local)
 ├── Used by: cardano-crypto
 │   └── Used by: cardano-consensus, cardano-ledger, cardano-network, etc.
 └── Also used by: ed25519-dalek (transitive dependency)
-```
+```text
 
 ---
 
@@ -73,7 +73,7 @@ curve25519-dalek v4.1.3 (local)
 $ cargo check
 error[E0603]: module `field` is private
 ❌ Build FAILED
-```
+```text
 
 ---
 
@@ -121,7 +121,7 @@ error[E0603]: module `field` is private
 - High-level VRF API
 - Praos-specific types
 - Simple VRF for testing
-```
+```text
 
 **Migration Effort:** Low (2-4 hours)
 - Replace VRF backend with cardano-vrf-pure
@@ -153,7 +153,7 @@ cardano-base-rust IS the Cardano VRF library we need!
 ## 📋 Current State
 
 ### File Structure
-```
+```text
 curve25519-dalek/
 └── curve25519-dalek/           # v4.1.3
     ├── Cargo.toml
@@ -164,7 +164,7 @@ curve25519-dalek/
     │   ├── scalar.rs
     │   └── backend/
     └── benches/
-```
+```text
 
 ### Git Status
 - Part of the main repository
@@ -241,7 +241,7 @@ The latest version on crates.io is `5.0.0-pre.1` (pre-release), but even if stab
 [dependencies]
 cardano-vrf-pure = { git = "https://github.com/FractionEstate/cardano-base-rust" }
 cardano-crypto-class = { git = "https://github.com/FractionEstate/cardano-base-rust" }
-```
+```text
 
 ### Step 2: Update VRF Backend
 Replace `crates/cardano-crypto/src/vrf/backend.rs` to use `cardano-vrf-pure`:
@@ -256,13 +256,13 @@ rm -rf curve25519-dalek/
 
 # Remove patch from Cargo.toml
 # Delete: [patch.crates-io] section
-```
+```text
 
 ### Step 4: Test
 ```bash
 cargo test --workspace
 cargo build --release
-```
+```text
 
 ### Benefits
 ✅ Cleaner codebase

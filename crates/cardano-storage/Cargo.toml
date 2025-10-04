@@ -10,13 +10,29 @@ description = "Cardano blockchain and ledger state storage backends"
 keywords = ["cardano", "storage", "database", "lmdb", "rocksdb"]
 
 [dependencies]
-# Database backends
-lmdb.workspace = true
-rocksdb.workspace = true
+# OLD Database backends (to be phased out - made optional)
+lmdb = { workspace = true, optional = true }
+rocksdb = { workspace = true, optional = true }
+
+# NEW: Pure Rust dependencies from cardano-base-rust
+cardano-slotting = { git = "https://github.com/FractionEstate/cardano-base-rust", branch = "master" }
+cardano-binary = { git = "https://github.com/FractionEstate/cardano-base-rust", branch = "master" }
+cardano-crypto-class = { git = "https://github.com/FractionEstate/cardano-base-rust", branch = "master" }
+
+# NEW: Pure Rust storage engine dependencies
+memmap2 = "0.9" # Memory-mapped I/O for zero-copy reads
+# Note: zstd compression will be added in Phase 2 after resolving build dependencies
+# For now, compression is optional and can be disabled in config
+bincode = "2.0.1"    # Fast binary serialization
+hashbrown = "0.16.0" # Fast HashMap implementation
+crossbeam = "0.8"    # Lock-free data structures
+blake2 = "0.10"      # Blake2b hashing
 
 # Serialization
-serde.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
 minicbor.workspace = true
+hex = { workspace = true }                          # For hex encoding/decoding
 
 # Internal dependencies
 cardano-ledger = { path = "../cardano-ledger" }
@@ -32,6 +48,29 @@ tokio.workspace = true
 async-trait.workspace = true
 
 [dev-dependencies]
-tempfile.workspace = true
 proptest.workspace = true
-hex.workspace = true
+tempfile.workspace = true
+hex = { workspace = true }
+criterion = { workspace = true, features = ["html_reports"] }
+
+[[bench]]
+name = "ring_buffer"
+harness = false
+
+[[bench]]
+name = "hash_ops"
+harness = false
+
+[[bench]]
+name = "serialization"
+harness = false
+
+[features]
+default = ["cardanodb"]
+cardanodb = []               # New pure-Rust storage engine
+legacy = ["lmdb", "rocksdb"] # Legacy C/C++ backends
+
+# Uncomment when benchmarks are ready
+# [[bench]]
+# name = "cardanodb_benchmarks"
+# harness = false

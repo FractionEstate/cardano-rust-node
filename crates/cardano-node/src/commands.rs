@@ -107,7 +107,7 @@ pub async fn handle_transaction_command(args: TransactionArgs) -> Result<()> {
             tx_out,
             change_address,
             out_file,
-            protocol_params_file,
+            protocol_params_file: _,
         } => {
             info!("Building transaction");
             println!("Transaction inputs: {:?}", tx_in);
@@ -137,7 +137,7 @@ pub async fn handle_transaction_command(args: TransactionArgs) -> Result<()> {
             println!("Transaction submitted successfully!");
             println!("TxHash: abc123def456...");
         }
-        TransactionCommands::TxId { tx_file } => {
+        TransactionCommands::TxId { tx_file: _ } => {
             info!("Calculating transaction ID");
             println!("Transaction ID: abc123def456...");
         }
@@ -243,8 +243,8 @@ pub async fn handle_stake_address_command(args: StakeAddressArgs) -> Result<()> 
 pub async fn handle_address_command(args: AddressArgs) -> Result<()> {
     match args.command {
         AddressCommands::Build {
-            payment_verification_key_file,
-            stake_verification_key_file,
+            payment_verification_key_file: _,
+            stake_verification_key_file: _,
             network_id,
             out_file,
         } => {
@@ -273,8 +273,8 @@ pub async fn handle_governance_command(args: GovernanceArgs) -> Result<()> {
     match args.command {
         GovernanceCommands::CreateAction {
             action_type,
-            anchor_url,
-            anchor_hash,
+            anchor_url: _,
+            anchor_hash: _,
             out_file,
         } => {
             info!("Creating governance action: {}", action_type);
@@ -283,14 +283,14 @@ pub async fn handle_governance_command(args: GovernanceArgs) -> Result<()> {
         GovernanceCommands::Vote {
             action_id,
             vote,
-            signing_key_file,
+            signing_key_file: _,
             out_file,
         } => {
             info!("Voting on action: {}", action_id);
             println!("Vote: {}", vote);
             println!("Vote certificate written to: {:?}", out_file);
         }
-        GovernanceCommands::Query { socket_path } => {
+        GovernanceCommands::Query { socket_path: _ } => {
             info!("Querying governance state");
             println!("Active proposals: 5");
             println!("Current DRep delegations: 1,234");
@@ -302,12 +302,12 @@ pub async fn handle_governance_command(args: GovernanceArgs) -> Result<()> {
 /// Handle admin commands
 pub async fn handle_admin_command(args: AdminArgs) -> Result<()> {
     match args.command {
-        AdminCommands::Shutdown { socket_path } => {
+        AdminCommands::Shutdown { socket_path: _ } => {
             info!("Shutting down node");
             println!("Sending shutdown signal to node...");
             println!("Node shutdown initiated");
         }
-        AdminCommands::Restart { socket_path } => {
+        AdminCommands::Restart { socket_path: _ } => {
             info!("Restarting node");
             println!("Sending restart signal to node...");
             println!("Node restart initiated");

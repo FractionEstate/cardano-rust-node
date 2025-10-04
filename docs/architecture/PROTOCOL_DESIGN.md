@@ -8,7 +8,7 @@ This document describes the Rust implementation of Ouroboros mini-protocols for 
 
 ### Protocol Stack
 
-```
+```text
 ┌────────────────────────────────────────┐
 │     Application Layer (Sync Logic)    │
 ├────────────────────────────────────────┤
@@ -23,7 +23,7 @@ This document describes the Rust implementation of Ouroboros mini-protocols for 
 ├────────────────────────────────────────┤
 │         Transport Layer (TCP)          │
 └────────────────────────────────────────┘
-```
+```text
 
 ### Key Components
 
@@ -40,7 +40,7 @@ This document describes the Rust implementation of Ouroboros mini-protocols for 
 
 #### State Machine
 
-```
+```text
 StPropose ─MsgProposeVersions─→ StConfirm
                                     │
                  ┌──────────────────┼────────────────┐
@@ -49,7 +49,7 @@ StPropose ─MsgProposeVersions─→ StConfirm
                  │                  │                │
                  ↓                  ↓                ↓
               StDone             StDone           StDone
-```
+```text
 
 #### Message Types
 
@@ -72,7 +72,7 @@ enum HandshakeMessage {
         versions: Map<NodeToNodeVersion, VersionData>
     }
 }
-```
+```text
 
 #### Version Data (NodeToNodeVersionData)
 
@@ -83,7 +83,7 @@ struct NodeToNodeVersionData {
     peer_sharing: PeerSharing,          // Enabled | Disabled
     query: bool                         // true for query mode
 }
-```
+```text
 
 #### Supported Versions
 
@@ -97,7 +97,7 @@ struct NodeToNodeVersionData {
 **Version Data**: `TList [TInt(network_magic), TBool(diffusion), TInt(peer_sharing), TBool(query)]`
 
 **Message Format**:
-```
+```text
 MsgProposeVersions:
   [0, {version_number: version_data, ...}]  # List len 2, tag 0, map of versions
 
@@ -106,7 +106,7 @@ MsgAcceptVersion:
 
 MsgRefuse:
   [2, refuse_reason]  # List len 2, tag 2
-```
+```text
 
 #### Refuse Reasons
 
@@ -125,7 +125,7 @@ enum RefuseReason {
         reason: String
     }
 }
-```
+```text
 
 #### Implementation Strategy
 
@@ -148,7 +148,7 @@ enum RefuseReason {
 
 #### State Machine
 
-```
+```text
 StIdle ─MsgRequestNext─→ StNext(CanAwait)
   ↑                          │
   │         ┌────────────────┼────────────┐
@@ -166,7 +166,7 @@ StIdle ─MsgFindIntersect─→ StIntersect
   │         │                  │              │
   │         ↓                  ↓              ↓
   └────── StIdle ←─────────── StIdle ←───── StIdle
-```
+```text
 
 #### Message Types
 
@@ -184,7 +184,7 @@ enum ChainSyncMessage {
     MsgIntersectFound { point: Point, tip: Tip },
     MsgIntersectNotFound { tip: Tip }
 }
-```
+```text
 
 #### Data Types
 
@@ -211,7 +211,7 @@ struct BlockHeader {
     operational_cert: OperationalCertificate,
     protocol_magic: u32
 }
-```
+```text
 
 #### CBOR Encoding
 
@@ -220,7 +220,7 @@ struct BlockHeader {
 **Header**: `[slot, prev_hash, issuer_vkey, vrf_proof, vrf_output, body_hash, size, op_cert, magic]`
 
 **Messages**:
-```
+```text
 MsgRequestNext:         [0]
 MsgAwaitReply:          [1]
 MsgRollForward:         [2, header, tip]
@@ -229,7 +229,7 @@ MsgFindIntersect:       [4, [points...]]
 MsgIntersectFound:      [5, point, tip]
 MsgIntersectNotFound:   [6, tip]
 MsgDone:                [7]
-```
+```text
 
 #### Protocol Flow
 
@@ -264,7 +264,7 @@ MsgDone:                [7]
 
 #### State Machine
 
-```
+```text
 StIdle ─MsgRequestRange─→ StBusy
   ↑                          │
   │         ┌────────────────┼────────────┐
@@ -275,7 +275,7 @@ StIdle ─MsgRequestRange─→ StBusy
   └─── StStreaming ─────→ StIdle ←───── StIdle
            │
     MsgBlock (repeated)
-```
+```text
 
 #### Message Types
 
@@ -288,7 +288,7 @@ enum BlockFetchMessage {
     MsgBatchDone,
     MsgClientDone
 }
-```
+```text
 
 #### Protocol Flow
 
@@ -309,18 +309,18 @@ const BLOCK_FETCH_PROTOCOL_ID: u16 = 3;
 const TX_SUBMISSION_PROTOCOL_ID: u16 = 4;
 const KEEP_ALIVE_PROTOCOL_ID: u16 = 8;
 const PEER_SHARING_PROTOCOL_ID: u16 = 11;
-```
+```text
 
 ### Message Framing
 
 Each multiplexed message consists of:
-```
+```text
 ┌──────────┬──────────┬──────────┬─────────────┐
 │  Header  │  Proto   │  Length  │   Payload   │
 │ (2 byte) │  ID      │ (2 byte) │  (variable) │
 │  0x0000  │ (2 byte) │          │             │
 └──────────┴──────────┴──────────┴─────────────┘
-```
+```text
 
 **Header**: Transmission time (unused in basic mode)
 **Protocol ID**: Identifies which mini-protocol
@@ -340,7 +340,7 @@ impl Multiplexer {
         }
     }
 }
-```
+```text
 
 ## Implementation Phases
 
@@ -377,7 +377,7 @@ impl Multiplexer {
 
 ## Code Structure
 
-```
+```text
 crates/cardano-network/src/protocols/
 ├── mod.rs                  # Protocol trait definitions
 ├── handshake/
@@ -396,7 +396,7 @@ crates/cardano-network/src/protocols/
 └── blockfetch/
     ├── mod.rs              # Similar structure
     └── ...
-```
+```text
 
 ## References
 

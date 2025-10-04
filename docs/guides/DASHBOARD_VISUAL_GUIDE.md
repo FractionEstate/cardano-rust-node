@@ -3,6 +3,7 @@
 ## Tab Overview
 
 ### Tab 1: Overview
+
 ```
 ┌─ 🚀 Cardano Node Dashboard ─────────────────────────────────────┐
 │                                                                  │
@@ -32,6 +33,7 @@
 ```
 
 ### Tab 2: Stake Pool
+
 ```
 ┌─ Tabs ───────────────────────────────────────────────────────────┐
 │ Overview [Stake Pool] Wallets | Network | Monitoring | ...      │
@@ -54,6 +56,7 @@
 ```
 
 ### Tab 3: Wallets
+
 ```
 ┌─ Tabs ───────────────────────────────────────────────────────────┐
 │ Overview | Stake Pool [Wallets] Network | Monitoring | ...      │
@@ -76,6 +79,7 @@
 ```
 
 ### Tab 4: Network
+
 ```
 ┌─ Tabs ───────────────────────────────────────────────────────────┐
 │ Overview | Stake Pool | Wallets [Network] Monitoring | ...      │
@@ -91,6 +95,7 @@
 ```
 
 ### Tab 5: Monitoring
+
 ```
 ┌─ Tabs ───────────────────────────────────────────────────────────┐
 │ Overview | ... | Network [Monitoring] API Settings | ...        │
@@ -112,6 +117,7 @@
 ```
 
 ### Tab 6: API Settings
+
 ```
 ┌─ Tabs ───────────────────────────────────────────────────────────┐
 │ Overview | ... | Monitoring [API Settings] Alerts | Logs        │
@@ -138,6 +144,7 @@
 ```
 
 ### Tab 7: Alerts
+
 ```
 ┌─ Tabs ───────────────────────────────────────────────────────────┐
 │ Overview | ... | API Settings [Alerts] Logs                     │
@@ -155,6 +162,7 @@
 ```
 
 ### Tab 8: Logs
+
 ```
 ┌─ Tabs ───────────────────────────────────────────────────────────┐
 │ Overview | ... | Alerts [Logs]                                  │
@@ -219,6 +227,7 @@ Press **[:]** to enter command mode:
 ```
 
 Available commands:
+
 - `:quit` or `:q` - Exit dashboard
 - `:help` or `:h` - Show help modal
 - `:clear` - Clear log entries
@@ -249,6 +258,7 @@ Available commands:
 ## Interactive Elements
 
 ### Wallets Tab
+
 - **Left Panel**: Selectable wallet list
   - `↑` / `↓` to navigate
   - Highlighted wallet shows in yellow
@@ -259,6 +269,7 @@ Available commands:
   - Action menu for operations
 
 ### Alerts Tab
+
 - Navigate with `↑` / `↓`
 - Press `Enter` to acknowledge alert
 - Acknowledged alerts turn gray with ✓ prefix
@@ -266,6 +277,7 @@ Available commands:
 - Color-coded by severity
 
 ### Monitoring Tab
+
 - **Graphs**: Real-time updating
   - CPU: 0-100% scale
   - Memory: 0-8GB scale
@@ -280,17 +292,20 @@ Available commands:
 ## Status Bar States
 
 ### Normal Mode
+
 ```
 Press [q] to quit | [1-8] to switch tabs | [?] for help
 Connected: Yes | Syncing: 89.5%
 ```
 
 ### Command Mode
+
 ```
 : <your command here>
 ```
 
 ### Editing Mode (future)
+
 ```
 EDIT: <your input here>
 ```
@@ -320,28 +335,33 @@ EDIT: <your input here>
 ## Usage Examples
 
 ### Quick Navigation
+
 1. Press `2` to jump to Stake Pool tab
 2. Press `Tab` twice to reach Network tab
 3. Press `5` to see Monitoring graphs
 
 ### Managing Wallets
+
 1. Press `3` for Wallets tab
 2. Use `↑` / `↓` to select wallet
 3. View details in right panel
 4. (Future) Press action keys for operations
 
 ### Viewing Alerts
+
 1. Press `7` for Alerts tab
 2. Navigate to critical alert with `↑` / `↓`
 3. Press `Enter` to acknowledge
 4. Alert turns gray with ✓
 
 ### Getting Help
+
 1. Press `?` from any tab
 2. Read comprehensive help
 3. Press `q` or `Esc` to close
 
 ### Quitting
+
 - Method 1: Press `q` from normal mode
 - Method 2: Press `:` then type `quit` and `Enter`
 - Method 3: Press `Esc` to cancel, then `q`

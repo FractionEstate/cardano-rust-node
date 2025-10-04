@@ -6,6 +6,8 @@ use serde_json::Value;
 use std::sync::Arc;
 use tracing::{debug, error};
 
+#[cfg(test)]
+use super::SubmissionStatus;
 use super::{
     mempool::InMemoryMempool,
     validation::{CardanoTransactionValidator, MockScriptValidator, MockUtxoProvider},

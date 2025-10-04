@@ -1,12 +1,15 @@
-//! Storage backend implementations
+//! Backend storage implementations
 //!
-//! This module contains concrete implementations of the storage interface
-//! for different database backends.
+//! This module provides pluggable storage backends for CardanoDB.
 
+#[cfg(feature = "legacy")]
 pub mod lmdb;
+#[cfg(feature = "legacy")]
 pub mod rocksdb;
 
+#[cfg(feature = "legacy")]
 pub use lmdb::{LmdbBackend, LmdbConfig};
+#[cfg(feature = "legacy")]
 pub use rocksdb::{RocksDbBackend, RocksDbConfig};
 
 use crate::Result;

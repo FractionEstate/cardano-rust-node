@@ -38,7 +38,7 @@ min_fee = min_fee_a + (min_fee_b * tx_size)
 // Official Haskell implementation
 -- Cardano.Ledger.Shelley.Rules.Ledger
 txfee pp tx = pp ^. ppMinFeeA <+> pp ^. ppMinFeeB * tx ^. sizeTxF
-```
+```text
 
 ✅ **CORRECT:** Formula matches official implementation exactly.
 
@@ -53,7 +53,7 @@ txfee pp tx = pp ^. ppMinFeeA <+> pp ^. ppMinFeeB * tx ^. sizeTxF
 4. Input availability (not already spent)
 5. Output value check (≥ min_utxo_value)
 6. Value conservation (inputs = outputs + fee)
-```
+```text
 
 ### Official Haskell Validation (Shelley.Rules.Ledger)
 
@@ -64,7 +64,7 @@ txfee pp tx = pp ^. ppMinFeeA <+> pp ^. ppMinFeeB * tx ^. sizeTxF
 4. Check inputs not already spent
 5. Check minimum UTxO requirement
 6. Check value balance (preservation of value)
-```
+```text
 
 ✅ **ALIGNED:** Validation logic follows official Cardano ledger rules.
 
@@ -72,7 +72,7 @@ txfee pp tx = pp ^. ppMinFeeA <+> pp ^. ppMinFeeB * tx ^. sizeTxF
 
 ### Official Haskell Structure
 
-```
+```text
 cardano-node/           -- Node executable
 cardano-cli/            -- CLI tool
 cardano-ledger/         -- Era-specific ledger rules
@@ -83,11 +83,11 @@ cardano-ledger/         -- Era-specific ledger rules
   ├── alonzo/
   ├── babbage/
   └── conway/
-```
+```text
 
 ### Our Rust Implementation
 
-```
+```text
 crates/
 ├── cardano-node/           -- Node executable ✅
 ├── cardano-api/            -- API layer (like cardano-cli) ✅
@@ -101,7 +101,7 @@ crates/
     ├── alonzo/
     ├── babbage/
     └── conway/
-```
+```text
 
 ✅ **CORRECT:** Architecture mirrors official repository structure.
 
@@ -195,7 +195,7 @@ These are tracked for Phase 2-3 integration:
 ✅ test_transaction_application
 ✅ test_fee_calculation
 ✅ test_block_application (in block_production.rs)
-```
+```text
 
 **Total:** 8/8 tests passing
 
@@ -209,7 +209,7 @@ These are tracked for Phase 2-3 integration:
 ✅ Alonzo era: test_alonzo_plutus_validation
 ✅ Babbage era: test_babbage_reference_inputs
 ✅ Conway era: test_conway_governance_action
-```
+```text
 
 **Total:** 100+ ledger tests passing across all eras
 
@@ -225,7 +225,7 @@ These are tracked for Phase 2-3 integration:
 4. Forge block with valid transactions
 5. Apply to ledger via LedgerState → apply_block() ✅
 6. Broadcast block
-```
+```text
 
 ### Future Integration (Full Validation)
 
@@ -236,7 +236,7 @@ These are tracked for Phase 2-3 integration:
 3. Execute Plutus scripts if needed
 4. Validate multi-assets if present
 5. Apply governance actions if present
-```
+```text
 
 ## Verification Methods
 
@@ -257,7 +257,7 @@ These are tracked for Phase 2-3 integration:
   "maxBlockBodySize": 90112,
   "minUTxOValue": 1000000
 }
-```
+```text
 
 ✅ **VERIFIED:** All values match our implementation.
 
@@ -273,7 +273,7 @@ Our implementation has been validated against:
 
 ### Separation of Concerns
 
-```
+```text
 ┌─────────────────────────────────────┐
 │   Block Production (consensus)      │
 │   - Leadership checking             │
@@ -299,7 +299,7 @@ Our implementation has been validated against:
 │   - Governance rules                │
 │   Crate: cardano-ledger/*          │ ← Full implementation
 └─────────────────────────────────────┘
-```
+```text
 
 ### Why This Design?
 

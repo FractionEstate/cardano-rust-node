@@ -1,8 +1,21 @@
 //! Cardano Storage Layer
 //!
 //! Provides persistent storage for blockchain data and ledger state.
+//!
+//! # Storage Backends
+//!
+//! ## Legacy Backends (to be phased out)
+//! - LMDB and RocksDB wrappers (C/C++ dependencies)
+//!
+//! ## CardanoDB (NEW - Pure Rust)
+//! - ImmutableDB: Chunk-based storage for ancient blocks
+//! - VolatileDB: Ring buffer for recent blocks
+//! - LedgerDB: In-memory ledger with snapshots
+//!
+//! See the `cardanodb` module for the new pure-Rust storage engine.
 
 pub mod backends;
+pub mod cardanodb; // NEW: Pure Rust storage engine
 pub mod chaindb;
 pub mod ledgerdb;
 
@@ -22,6 +35,7 @@ pub enum StorageError {
 pub type Result<T> = std::result::Result<T, StorageError>;
 
 // Re-export commonly used types
+#[cfg(feature = "legacy")]
 pub use backends::{
     BackendStats, BatchOperation, LmdbBackend, LmdbConfig, RocksDbBackend, RocksDbConfig,
     StorageBackend,

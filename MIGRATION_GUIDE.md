@@ -1,6 +1,8 @@
 # Migration Guide: Haskell Node → Rust Node
 
-> **Complete guide for migrating from cardano-node (Haskell) to cardano-rust-node**
+> **Guide for future migration from cardano-node (Haskell) to cardano-rust-node**
+>
+> ⚠️ **Note**: This guide is for reference only. cardano-rust-node is currently in active development and not yet ready for production migration. See [HASKELL_COMPATIBILITY_GAPS.md](docs/architecture/HASKELL_COMPATIBILITY_GAPS.md) for current status.
 
 ---
 
@@ -20,33 +22,32 @@
 
 ---
 
-## 🎯 Why Migrate?
+## 🎯 Why Migrate? (Future)
 
-### Performance Benefits
+> **Note**: These are target performance goals for the completed project.
 
-| Metric | Haskell Node | Rust Node | Improvement |
-|--------|-------------|-----------|-------------|
-| **Initial Sync Time** | ~48 hours | ~16-24 hours | 2-3x faster |
-| **Memory Usage** | 4-6 GB | 2-3 GB | 40-50% less |
-| **CPU Usage** | Baseline | 20-30% less | More efficient |
-| **Disk I/O** | Baseline | 30-40% less | Better caching |
-| **Block Validation** | Baseline | 2-3x faster | Rust optimizations |
-| **Startup Time** | ~30-60s | ~5-10s | 6x faster |
+### Performance Targets
 
-### Additional Benefits
+| Metric                | Haskell Node | Rust Target         | Expected Improvement        |
+| --------------------- | ------------ | ------------------- | --------------------------- |
+| **Initial Sync Time** | ~48 hours    | ~16-24 hours (est.) | 2-3x faster (target)        |
+| **Memory Usage**      | 4-6 GB       | 2-3 GB (est.)       | 40-50% less (target)        |
+| **CPU Usage**         | Baseline     | 20-30% less (est.)  | More efficient (target)     |
+| **Disk I/O**          | Baseline     | 30-40% less (est.)  | Better caching (target)     |
+| **Block Validation**  | Baseline     | 2-3x faster (est.)  | Rust optimizations (target) |
+| **Startup Time**      | ~30-60s      | ~5-10s              | 6x faster                   |
 
-✅ **100% API/CLI Compatible** - All existing tools work
-✅ **Better Resource Efficiency** - Lower hosting costs
-✅ **Faster Development** - Active Rust ecosystem
-✅ **Modern Tooling** - Better debugging, profiling
+### Planned Benefits
+
+🔄 **API/CLI Compatibility** - Working towards full compatibility
+🔄 **Resource Efficiency** - Target: Lower hosting costs
+✅ **Modern Tooling** - Better debugging, profiling available now
 ✅ **Memory Safety** - Rust's guarantees prevent crashes
-✅ **Same Network** - Compatible with Haskell nodes
+🔄 **Network Compatibility** - In development
 
 ---
 
-## 🔒 Compatibility Guarantee
-
-### What's Compatible
+## 🔒 Compatibility Status
 
 ✅ **Network Protocol** - Rust nodes can connect to Haskell nodes
 ✅ **IPC Socket** - `cardano-cli` can query Rust nodes
@@ -428,50 +429,50 @@ sudo journalctl -u cardano-node -f
 
 ### Binary Names
 
-| Haskell | Rust | Notes |
-|---------|------|-------|
-| `cardano-node` | `cardano-node` | Same! Node operations |
-| `cardano-cli` | `cardano-node` | Unified binary for CLI |
+| Haskell        | Rust           | Notes                  |
+| -------------- | -------------- | ---------------------- |
+| `cardano-node` | `cardano-node` | Same! Node operations  |
+| `cardano-cli`  | `cardano-node` | Unified binary for CLI |
 
 ### Node Commands
 
-| Haskell | Rust | Compatible |
-|---------|------|-----------|
-| `cardano-node run` | `cardano-node run` | ✅ Identical |
+| Haskell                | Rust                   | Compatible  |
+| ---------------------- | ---------------------- | ----------- |
+| `cardano-node run`     | `cardano-node run`     | ✅ Identical |
 | `cardano-node version` | `cardano-node version` | ✅ Identical |
 
 ### CLI Commands (Queries)
 
-| Haskell `cardano-cli` | Rust `cardano-node` | Notes |
-|-----------------------|---------------------|-------|
-| `cardano-cli query tip` | `cardano-node query tip` | ✅ Same output |
+| Haskell `cardano-cli`                   | Rust `cardano-node`                      | Notes         |
+| --------------------------------------- | ---------------------------------------- | ------------- |
+| `cardano-cli query tip`                 | `cardano-node query tip`                 | ✅ Same output |
 | `cardano-cli query protocol-parameters` | `cardano-node query protocol-parameters` | ✅ Same output |
-| `cardano-cli query utxo` | `cardano-node query utxo` | ✅ Same output |
-| `cardano-cli query stake-pools` | `cardano-node query stake-pools` | ✅ Same output |
-| `cardano-cli query stake-distribution` | `cardano-node query stake-distribution` | ✅ Same output |
+| `cardano-cli query utxo`                | `cardano-node query utxo`                | ✅ Same output |
+| `cardano-cli query stake-pools`         | `cardano-node query stake-pools`         | ✅ Same output |
+| `cardano-cli query stake-distribution`  | `cardano-node query stake-distribution`  | ✅ Same output |
 | `cardano-cli query leadership-schedule` | `cardano-node query leadership-schedule` | ✅ Same output |
-| `cardano-cli query ledger-state` | `cardano-node query ledger-state` | ✅ Same output |
+| `cardano-cli query ledger-state`        | `cardano-node query ledger-state`        | ✅ Same output |
 
 ### CLI Commands (Transactions)
 
-| Haskell | Rust | Notes |
-|---------|------|-------|
-| `cardano-cli transaction build` | `cardano-node transaction build` | ✅ Same |
-| `cardano-cli transaction sign` | `cardano-node transaction sign` | ✅ Same |
-| `cardano-cli transaction submit` | `cardano-node transaction submit` | ✅ Same |
-| `cardano-cli transaction view` | `cardano-node transaction view` | ✅ Same |
+| Haskell                                     | Rust                                         | Notes  |
+| ------------------------------------------- | -------------------------------------------- | ------ |
+| `cardano-cli transaction build`             | `cardano-node transaction build`             | ✅ Same |
+| `cardano-cli transaction sign`              | `cardano-node transaction sign`              | ✅ Same |
+| `cardano-cli transaction submit`            | `cardano-node transaction submit`            | ✅ Same |
+| `cardano-cli transaction view`              | `cardano-node transaction view`              | ✅ Same |
 | `cardano-cli transaction calculate-min-fee` | `cardano-node transaction calculate-min-fee` | ✅ Same |
 
 ### CLI Commands (Keys & Addresses)
 
-| Haskell | Rust | Notes |
-|---------|------|-------|
-| `cardano-cli address key-gen` | `cardano-node address key-gen` | ✅ Same |
-| `cardano-cli address key-hash` | `cardano-node address key-hash` | ✅ Same |
-| `cardano-cli address build` | `cardano-node address build` | ✅ Same |
-| `cardano-cli address info` | `cardano-node address info` | ✅ Same |
+| Haskell                             | Rust                                 | Notes  |
+| ----------------------------------- | ------------------------------------ | ------ |
+| `cardano-cli address key-gen`       | `cardano-node address key-gen`       | ✅ Same |
+| `cardano-cli address key-hash`      | `cardano-node address key-hash`      | ✅ Same |
+| `cardano-cli address build`         | `cardano-node address build`         | ✅ Same |
+| `cardano-cli address info`          | `cardano-node address info`          | ✅ Same |
 | `cardano-cli stake-address key-gen` | `cardano-node stake-address key-gen` | ✅ Same |
-| `cardano-cli stake-address build` | `cardano-node stake-address build` | ✅ Same |
+| `cardano-cli stake-address build`   | `cardano-node stake-address build`   | ✅ Same |
 
 ### Script Migration
 

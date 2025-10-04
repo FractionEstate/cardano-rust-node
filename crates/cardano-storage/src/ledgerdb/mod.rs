@@ -576,7 +576,7 @@ impl<B: StorageBackend> LedgerDatabase for LedgerDatabaseImpl<B> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "legacy"))]
 mod tests {
     use super::*;
     use crate::backends::{LmdbBackend, LmdbConfig};

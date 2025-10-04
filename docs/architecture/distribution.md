@@ -15,7 +15,7 @@ This ensures no stale artifacts leak into the release build.
 
 ```bash
 cargo clean
-```
+```text
 
 ## 3. Build the release artifacts
 
@@ -23,7 +23,7 @@ Compile every crate in the workspace with optimizations. This produces the `card
 
 ```bash
 cargo build --workspace --release
-```
+```text
 
 Key outputs:
 - `target/release/cardano-node`
@@ -35,14 +35,14 @@ Execute the full test matrix to confirm the release build matches the Haskell re
 
 ```bash
 cargo test --workspace
-```
+```text
 
 For quicker spot checks during iterative work, you can target individual packages:
 
 ```bash
 cargo test --package cardano-ledger
 cargo test --package cardano-consensus
-```
+```text
 
 ## 5. Bundle configuration and metadata
 
@@ -70,7 +70,7 @@ Create a compressed archive that can be distributed to operators.
 
 ```bash
 tar -C dist -czf cardano-node-rust.tar.gz cardano-node
-```
+```text
 
 You may also produce platform-specific archives, e.g. `cardano-node-rust-x86_64-unknown-linux-gnu.tar.gz` to clarify the target triple.
 
@@ -81,7 +81,7 @@ For public releases, generate SHA256 digests and sign them:
 ```bash
 shasum -a 256 cardano-node-rust.tar.gz > cardano-node-rust.tar.gz.sha256
 gpg --armor --detach-sign cardano-node-rust.tar.gz
-```
+```text
 
 Share the checksum and signature alongside the archive so consumers can verify integrity and authenticity.
 
@@ -95,7 +95,7 @@ cp cardano-node-rust.tar.gz dist/tmp/
 cd dist/tmp
  tar -xzf cardano-node-rust.tar.gz
 ./cardano-node/cardano-node --help
-```
+```text
 
 If the help text prints without errors, the binary is correctly linked and executable in a clean environment.
 
@@ -105,7 +105,7 @@ Remove intermediate staging directories once the release is published:
 
 ```bash
 rm -rf dist/tmp
-```
+```text
 
 Keep the `dist/cardano-node` directory if you plan further validation or operator-specific packaging.
 

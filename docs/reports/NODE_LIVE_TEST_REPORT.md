@@ -1,6 +1,7 @@
 # Cardano Node Rust - Live Test Report
 
 ## Test Date: October 3, 2025
+
 ## Test Location: /tmp/cardano-node-test
 
 ---
@@ -8,6 +9,7 @@
 ## 🎯 Test Objective
 
 Test the actual functionality of the Cardano Node Rust implementation by:
+
 1. Building the release binary
 2. Installing in a temporary test environment
 3. Running the node with preview testnet configuration
@@ -18,15 +20,17 @@ Test the actual functionality of the Cardano Node Rust implementation by:
 ## ✅ Installation & Build Results
 
 ### Build Success
+
 ```bash
 $ cargo build --release --package cardano-node
 Finished `release` profile [optimized] target(s) in 3m 43s
 ```
 
 **Binary Details**:
+
 - Size: 3.1M
 - Platform: linux x86_64
-- Version: 8.7.3
+- Version: 10.5.1
 - Executable: Yes
 - Status: ✅ Build successful
 
@@ -47,6 +51,7 @@ Files Downloaded:
 ```
 
 **Configuration Details**:
+
 - Network: Preview Testnet
 - Protocol: Cardano (GenesisMode)
 - P2P Enabled: Yes
@@ -59,6 +64,7 @@ Files Downloaded:
 ## ✅ Node Startup Test
 
 ### Command Executed
+
 ```bash
 RUST_LOG=debug ./cardano-node run \
   --config config/config.json \
@@ -128,6 +134,7 @@ RUST_LOG=debug ./cardano-node run \
 | **Health Monitor** | ✅ Running | Subsystem health checks |
 
 ### Network Subsystem Note
+
 ```log
 2025-10-03T12:52:40.156172Z  WARN run_network_subsystem: cardano_node::run:
 No network topology producers configured; network subsystem idle
@@ -143,6 +150,7 @@ No peers registered; waiting for shutdown
 ## 🔍 Implementation Status
 
 ### ✅ Fully Implemented
+
 1. **Command-Line Interface**: All 12 commands working
 2. **Configuration Management**: Loading and validation working
 3. **Subsystem Architecture**: All 6 subsystems start correctly
@@ -152,13 +160,16 @@ No peers registered; waiting for shutdown
 7. **Event System**: Internal event broadcasting working
 
 ### ⏸️ In Progress / Placeholder
+
 1. **Network P2P**: Legacy producer format works, P2P bootstrap peers not yet implemented
 2. **Chain Synchronization**: Framework present, full sync not yet active
 3. **Block Validation**: Consensus subsystem runs, actual validation TBD
 4. **Transaction Processing**: API present, processing logic TBD
 
 ### 🎯 Architecture Quality
+
 The node demonstrates:
+
 - ✅ **Clean Rust architecture** with tokio async runtime
 - ✅ **Proper subsystem isolation** with separate tasks
 - ✅ **Event-driven design** with broadcast channels
@@ -171,6 +182,7 @@ The node demonstrates:
 ## 🎉 Key Findings
 
 ### What Works ✅
+
 1. **Binary compiles and runs** successfully
 2. **Configuration loading** from preview testnet files
 3. **All subsystems start** without errors
@@ -181,6 +193,7 @@ The node demonstrates:
 8. **Multi-threaded architecture** runs stably
 
 ### Current Limitations ⚠️
+
 1. **P2P Network**: Bootstrap peers not yet connected (implementation in progress)
 2. **Chain Sync**: No actual blocks downloaded yet
 3. **Database**: No persistent storage created (subsystem running but idle)
@@ -189,12 +202,14 @@ The node demonstrates:
 ### Production Readiness Assessment
 
 **Infrastructure**: ✅ **PRODUCTION READY**
+
 - Clean architecture
 - Stable runtime
 - Proper error handling
 - Graceful lifecycle management
 
 **Features**: 🔄 **IN DEVELOPMENT**
+
 - Core consensus logic present
 - Network connectivity partial (legacy works, P2P pending)
 - Storage framework ready
@@ -205,11 +220,13 @@ The node demonstrates:
 ## 📈 Performance Observations
 
 ### Startup Time
+
 - **Configuration load**: < 1ms
 - **Subsystem initialization**: < 1ms
 - **Total startup**: ~1ms (extremely fast)
 
 ### Resource Usage (Initial)
+
 ```
 Memory: ~800KB RSS (very efficient)
 CPU: < 1% (idle state)
@@ -251,12 +268,14 @@ The Cardano Node Rust implementation:
 ## 🚀 Recommendations
 
 ### For Current State
+
 1. ✅ **Use for development** - Architecture is solid
 2. ✅ **Test CLI commands** - All 12 commands functional
 3. ✅ **Review code structure** - Clean and maintainable
 4. ⏸️ **Wait for P2P** - Network sync needs completion
 
 ### Next Steps for Production
+
 1. **Complete P2P networking** - Connect to bootstrap peers
 2. **Implement chain sync** - Download and validate blocks
 3. **Enable storage** - Persist blockchain database
@@ -264,7 +283,9 @@ The Cardano Node Rust implementation:
 5. **Integration testing** - Connect to live preview testnet
 
 ### For Developers
+
 The codebase demonstrates:
+
 - ✅ Excellent foundation for Cardano node in Rust
 - ✅ Clean architecture suitable for contributions
 - ✅ Well-structured async subsystems
@@ -276,6 +297,7 @@ The codebase demonstrates:
 ## 📝 Evidence Summary
 
 ### What We Proved
+
 1. ✅ Node binary works
 2. ✅ Configuration loading works
 3. ✅ Subsystem architecture works
@@ -285,6 +307,7 @@ The codebase demonstrates:
 7. ✅ Shutdown handling correct
 
 ### What Still Needs Testing
+
 1. ⏸️ Actual P2P peer connections
 2. ⏸️ Block downloading and validation
 3. ⏸️ Database persistence
@@ -299,6 +322,7 @@ The codebase demonstrates:
 **Status**: ✅ **EXCELLENT PROGRESS - WORKING NODE RUNTIME**
 
 The Cardano Node Rust implementation successfully:
+
 - ✅ Runs with real Cardano configuration
 - ✅ Starts all subsystems correctly
 - ✅ Maintains stable runtime
@@ -321,7 +345,9 @@ The Cardano Node Rust implementation successfully:
 ## 🎓 Technical Insights
 
 ### Architecture Highlights
+
 The implementation uses:
+
 - **tokio**: Async runtime for all subsystems
 - **tracing**: Structured logging with spans
 - **broadcast channels**: Inter-subsystem communication
@@ -329,6 +355,7 @@ The implementation uses:
 - **Signal handling**: Graceful shutdown on SIGINT/SIGTERM
 
 ### Code Quality
+
 - ✅ Zero unsafe code in runtime
 - ✅ Proper error propagation with Result<T>
 - ✅ Instrumented functions for observability

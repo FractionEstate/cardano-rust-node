@@ -310,7 +310,6 @@ pub trait MempoolEventListener: Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::submit_api::{TransactionInput, TransactionOutput};
 
     #[tokio::test]
     async fn test_mempool_creation() {

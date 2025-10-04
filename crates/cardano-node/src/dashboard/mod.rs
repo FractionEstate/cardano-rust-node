@@ -1252,7 +1252,9 @@ fn restore_terminal() -> Result<()> {
 }
 
 // Mock rand for demo purposes
+#[allow(dead_code)]
 mod rand {
+    #[allow(dead_code)]
     pub fn random<T>() -> T
     where
         T: From<u8>,

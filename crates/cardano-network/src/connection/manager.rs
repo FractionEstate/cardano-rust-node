@@ -827,17 +827,16 @@ impl ConnectionManagerHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use blake2::{Blake2b512, Digest};
     use bytes::Bytes;
     use std::pin::Pin;
-    use std::sync::Arc;
-    use tokio::net::TcpListener;
 
+    #[allow(dead_code)]
     struct DummyProtocolHandler {
         id: ProtocolId,
         name: &'static str,
     }
 
+    #[allow(dead_code)]
     impl DummyProtocolHandler {
         fn new(id: ProtocolId, name: &'static str) -> Self {
             Self { id, name }

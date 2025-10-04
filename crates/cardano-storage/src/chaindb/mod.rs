@@ -265,7 +265,7 @@ impl<B: StorageBackend> ChainDatabase for ChainDatabaseImpl<B> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "legacy"))]
 mod tests {
     use super::*;
     use crate::backends::{LmdbBackend, LmdbConfig};

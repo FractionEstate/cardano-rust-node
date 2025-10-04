@@ -15,7 +15,7 @@ From `cardano-base-rust` (already a project dependency):
 
 ## Protocol Stack Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────┐
 │           Application Layer                      │
 │  (ChainSync, BlockFetch, TxSubmission)          │
@@ -35,7 +35,7 @@ From `cardano-base-rust` (already a project dependency):
 │          TCP Transport Layer                     │
 │  (Already working in v10.5.1)                   │
 └─────────────────────────────────────────────────┘
-```
+```text
 
 ## Protocol Specifications
 
@@ -44,12 +44,12 @@ From `cardano-base-rust` (already a project dependency):
 **Purpose**: Route multiple protocol conversations over a single TCP connection.
 
 **Message Format**:
-```
+```text
 ┌──────────────┬────────────┬────────────┬──────────────┐
 │ Transmission │ Protocol   │ Payload    │ Payload      │
 │ Time (4B)    │ ID (2B)    │ Length (2B)│ (variable)   │
 └──────────────┴────────────┴────────────┴──────────────┘
-```
+```text
 
 **Protocol IDs**:
 ```rust
@@ -58,7 +58,7 @@ pub const PROTOCOL_CHAINSYNC: u16 = 2;
 pub const PROTOCOL_BLOCKFETCH: u16 = 3;
 pub const PROTOCOL_TXSUBMISSION: u16 = 4;
 pub const PROTOCOL_KEEPALIVE: u16 = 8;
-```
+```text
 
 **Rust Implementation**:
 ```rust
@@ -74,7 +74,7 @@ pub struct Multiplexer {
     send_queue: VecDeque<MuxMessage>,
     recv_buffer: BytesMut,
 }
-```
+```text
 
 **State Machine**:
 - `Idle`: Waiting for messages
@@ -116,7 +116,7 @@ pub enum RefuseReason {
     HandshakeDecodeError { message: String },
     Refused { reason: String },
 }
-```
+```text
 
 **CBOR Encoding** (using `cardano-binary`):
 ```rust
@@ -130,10 +130,10 @@ use cardano_binary::{serialize, deserialize};
 //
 // Refuse CBOR structure:
 // [2, [refuse_reasons]]
-```
+```text
 
 **State Machine**:
-```
+```text
 Client:
   Start → ProposeVersions → AwaitAccept → Done
                                ↓
@@ -143,7 +143,7 @@ Server:
   Start → AwaitProposal → AcceptVersion → Done
                           ↓
                        Refuse → Closed
-```
+```text
 
 **Rust Implementation**:
 ```rust
@@ -169,7 +169,7 @@ impl ProtocolHandler for HandshakeProtocol {
 
     fn next_message(&mut self) -> Result<Option<Vec<u8>>, ProtocolError>;
 }
-```
+```text
 
 **Critical Requirements**:
 - MUST be the first protocol to complete
@@ -244,7 +244,7 @@ pub struct Tip {
     pub point: Point,
     pub block_no: BlockNo,
 }
-```
+```text
 
 **CBOR Encoding**:
 ```rust
@@ -256,10 +256,10 @@ pub struct Tip {
 // IntersectFound: [5, point, tip]
 // IntersectNotFound: [6, tip]
 // Done: [7]
-```
+```text
 
 **State Machine**:
-```
+```text
 Client:
   Idle → FindIntersect → AwaitIntersect → IntersectFound → CanAwaitReply
                                            ↓
@@ -272,7 +272,7 @@ Client:
 
 Server:
   Idle → AwaitRequest → ProcessRequest → Idle
-```
+```text
 
 **Rust Implementation**:
 ```rust
@@ -314,7 +314,7 @@ impl ProtocolHandler for ChainSyncClient {
         }
     }
 }
-```
+```text
 
 **Integration with Slotting**:
 ```rust
@@ -330,7 +330,7 @@ fn get_epoch(slot: SlotNo, epoch_info: &EpochInfo) -> EpochNo {
     // Use cardano-slotting's epoch_info functions
     epoch_info_epoch(epoch_info, slot)
 }
-```
+```text
 
 ### 4. BlockFetch Protocol
 
@@ -364,7 +364,7 @@ pub enum BlockFetchMessage {
     /// Response: all blocks sent
     BatchDone,
 }
-```
+```text
 
 **CBOR Encoding**:
 ```rust
@@ -374,10 +374,10 @@ pub enum BlockFetchMessage {
 // NoBlocks: [3]
 // Block: [4, block_cbor_bytes]
 // BatchDone: [5]
-```
+```text
 
 **State Machine**:
-```
+```text
 Client:
   Idle → RequestRange → AwaitStartBatch → StartBatch → AwaitBlock
                                         → NoBlocks → Idle
@@ -389,7 +389,7 @@ Client:
 
 Server:
   Idle → AwaitRequest → ProcessRequest → SendingBatch → Idle
-```
+```text
 
 **Rust Implementation**:
 ```rust
@@ -405,7 +405,7 @@ pub enum BlockFetchState {
     AwaitBlock { expected_count: usize },
     Done,
 }
-```
+```text
 
 **Pipelining**:
 ```rust
@@ -425,7 +425,7 @@ impl BlockFetchClient {
         Ok(())
     }
 }
-```
+```text
 
 ### 5. TxSubmission Protocol
 
@@ -464,7 +464,7 @@ pub enum TxSubmissionMessage {
 
 pub type TxId = [u8; 32];  // Blake2b-256 hash
 pub type TxSize = u32;     // Size in bytes
-```
+```text
 
 **CBOR Encoding**:
 ```rust
@@ -473,10 +473,10 @@ pub type TxSize = u32;     // Size in bytes
 // RequestTxs: [2, [txids]]
 // ReplyTxs: [3, [tx_cbor_bytes, ...]]
 // Done: [4]
-```
+```text
 
 **State Machine**:
-```
+```text
 Client:
   Idle → RequestTxIds → AwaitTxIds → ReplyTxIds → Idle
                                                  → RequestTxs → AwaitTxs → ReplyTxs → Idle
@@ -485,7 +485,7 @@ Client:
 
 Server:
   Idle → AwaitRequest → ProcessRequest → Idle
-```
+```text
 
 ## Implementation Plan
 
@@ -530,7 +530,7 @@ Server:
 
 ## File Structure
 
-```
+```text
 crates/cardano-network/src/
 ├── protocols/
 │   ├── mod.rs                  # Protocol trait definitions
@@ -546,7 +546,7 @@ crates/cardano-network/src/
 │   ├── blockfetch_messages.rs  # BlockFetch CBOR types
 │   └── txsubmission_messages.rs # TxSubmission CBOR types
 └── lib.rs
-```
+```text
 
 ## Testing Strategy
 

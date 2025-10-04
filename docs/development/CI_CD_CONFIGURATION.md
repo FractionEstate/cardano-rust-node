@@ -9,11 +9,13 @@ The Cardano Node Rust project uses GitHub Actions for continuous integration and
 ## 🔄 CI/CD Pipeline
 
 ### Triggers
-- **Push**: `main`, `develop`, `001-*` branches
+
+- **Push**: `main`, `develop`, `open-source-development` branches
 - **Pull Request**: `main`, `develop` branches
 - **Schedule**: Weekly security audits (Mondays at 00:00 UTC)
 
 ### Environment
+
 ```yaml
 CARGO_TERM_COLOR: always
 RUST_BACKTRACE: 1
@@ -25,13 +27,16 @@ RUSTFLAGS: -D warnings
 ## ✅ CI Jobs
 
 ### 1. Test Suite (`test`)
+
 **Purpose**: Run all tests across multiple platforms and Rust versions
 
 **Matrix**:
+
 - OS: Ubuntu, Windows, macOS
 - Rust: stable, 1.75.0
 
 **Steps**:
+
 1. Checkout code
 2. Install Rust toolchain
 3. Cache cargo registry, index, and build
@@ -40,6 +45,7 @@ RUSTFLAGS: -D warnings
 6. Run doc tests
 
 **Caching Strategy**:
+
 - Registry: `~/.cargo/registry`
 - Index: `~/.cargo/git`
 - Build: `target/`
@@ -50,11 +56,13 @@ RUSTFLAGS: -D warnings
 ---
 
 ### 2. Code Formatting (`fmt`)
+
 **Purpose**: Ensure consistent code style
 
 **Tool**: `rustfmt`
 
 **Command**:
+
 ```bash
 cargo fmt --all -- --check
 ```
@@ -64,11 +72,13 @@ cargo fmt --all -- --check
 ---
 
 ### 3. Linting (`clippy`)
+
 **Purpose**: Catch common mistakes and enforce best practices
 
 **Tool**: `clippy`
 
 **Command**:
+
 ```bash
 cargo clippy --workspace --all-targets --all-features -- -D warnings -D clippy::all
 ```
@@ -78,19 +88,23 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings -D clippy::
 ---
 
 ### 4. Documentation (`docs`)
+
 **Purpose**: Verify documentation builds correctly
 
 **Steps**:
+
 1. Build docs with `cargo doc`
 2. Fail on documentation warnings
 3. Upload docs artifact for main branch
 
 **Command**:
+
 ```bash
 cargo doc --workspace --no-deps --all-features
 ```
 
 **Environment**:
+
 ```yaml
 RUSTDOCFLAGS: -D warnings
 ```
@@ -98,6 +112,7 @@ RUSTDOCFLAGS: -D warnings
 ---
 
 ### 5. Dependency Check (`dependency-check`)
+
 **Purpose**: Verify dependencies for security and licensing
 
 **Tool**: `cargo-deny`
@@ -105,6 +120,7 @@ RUSTDOCFLAGS: -D warnings
 **Configuration**: `deny.toml`
 
 **Checks**:
+
 - ✅ Security vulnerabilities (deny)
 - ✅ Yanked crates (deny)
 - ✅ Unmaintained crates (warn)
@@ -113,22 +129,27 @@ RUSTDOCFLAGS: -D warnings
 - ✅ Unknown sources (deny)
 
 **Allowed Licenses**:
+
 - MIT, Apache-2.0, BSD-2/3-Clause
 - ISC, CC0-1.0, MPL-2.0
 - Unlicense, Zlib
 
 **Denied Licenses**:
+
 - GPL-*, AGPL-*
 
 **Allowed Git Sources**:
-- https://github.com/FractionEstate/cardano-base-rust
+
+- <https://github.com/FractionEstate/cardano-base-rust>
 
 ---
 
 ### 6. VRF Migration Verification (`vrf-migration-check`) 🎉
+
 **Purpose**: Verify successful migration to cardano-base-rust
 
 **Checks**:
+
 1. ✅ No local `curve25519-dalek/` fork
 2. ✅ No `[patch.crates-io]` section in Cargo.toml
 3. ✅ `cardano-vrf-pure` dependency present
@@ -139,24 +160,29 @@ RUSTDOCFLAGS: -D warnings
 ---
 
 ### 7. Haskell Compatibility (`haskell-compat`)
+
 **Purpose**: Verify compatibility with Haskell cardano-node
 
 **Steps**:
+
 1. Download mainnet configuration files
 2. Run compatibility tests
 
 **Configuration Sources**:
-- https://book.world.dev.cardano.org/environments/mainnet/config.json
-- https://book.world.dev.cardano.org/environments/mainnet/topology.json
+
+- <https://book.world.dev.cardano.org/environments/mainnet/config.json>
+- <https://book.world.dev.cardano.org/environments/mainnet/topology.json>
 
 ---
 
 ### 8. Security Audit (`security-audit`)
+
 **Purpose**: Identify security vulnerabilities in dependencies
 
 **Tool**: `cargo-audit`
 
 **Command**:
+
 ```bash
 cargo audit --deny warnings
 ```
@@ -164,17 +190,20 @@ cargo audit --deny warnings
 **Database**: RustSec Advisory Database
 
 **Frequency**:
+
 - Every PR/push
 - Weekly scheduled run
 
 ---
 
 ### 9. Code Coverage (`coverage`)
+
 **Purpose**: Track test coverage
 
 **Tool**: `cargo-tarpaulin`
 
 **Command**:
+
 ```bash
 cargo tarpaulin --workspace --out Xml --output-dir coverage --all-features
 ```
@@ -186,12 +215,15 @@ cargo tarpaulin --workspace --out Xml --output-dir coverage --all-features
 ---
 
 ### 10. Release Build (`build-release`)
+
 **Purpose**: Verify release builds work on all platforms
 
 **Matrix**:
+
 - Ubuntu, Windows, macOS
 
 **Command**:
+
 ```bash
 cargo build --release --package cardano-node
 ```
@@ -201,6 +233,7 @@ cargo build --release --package cardano-node
 ---
 
 ### 11. Status Check (`status-check`)
+
 **Purpose**: Final validation of all checks
 
 **Dependencies**: All previous jobs
@@ -208,6 +241,7 @@ cargo build --release --package cardano-node
 **Logic**: Fails if any required job fails
 
 **Required Jobs**:
+
 - test
 - fmt
 - clippy
@@ -221,22 +255,26 @@ cargo build --release --package cardano-node
 ## 🔒 Security Features
 
 ### 1. Dependency Security
+
 - ✅ Automated vulnerability scanning
 - ✅ RustSec Advisory Database
 - ✅ Weekly scheduled audits
 - ✅ Deny warnings mode
 
 ### 2. License Compliance
+
 - ✅ Automated license checking
 - ✅ GPL/AGPL denied
 - ✅ OSI/FSF free software licenses allowed
 
 ### 3. Source Verification
+
 - ✅ Only trusted registries allowed
 - ✅ Git sources explicitly whitelisted
 - ✅ FractionEstate GitHub org trusted
 
 ### 4. Migration Verification
+
 - ✅ No local forks allowed
 - ✅ No private API patches
 - ✅ Official libraries enforced
@@ -246,6 +284,7 @@ cargo build --release --package cardano-node
 ## 📊 Performance Optimizations
 
 ### Caching Strategy
+
 ```yaml
 Cache Keys:
   - Registry: $OS-$RUST-cargo-registry-$LOCKFILE_HASH
@@ -257,11 +296,13 @@ Restore Keys:
 ```
 
 ### Benefits
+
 - ⚡ Faster CI runs (cache hits)
 - 💾 Reduced bandwidth usage
 - 🔄 Incremental builds
 
 ### Matrix Strategy
+
 - `fail-fast: false` - Continue testing other combinations on failure
 - Parallel execution across OS and Rust versions
 
@@ -298,7 +339,9 @@ cargo tarpaulin --workspace --all-features
 ```
 
 ### Pre-commit Hook
+
 Create `.git/hooks/pre-commit`:
+
 ```bash
 #!/bin/bash
 set -e
@@ -315,6 +358,7 @@ echo "✅ Pre-commit checks passed"
 ```
 
 Make it executable:
+
 ```bash
 chmod +x .git/hooks/pre-commit
 ```
@@ -324,6 +368,7 @@ chmod +x .git/hooks/pre-commit
 ## 📈 Continuous Improvement
 
 ### Current Status
+
 - ✅ 330 tests passing
 - ✅ Zero warnings
 - ✅ Zero security vulnerabilities
@@ -331,6 +376,7 @@ chmod +x .git/hooks/pre-commit
 - ✅ Clean migration verified
 
 ### Future Enhancements
+
 1. **Performance Benchmarking**: Add criterion benchmarks to CI
 2. **Integration Tests**: Extended Haskell compatibility tests
 3. **Docker Builds**: Automated container builds
@@ -342,11 +388,13 @@ chmod +x .git/hooks/pre-commit
 ## 🚀 Release Process
 
 ### Automated Steps
+
 1. All CI checks pass
 2. Release binaries built for all platforms
 3. Artifacts uploaded to GitHub
 
 ### Manual Steps (to be automated)
+
 1. Create GitHub release
 2. Tag version
 3. Publish to crates.io (if applicable)
@@ -360,12 +408,14 @@ chmod +x .git/hooks/pre-commit
 ### Common Issues
 
 **Cache Invalidation**
+
 ```bash
 # Clear all caches in GitHub Actions:
 # Settings → Actions → Caches → Delete
 ```
 
 **Flaky Tests**
+
 ```yaml
 # Add retries to flaky tests
 strategy:
@@ -373,6 +423,7 @@ strategy:
 ```
 
 **Dependency Conflicts**
+
 ```bash
 # Update all dependencies
 cargo update
@@ -382,6 +433,7 @@ cargo tree --duplicates
 ```
 
 **Security Audit Failures**
+
 ```bash
 # Check specific advisory
 cargo audit --deny warnings --ignore RUSTSEC-XXXX-XXXX
@@ -392,6 +444,7 @@ cargo audit --deny warnings --ignore RUSTSEC-XXXX-XXXX
 ## 🎯 Best Practices
 
 ### For Contributors
+
 1. ✅ Run `cargo fmt` before committing
 2. ✅ Run `cargo clippy` to catch issues early
 3. ✅ Run `cargo test` to verify tests pass
@@ -399,6 +452,7 @@ cargo audit --deny warnings --ignore RUSTSEC-XXXX-XXXX
 5. ✅ Write tests for new features
 
 ### For Maintainers
+
 1. ✅ Review security audit results weekly
 2. ✅ Update dependencies regularly
 3. ✅ Monitor CI performance

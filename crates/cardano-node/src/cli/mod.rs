@@ -14,7 +14,7 @@ use std::path::PathBuf;
 #[derive(Parser, Debug, Clone)]
 #[command(name = "cardano-node")]
 #[command(about = "Cardano Node - Rust Implementation")]
-#[command(version = "8.7.3")]
+#[command(version = "10.5.1")]
 #[command(long_about = "
 A Rust implementation of the Cardano blockchain node.
 
