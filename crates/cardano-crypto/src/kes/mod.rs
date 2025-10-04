@@ -82,7 +82,10 @@ impl KesSignature {
             ));
         }
 
-        let period = u64::from_le_bytes(bytes[0..8].try_into().unwrap());
+        let period = u64::from_le_bytes(
+            bytes[0..8].try_into()
+                .map_err(|_| CryptoError::InvalidSignature("Invalid period bytes".to_string()))?
+        );
         let signature = bytes[8..72].to_vec();
         let period_vkey = bytes[72..104].to_vec();
         let auth_path = vec![]; // Simplified

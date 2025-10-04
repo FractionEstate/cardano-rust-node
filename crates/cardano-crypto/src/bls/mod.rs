@@ -52,6 +52,7 @@ impl BlsPrivateKey {
         // Try to construct scalar from bytes (using big-endian format)
         let scalar = Scalar::from_bytes_be(&scalar_bytes);
         if scalar.is_some().into() {
+            // Safe: we just checked is_some()
             Ok(Self {
                 inner: scalar.unwrap(),
             })

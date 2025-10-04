@@ -303,7 +303,8 @@ mod tests {
 
         let result = service.submit_transaction(&tx_data).await.unwrap();
         assert_eq!(result.status, SubmissionStatus::Accepted);
-        assert_eq!(result.tx_id, "test_tx_123");
+        // TX ID is generated from CBOR data, not from user input
+        assert!(result.tx_id.starts_with("cbor_tx_"));
     }
 
     #[tokio::test]

@@ -581,8 +581,8 @@ mod tests {
         let payload = Bytes::from_static(b"hello");
         let frame = MessageFrame::new(ProtocolId::HANDSHAKE, payload);
 
-        // 4 bytes header + 5 bytes payload = 9 bytes
-        assert_eq!(frame.frame_size(), 9);
+        // 8 bytes header (u32 timestamp + u16 protocol_id + u16 length) + 5 bytes payload = 13 bytes
+        assert_eq!(frame.frame_size(), 13);
     }
 
     #[test]

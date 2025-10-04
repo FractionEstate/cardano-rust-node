@@ -162,8 +162,8 @@ mod multiplexer_tests {
         let payload = Bytes::from_static(b"hello world");
         let frame = MessageFrame::new(ProtocolId::HANDSHAKE, payload);
 
-        // 4 bytes header + 11 bytes payload = 15 bytes
-        assert_eq!(frame.frame_size(), 15);
+        // 8 bytes header (u32 timestamp + u16 protocol_id + u16 length) + 11 bytes payload = 19 bytes
+        assert_eq!(frame.frame_size(), 19);
     }
 
     #[test]
@@ -178,7 +178,7 @@ mod multiplexer_tests {
                 expected,
                 actual,
             }) => {
-                assert_eq!(expected, 4);
+                assert_eq!(expected, 8); // Header is 8 bytes (u32 + u16 + u16)
                 assert_eq!(actual, 2);
             }
             _ => panic!("Unexpected error type"),
