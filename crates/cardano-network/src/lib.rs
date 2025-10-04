@@ -49,7 +49,7 @@ pub enum NetworkError {
     PeerSelectionError(String),
 
     #[error("Handshake error: {0}")]
-    HandshakeError(#[from] connection::handshake::HandshakeError),
+    HandshakeError(#[from] protocols::handshake::HandshakeError),
 
     #[error("Multiplexer error: {0}")]
     MultiplexerError(#[from] connection::multiplexer::MultiplexerError),

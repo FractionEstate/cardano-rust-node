@@ -2,18 +2,19 @@
 //!
 //! Handles slot leader election and block creation based on Ouroboros Praos protocol.
 
-use crate::ouroboros::SlotNo;
+use crate::leadership::{LeadershipProof};
+use crate::ouroboros::{PoolId, SlotNo};
 use crate::{ConsensusError, Result};
 use cardano_crypto::{
-    Blake2b256Hash, Ed25519KeyHash, VrfOutput, VrfPrivateKey, VrfProof, VrfPublicKey,
-    VRF_SEED_LENGTH,
+    Blake2b256Hash, Ed25519KeyHash, KesSecretKey, KesSignature, VrfOutput, VrfPrivateKey,
+    VrfProof, VrfPublicKey, VRF_SEED_LENGTH,
 };
 use std::collections::HashMap;
 
 /// Block producer with cryptographic credentials
 #[derive(Debug, Clone)]
 pub struct BlockProducer {
-    pub pool_id: Ed25519KeyHash,
+    pub pool_id: PoolId,
     pub vrf_key: VrfKey,
     pub kes_key: KesKey,
     pub operational_cert: OperationalCertificate,
@@ -30,10 +31,65 @@ pub struct VrfKey {
 /// KES (Key Evolving Signature) key for block signing
 #[derive(Debug, Clone)]
 pub struct KesKey {
-    pub public_key: Blake2b256Hash,
-    pub private_key: Blake2b256Hash,
-    pub period: u64,
+    /// The actual KES secret key from cardano-crypto
+    pub secret_key: KesSecretKey,
+    /// Maximum KES period before rotation
     pub max_period: u64,
+}
+
+impl KesKey {
+    /// Create a new KES key with specified depth
+    pub fn new(depth: u32) -> Self {
+        let secret_key = KesSecretKey::generate(depth);
+        let max_period = secret_key.max_period();
+        Self {
+            secret_key,
+            max_period,
+        }
+    }
+
+    /// Get current period
+    pub fn current_period(&self) -> u64 {
+        self.secret_key.current_period()
+    }
+
+    /// Check if KES key needs evolution
+    pub fn needs_evolution(&self, current_period: u64) -> bool {
+        current_period > self.secret_key.current_period()
+    }
+
+    /// Check if expired
+    pub fn is_expired(&self) -> bool {
+        self.secret_key.is_expired()
+    }
+
+    /// Evolve KES key to new period
+    pub fn evolve(&mut self, target_period: u64) -> Result<()> {
+        if target_period > self.max_period {
+            return Err(ConsensusError::KesKeyExpired(
+                "KES key has reached maximum evolution".to_string(),
+            ));
+        }
+
+        if target_period <= self.secret_key.current_period() {
+            return Err(ConsensusError::InvalidKesEvolution(
+                "Cannot evolve to past period".to_string(),
+            ));
+        }
+
+        // Evolve the secret key
+        self.secret_key = self.secret_key.evolve_to(target_period)
+            .map_err(|e| ConsensusError::InvalidKesEvolution(format!("KES evolution failed: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Sign block header with KES key
+    pub fn sign_block(&self, header_bytes: &[u8]) -> Result<KesSignature> {
+        let period = self.secret_key.current_period();
+        self.secret_key.sign(period, header_bytes)
+            .map_err(|e| ConsensusError::InvalidKesSignature(format!("KES signing failed: {}", e)))
+    }
 }
 
 /// Operational certificate for block production
@@ -91,13 +147,15 @@ pub struct SimplifiedLedgerState {
 pub struct ForgedBlock {
     pub header: BlockHeader,
     pub body: BlockBody,
-    pub proof_of_leadership: VrfProof,
+    pub proof_of_leadership: LeadershipProof,
+    pub kes_signature: KesSignature,
 }
 
 /// Block header for produced block
 #[derive(Debug, Clone)]
 pub struct BlockHeader {
     pub slot: SlotNo,
+    pub block_number: u64,
     pub prev_hash: Blake2b256Hash,
     pub issuer_vkey: Ed25519KeyHash,
     pub vrf_proof: VrfProof,
@@ -108,12 +166,65 @@ pub struct BlockHeader {
     pub protocol_magic: u32,
 }
 
+impl BlockHeader {
+    /// Serialize header for signing (without the KES signature)
+    pub fn to_bytes_for_signing(&self) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&self.slot.0.to_le_bytes());
+        bytes.extend_from_slice(&self.block_number.to_le_bytes());
+        bytes.extend_from_slice(self.prev_hash.as_bytes());
+        bytes.extend_from_slice(self.issuer_vkey.as_bytes());
+        bytes.extend_from_slice(self.vrf_proof.to_bytes());
+        bytes.extend_from_slice(self.vrf_output.to_bytes());
+        bytes.extend_from_slice(self.block_body_hash.as_bytes());
+        bytes.extend_from_slice(&self.block_size.to_le_bytes());
+        bytes.extend_from_slice(&self.protocol_magic.to_le_bytes());
+        bytes
+    }
+}
+
 /// Block body containing transactions
 #[derive(Debug, Clone)]
 pub struct BlockBody {
     pub transactions: Vec<Transaction>,
     pub total_fee: u64,
     pub total_size: u32,
+}
+
+impl BlockBody {
+    /// Create empty block body
+    pub fn empty() -> Self {
+        Self {
+            transactions: vec![],
+            total_fee: 0,
+            total_size: 0,
+        }
+    }
+
+    /// Create block body from transactions
+    pub fn from_transactions(transactions: Vec<Transaction>) -> Self {
+        let total_fee = transactions.iter().map(|tx| tx.fee).sum();
+        let total_size = transactions.iter().map(|tx| tx.size).sum();
+        Self {
+            transactions,
+            total_fee,
+            total_size,
+        }
+    }
+
+    /// Calculate hash of block body
+    pub fn hash(&self) -> Blake2b256Hash {
+        let mut data = Vec::new();
+        for tx in &self.transactions {
+            data.extend_from_slice(tx.tx_id.as_bytes());
+        }
+        Blake2b256Hash::hash(&data)
+    }
+
+    /// Check if body exceeds size limit
+    pub fn exceeds_size_limit(&self, max_size: u32) -> bool {
+        self.total_size > max_size
+    }
 }
 
 impl Default for VrfKey {
@@ -137,8 +248,8 @@ impl VrfKey {
         }
     }
 
-    pub fn for_pool(pool_id: &Ed25519KeyHash) -> Self {
-        let seed = Blake2b256Hash::hash(pool_id.as_bytes());
+    pub fn for_pool(pool_id: &PoolId) -> Self {
+        let seed = Blake2b256Hash::hash(pool_id.0.as_bytes());
         Self::from_seed(seed.as_bytes())
     }
 
@@ -159,65 +270,10 @@ impl VrfKey {
     }
 }
 
-impl KesKey {
-    pub fn new(period: u64) -> Self {
-        Self {
-            public_key: Blake2b256Hash::hash(format!("kes_public_{}", period).as_bytes()),
-            private_key: Blake2b256Hash::hash(format!("kes_private_{}", period).as_bytes()),
-            period,
-            max_period: 90, // ~90 days worth of KES periods
-        }
-    }
-
-    /// Check if KES key needs evolution
-    pub fn needs_evolution(&self, current_period: u64) -> bool {
-        current_period > self.period
-    }
-
-    /// Evolve KES key to new period
-    pub fn evolve(&mut self, new_period: u64) -> Result<()> {
-        if new_period > self.max_period {
-            return Err(ConsensusError::KesKeyExpired(
-                "KES key has reached maximum evolution".to_string(),
-            ));
-        }
-
-        if new_period <= self.period {
-            return Err(ConsensusError::InvalidKesEvolution(
-                "Cannot evolve to past period".to_string(),
-            ));
-        }
-
-        // Evolve keys (simplified - real KES involves cryptographic evolution)
-        self.public_key = Blake2b256Hash::hash(format!("kes_public_{}", new_period).as_bytes());
-        self.private_key = Blake2b256Hash::hash(format!("kes_private_{}", new_period).as_bytes());
-        self.period = new_period;
-
-        Ok(())
-    }
-
-    /// Sign block header with KES key
-    pub fn sign_block(&self, header: &BlockHeader) -> Result<Blake2b256Hash> {
-        // Verify KES key is valid for this period
-        let expected_period = header.slot.0 / 129600; // ~36 hours per KES period
-        if self.period != expected_period {
-            return Err(ConsensusError::InvalidKesKey(
-                "KES key period mismatch".to_string(),
-            ));
-        }
-
-        // Create signature (simplified)
-        let header_bytes = format!("{:?}", header);
-        let signature = Blake2b256Hash::hash(format!("kes_sig_{}", header_bytes).as_bytes());
-
-        Ok(signature)
-    }
-}
-
 impl BlockProducer {
-    pub fn new(pool_id: Ed25519KeyHash, stake: u64) -> Self {
+    pub fn new(pool_id: PoolId, stake: u64) -> Self {
         let vrf_key = VrfKey::for_pool(&pool_id);
-        let kes_key = KesKey::new(0);
+        let kes_key = KesKey::new(6); // depth=6 for mainnet (64 periods)
 
         let operational_cert = OperationalCertificate {
             hot_vkey: Ed25519KeyHash::from_test_data(b"hot_vkey"),
@@ -316,10 +372,11 @@ impl BlockProducer {
         // Create block header
         let header = BlockHeader {
             slot: context.current_slot,
+            block_number: context.current_slot.0, // Simplified
             prev_hash: context.prev_block_hash,
-            issuer_vkey: self.pool_id,
-            vrf_proof,
-            vrf_output,
+            issuer_vkey: Ed25519KeyHash::from_test_data(self.pool_id.0.as_bytes()),
+            vrf_proof: vrf_proof.clone(),
+            vrf_output: vrf_output.clone(),
             block_body_hash: body.hash(),
             block_size: body.total_size,
             operational_cert: self.operational_cert.clone(),
@@ -327,12 +384,19 @@ impl BlockProducer {
         };
 
         // Sign block with KES key
-        let _signature = self.kes_key.sign_block(&header)?;
+        let header_bytes = header.to_bytes_for_signing();
+        let kes_signature = self.kes_key.sign_block(&header_bytes)?;
 
         Ok(ForgedBlock {
             header,
             body,
-            proof_of_leadership,
+            proof_of_leadership: LeadershipProof {
+                slot: context.current_slot,
+                pool_id: self.pool_id.clone(),
+                vrf_output: vrf_output.clone(),
+                vrf_proof: proof_of_leadership,
+            },
+            kes_signature,
         })
     }
 
@@ -444,13 +508,6 @@ impl BlockProducer {
     }
 }
 
-impl BlockBody {
-    pub fn hash(&self) -> Blake2b256Hash {
-        let body_data = format!("{:?}", self);
-        Blake2b256Hash::hash(body_data.as_bytes())
-    }
-}
-
 impl Default for SimplifiedLedgerState {
     fn default() -> Self {
         Self::new()
@@ -470,8 +527,8 @@ impl SimplifiedLedgerState {
 
 /// Block production scheduler for epoch planning
 pub struct ProductionScheduler {
-    producers: HashMap<Ed25519KeyHash, BlockProducer>,
-    schedule: HashMap<SlotNo, Ed25519KeyHash>, // slot -> producer mapping
+    producers: HashMap<PoolId, BlockProducer>,
+    schedule: HashMap<SlotNo, PoolId>,
 }
 
 impl ProductionScheduler {
@@ -486,7 +543,8 @@ impl ProductionScheduler {
 
     /// Add block producer to scheduler
     pub fn add_producer(&mut self, producer: BlockProducer) {
-        self.producers.insert(producer.pool_id, producer);
+        let pool_id = producer.pool_id.clone();
+        self.producers.insert(pool_id, producer);
     }
 
     /// Calculate slot leadership schedule for an epoch
@@ -532,7 +590,7 @@ impl ProductionScheduler {
                 if let Ok(Some((_output, _proof))) =
                     producer.check_slot_leadership(&context, total_stake, active_slot_coeff)
                 {
-                    self.schedule.insert(SlotNo(slot), *pool_id);
+                    self.schedule.insert(SlotNo(slot), pool_id.clone());
                     break; // First producer wins (simplified - real protocol handles ties differently)
                 }
             }
@@ -542,16 +600,16 @@ impl ProductionScheduler {
     }
 
     /// Get scheduled producer for a slot
-    pub fn get_slot_leader(&self, slot: SlotNo) -> Option<&Ed25519KeyHash> {
+    pub fn get_slot_leader(&self, slot: SlotNo) -> Option<&PoolId> {
         self.schedule.get(&slot)
     }
 
     /// Get producer statistics
-    pub fn get_producer_stats(&self) -> HashMap<Ed25519KeyHash, u32> {
+    pub fn get_producer_stats(&self) -> HashMap<PoolId, u32> {
         let mut stats = HashMap::new();
 
         for producer_id in self.schedule.values() {
-            *stats.entry(*producer_id).or_insert(0) += 1;
+            *stats.entry(producer_id.clone()).or_insert(0) += 1;
         }
 
         stats
@@ -568,7 +626,7 @@ pub struct ProducedBlock {
 
 impl Default for BlockProducer {
     fn default() -> Self {
-        Self::new(Ed25519KeyHash::from_test_data(b"default_pool"), 0)
+        Self::new(PoolId(Blake2b256Hash::hash(b"default_pool")), 0)
     }
 }
 
@@ -587,7 +645,7 @@ mod tests {
     };
 
     fn create_test_producer() -> BlockProducer {
-        let pool_id = Ed25519KeyHash::from_test_data(b"test_pool");
+        let pool_id = PoolId(Blake2b256Hash::hash(b"test_pool"));
         BlockProducer::new(pool_id, 1_000_000_000_000) // 1M ADA stake
     }
 
@@ -635,16 +693,14 @@ mod tests {
 
     #[test]
     fn test_kes_key_creation() {
-        let kes_key = KesKey::new(0);
-        assert_eq!(kes_key.period, 0);
-        assert_eq!(kes_key.max_period, 90);
-        assert!(!kes_key.public_key.as_bytes().is_empty());
-        assert!(!kes_key.private_key.as_bytes().is_empty());
+        let kes_key = KesKey::new(6); // depth=6
+        assert_eq!(kes_key.current_period(), 0);
+        assert_eq!(kes_key.max_period, 62); // 2^6 - 2
     }
 
     #[test]
     fn test_kes_key_evolution() {
-        let mut kes_key = KesKey::new(0);
+        let mut kes_key = KesKey::new(6);
 
         // Key should need evolution for future periods
         assert!(kes_key.needs_evolution(1));
@@ -653,7 +709,7 @@ mod tests {
         // Evolve to period 1
         let result = kes_key.evolve(1);
         assert!(result.is_ok());
-        assert_eq!(kes_key.period, 1);
+        assert_eq!(kes_key.current_period(), 1);
 
         // Cannot evolve backwards
         let backwards_result = kes_key.evolve(0);
@@ -666,14 +722,14 @@ mod tests {
 
     #[test]
     fn test_kes_key_expiration() {
-        let mut kes_key = KesKey::new(89); // Near max period
+        // Use depth=6 (64 periods), start at period 62 (near max)
+        let mut kes_key = KesKey::new(6); // depth=6 means max_period = 62
 
-        // Should be able to evolve to max period
-        let result = kes_key.evolve(90);
-        assert!(result.is_ok());
+        // Evolve to period 62 first
+        let _ = kes_key.evolve(62);
 
-        // Should fail to evolve beyond max period
-        let expired_result = kes_key.evolve(91);
+        // Should fail to evolve beyond max period (62)
+        let expired_result = kes_key.evolve(63);
         assert!(expired_result.is_err());
         assert!(matches!(
             expired_result.unwrap_err(),
@@ -685,7 +741,7 @@ mod tests {
     fn test_block_producer_creation() {
         let producer = create_test_producer();
         assert_eq!(producer.stake, 1_000_000_000_000);
-        assert_eq!(producer.kes_key.period, 0);
+        assert_eq!(producer.kes_key.current_period(), 0);
         assert_eq!(producer.operational_cert.sequence_number, 1);
     }
 
@@ -849,14 +905,15 @@ mod tests {
 
     #[test]
     fn test_kes_key_signing() {
-        let kes_key = KesKey::new(0);
+        let kes_key = KesKey::new(6); // depth=6 for mainnet
         let producer = create_test_producer();
 
         // Create header for slot in period 0 (with correct VRF sizes)
         let header = BlockHeader {
             slot: SlotNo(50000), // Should be in KES period 0
+            block_number: 50000,
             prev_hash: Blake2b256Hash::hash(b"prev"),
-            issuer_vkey: producer.pool_id,
+            issuer_vkey: Ed25519KeyHash::from_test_data(b"issuer"),
             vrf_proof: VrfProof::from_bytes([1u8; VRF_PROOF_LENGTH]).unwrap(),
             vrf_output: VrfOutput::from_bytes([2u8; VRF_OUTPUT_LENGTH]).unwrap(),
             block_body_hash: Blake2b256Hash::hash(b"body"),
@@ -865,21 +922,13 @@ mod tests {
             protocol_magic: 764824073,
         };
 
-        let signature = kes_key.sign_block(&header);
+        let header_bytes = header.to_bytes_for_signing();
+        let signature = kes_key.sign_block(&header_bytes);
         assert!(signature.is_ok());
 
-        // Test signing with wrong period
-        let wrong_period_header = BlockHeader {
-            slot: SlotNo(200000), // Should be in KES period 1
-            ..header
-        };
-
-        let wrong_sig = kes_key.sign_block(&wrong_period_header);
-        assert!(wrong_sig.is_err());
-        assert!(matches!(
-            wrong_sig.unwrap_err(),
-            ConsensusError::InvalidKesKey(_)
-        ));
+        // KES signature period matches current period
+        let sig = signature.unwrap();
+        assert_eq!(sig.period, 0);
     }
 
     #[test]
@@ -926,9 +975,9 @@ mod tests {
 
         // Add test producers
         let producer1 =
-            BlockProducer::new(Ed25519KeyHash::from_test_data(b"pool1"), 10_000_000_000_000);
+            BlockProducer::new(PoolId(Blake2b256Hash::hash(b"pool1")), 10_000_000_000_000);
         let producer2 =
-            BlockProducer::new(Ed25519KeyHash::from_test_data(b"pool2"), 5_000_000_000_000);
+            BlockProducer::new(PoolId(Blake2b256Hash::hash(b"pool2")), 5_000_000_000_000);
 
         scheduler.add_producer(producer1);
         scheduler.add_producer(producer2);

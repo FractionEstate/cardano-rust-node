@@ -7,8 +7,10 @@ pub mod test_ouroboros_protocol;
 pub mod test_chain_selection;
 pub mod test_block_production;
 pub mod test_block_validation;
+pub mod test_block_production_integration;
 
 pub use test_ouroboros_protocol::*;
 pub use test_chain_selection::*;
 pub use test_block_production::*;
 pub use test_block_validation::*;
+pub use test_block_production_integration::*;

@@ -1,8 +1,8 @@
 # Cardano Node Rust v10.5.1 - Network Connectivity Test Report
 
-**Test Date:** October 3, 2025  
-**Test Location:** `/tmp/cardano-node-test`  
-**Node Version:** 10.5.1 (matching latest Haskell cardano-node)  
+**Test Date:** October 3, 2025
+**Test Location:** `/tmp/cardano-node-test`
+**Node Version:** 10.5.1 (matching latest Haskell cardano-node)
 **Network:** Cardano Preview Testnet
 
 ---
@@ -110,7 +110,7 @@ if let Some(topo) = topology.as_ref() {
         }
         info!("Using {} P2P bootstrap peer(s)", bootstrap_peers.len());
     }
-    
+
     // Also add legacy producers if present
     if let Some(producers) = &topo.producers {
         for producer in producers {
@@ -130,7 +130,7 @@ if let Some(topo) = topology.as_ref() {
 
 After P2P support was added:
 ```
-WARN Invalid peer address addr=preview-node.play.dev.cardano.org port=3001 
+WARN Invalid peer address addr=preview-node.play.dev.cardano.org port=3001
      err=invalid socket address syntax
 ```
 
@@ -147,13 +147,13 @@ async fn parse_producer_address(addr: &str, port: u16) -> Result<SocketAddr> {
     if let Ok(socket_addr) = socket_str.parse::<SocketAddr>() {
         return Ok(socket_addr);
     }
-    
+
     // If not an IP address, try DNS resolution
     let addresses: Vec<SocketAddr> = tokio::net::lookup_host(&socket_str)
         .await
         .map_err(|err| anyhow!("DNS resolution failed for {}: {}", socket_str, err))?
         .collect();
-    
+
     // Return the first resolved address
     addresses
         .into_iter()
@@ -203,15 +203,15 @@ preview-node.play.dev.cardano.org:3001 → 3.74.40.92:3001
 ### Network Connection Established
 
 ```
-Connection event: Connecting { 
-  connection_id: ConnectionId(1), 
-  peer_id: PeerId { id: [6, 18, 113, 78, 231, 11, ...] }, 
-  address: 3.74.40.92:3001 
+Connection event: Connecting {
+  connection_id: ConnectionId(1),
+  peer_id: PeerId { id: [6, 18, 113, 78, 231, 11, ...] },
+  address: 3.74.40.92:3001
 }
 
-Connection event: Connected { 
-  connection_id: ConnectionId(1), 
-  peer_id: PeerId { id: [6, 18, 113, 78, 231, 11, ...] } 
+Connection event: Connected {
+  connection_id: ConnectionId(1),
+  peer_id: PeerId { id: [6, 18, 113, 78, 231, 11, ...] }
 }
 ```
 
@@ -220,15 +220,15 @@ Connection event: Connected {
 ### Handshake Status
 
 ```
-Connection event: Error { 
-  connection_id: ConnectionId(1), 
-  peer_id: PeerId { id: [6, 18, 113, 78, 231, 11, ...] }, 
-  error: HandshakeError(IoError("early eof")) 
+Connection event: Error {
+  connection_id: ConnectionId(1),
+  peer_id: PeerId { id: [6, 18, 113, 78, 231, 11, ...] },
+  error: HandshakeError(IoError("early eof"))
 }
 
-Connection event: Disconnected { 
-  connection_id: ConnectionId(1), 
-  reason: "Network error" 
+Connection event: Disconnected {
+  connection_id: ConnectionId(1),
+  reason: "Network error"
 }
 ```
 
@@ -367,8 +367,8 @@ preview-node.play.dev.cardano.org:3001
 | Block Validation | ✅ | ❌ | **0%** |
 | Transaction Pool | ✅ | ❌ | **0%** |
 
-**Overall Infrastructure:** ~25% complete  
-**Network Connectivity:** ~50% complete (TCP yes, protocols no)  
+**Overall Infrastructure:** ~25% complete
+**Network Connectivity:** ~50% complete (TCP yes, protocols no)
 **Full Node Functionality:** ~5% complete
 
 ---
@@ -421,6 +421,6 @@ The node successfully:
 
 ---
 
-**Report Generated:** October 3, 2025  
-**Test Duration:** ~30 minutes  
+**Report Generated:** October 3, 2025
+**Test Duration:** ~30 minutes
 **Result:** ✅ **MAJOR PROGRESS - NETWORK CONNECTIVITY ACHIEVED**

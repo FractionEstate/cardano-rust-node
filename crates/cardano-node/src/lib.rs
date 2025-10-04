@@ -22,10 +22,13 @@ pub use dashboard::Dashboard;
 // Re-export configuration components from the config module
 pub mod config;
 pub use config::{
-    AccessPoint, BootstrapPeer, ConfigTestHelper, ConfigurationManager, LedgerDBConfig, LocalRoot,
-    LogRotationConfig, LoggingOptions, NetworkTopology, NodeConfiguration, PublicRoot,
-    SubtraceConfig, TopologyProducer,
+    AccessPoint, BlockProducerConfig, BootstrapPeer, ConfigTestHelper, ConfigurationManager,
+    LedgerDBConfig, LocalRoot, LogRotationConfig, LoggingOptions, NetworkTopology,
+    NodeConfiguration, PublicRoot, SubtraceConfig, TopologyProducer,
 };
+
+// Key management module
+pub mod keys;
 
 // Re-export node runtime components
 pub mod run;

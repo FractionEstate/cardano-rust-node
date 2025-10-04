@@ -551,7 +551,7 @@ impl NodeRuntime {
         connection_config.peer_selection.max_connections =
             node_config.max_connections.unwrap_or(10) as usize;
 
-        // Extract peers from topology (P2P bootstrap peers or legacy producers)
+        // Extract peers from topology (P2P bootstrap peers, local/public roots, or legacy producers)
         let mut peer_addresses = Vec::new();
 
         if let Some(topo) = topology.as_ref() {
@@ -561,6 +561,30 @@ impl NodeRuntime {
                     peer_addresses.push((peer.address.clone(), peer.port));
                 }
                 info!("Using {} P2P bootstrap peer(s)", bootstrap_peers.len());
+            }
+
+            // Add local root peers
+            if let Some(local_roots) = &topo.local_roots {
+                for root in local_roots {
+                    for access_point in &root.access_points {
+                        peer_addresses.push((access_point.address.clone(), access_point.port));
+                    }
+                }
+                if !local_roots.is_empty() {
+                    info!("Using {} local root(s)", local_roots.len());
+                }
+            }
+
+            // Add public root peers
+            if let Some(public_roots) = &topo.public_roots {
+                for root in public_roots {
+                    for access_point in &root.access_points {
+                        peer_addresses.push((access_point.address.clone(), access_point.port));
+                    }
+                }
+                if !public_roots.is_empty() {
+                    info!("Using {} public root(s)", public_roots.len());
+                }
             }
 
             // Also add legacy producers if present

@@ -12,11 +12,13 @@
 pub mod bls;
 pub mod ed25519;
 pub mod hash;
+pub mod kes;
 pub mod vrf;
 
 pub use bls::*;
 pub use ed25519::*;
 pub use hash::*;
+pub use kes::*;
 pub use vrf::*;
 
 /// Cardano-specific error types for cryptographic operations
@@ -54,6 +56,12 @@ pub enum CryptoError {
 
     #[error("Invalid output length")]
     InvalidOutputLength,
+
+    #[error("KES key expired")]
+    KesKeyExpired,
+
+    #[error("KES period mismatch")]
+    KesPeriodMismatch,
 }
 
 pub type Result<T> = std::result::Result<T, CryptoError>;

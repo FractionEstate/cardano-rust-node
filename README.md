@@ -135,6 +135,7 @@ cardano-node-rust/
 - **Genesis Validation** - Hash-verified Byron, Shelley, Alonzo, Conway genesis
 - **Consensus Protocols** - PraosMode and GenesisMode support
 - **Complete Monitoring** - 40+ trace flags, EKG metrics, Prometheus integration
+- **Block Production Monitoring** - Real-time metrics with health scoring and Prometheus export
 - **LedgerDB Backends** - V2InMemory and OnDisk storage options
 
 ### CLI & Management
@@ -294,6 +295,10 @@ cargo doc --workspace --no-deps --open
 #### 🔌 API & CLI
 - [CLI Reference](docs/api/CLI_REFERENCE.md) - Command-line interface
 - [API Reference](docs/api/API_REFERENCE.md) - REST and WebSocket APIs
+
+#### 📊 Monitoring & Metrics
+- [Monitoring and Metrics Guide](docs/MONITORING_AND_METRICS.md) - Production monitoring with Prometheus
+- [Block Production Metrics](docs/MONITORING_AND_METRICS.md#metrics-categories) - Health scoring and alerting
 
 #### 📊 Status & Reports
 - [Mission Accomplished](docs/reports/MISSION_ACCOMPLISHED.md) - ✅ 110% Cryptographic Accuracy

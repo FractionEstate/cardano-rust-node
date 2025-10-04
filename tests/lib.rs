@@ -18,6 +18,7 @@ mod consensus;
 mod network;
 mod storage;
 mod api;
+mod integration;
 mod node;
 mod common;
 

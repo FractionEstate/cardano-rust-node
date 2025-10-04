@@ -410,6 +410,8 @@ dependencies = [
  "anyhow",
  "async-trait",
  "axum",
+ "cardano-consensus",
+ "cardano-crypto",
  "cardano-ledger",
  "cardano-network",
  "futures",
@@ -442,11 +444,16 @@ name = "cardano-consensus"
 version = "10.5.1"
 dependencies = [
  "anyhow",
+ "axum",
  "cardano-crypto",
  "cardano-ledger",
  "chrono",
  "futures",
+ "hex",
+ "lazy_static",
  "minicbor",
+ "num-bigint",
+ "num-traits",
  "proptest",
  "serde",
  "thiserror 1.0.69",
@@ -454,6 +461,7 @@ dependencies = [
  "tokio-test",
  "tokio-util",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -475,6 +483,7 @@ dependencies = [
  "minicbor",
  "once_cell",
  "proptest",
+ "rand 0.8.5",
  "rand_core 0.6.4",
  "serde",
  "sha2",
@@ -552,6 +561,7 @@ dependencies = [
  "blake2",
  "cardano-api",
  "cardano-consensus",
+ "cardano-crypto",
  "cardano-ledger",
  "cardano-network",
  "cardano-storage",
@@ -561,6 +571,7 @@ dependencies = [
  "config",
  "crossterm",
  "futures",
+ "hex",
  "ratatui 0.29.0",
  "serde",
  "serde_json",

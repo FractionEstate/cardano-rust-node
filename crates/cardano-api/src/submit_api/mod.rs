@@ -218,11 +218,12 @@ impl SubmitApiService {
         // For now, create a mock transaction from CBOR data
         // In a real implementation, this would use minicbor to decode the transaction
         let tx_id = format!("cbor_tx_{}", hex::encode(&cbor_bytes[..std::cmp::min(32, cbor_bytes.len())]));
+        let size = cbor_bytes.len();
 
         Ok(ParsedTransaction {
             id: tx_id,
             cbor_data: cbor_bytes,
-            size: cbor_bytes.len(),
+            size,
             fee: 174593, // Mock fee
             inputs: vec![],
             outputs: vec![],

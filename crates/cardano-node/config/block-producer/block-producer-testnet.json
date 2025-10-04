@@ -1,0 +1,53 @@
+{
+  "comment": "Block Producer Configuration for Preview Testnet",
+  "comment2": "Configured for Cardano preview testnet with shorter KES period",
+  "block_producer": {
+    "enabled": true,
+    "pool_id": "pool_test1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqx",
+    "vrf_key": {
+      "signing_key_file": "testnet-keys/vrf.skey",
+      "verification_key_file": "testnet-keys/vrf.vkey",
+      "format": "cardano-cli"
+    },
+    "kes_key": {
+      "signing_key_file": "testnet-keys/kes.skey",
+      "verification_key_file": "testnet-keys/kes.vkey",
+      "kes_period": 0,
+      "max_kes_evolutions": 120,
+      "start_kes_period": 0,
+      "format": "cardano-cli",
+      "auto_rotation": {
+        "enabled": true,
+        "rotation_margin_periods": 10,
+        "rotation_dir": "testnet-keys/rotated",
+        "alert_margin_periods": 20
+      }
+    },
+    "operational_cert": {
+      "cert_file": "testnet-keys/node.cert",
+      "issue_counter": 0,
+      "counter_file": "testnet-keys/cold.counter"
+    },
+    "cold_key": {
+      "verification_key_file": "testnet-keys/cold.vkey",
+      "format": "cardano-cli"
+    },
+    "forging_behavior": {
+      "forging_delay_ms": 50,
+      "max_txs_per_block": 5000,
+      "max_block_size_bytes": 90112,
+      "prefer_high_fees": true,
+      "include_txs": true,
+      "continue_on_tx_validation_failure": true
+    },
+    "leader_schedule": {
+      "schedule_lookahead_epochs": 3,
+      "log_schedule": true,
+      "export_schedule_file": "testnet-leader-schedule.json",
+      "schedule_refresh_interval": 1080
+    }
+  },
+  "comment3": "Additional testnet-specific settings",
+  "network_magic": 2,
+  "requires_network_magic": "RequiresMagic"
+}

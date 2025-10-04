@@ -12,8 +12,15 @@
 //! consensus layer to ensure network consensus safety.
 
 pub mod block_production;
+pub mod block_production_service;
+pub mod block_forging;
+pub mod block_broadcaster;
 pub mod chain_selection;
+pub mod leadership;
+pub mod ledger_state;
+pub mod metrics;
 pub mod ouroboros;
+pub mod slot_notifier;
 pub mod slots;
 pub mod validation;
 
@@ -22,15 +29,32 @@ pub use block_production::{
     OperationalCertificate as BlockProductionOperationalCertificate, ProducedBlock,
     ProductionScheduler, SimplifiedLedgerState, Transaction, TxInput, TxOutput, VrfKey,
 };
+pub use block_production_service::{
+    BlockProductionConfig, BlockProductionEvent, BlockProductionService, BlockProductionStats,
+};
+pub use block_forging::{BlockForger, ForgingConfig};
+pub use block_broadcaster::{
+    BlockBroadcaster, BlockBroadcasterConfig, BroadcastEvent, BroadcastStats, PeerConnection,
+};
 pub use chain_selection::{
     BlockSummary, ChainCandidate, ChainOrdering, ChainSelectionConfig, ChainSelector, ChainTip,
     SelectionChainQuality, VrfTiebreakerFlavor,
+};
+pub use leadership::{
+    LeadershipCalculator, LeadershipCheck, LeadershipProof, min_stake_for_expected_blocks,
+    vrf_output_to_probability,
+};
+pub use ledger_state::{LedgerState, ProtocolParameters as LedgerProtocolParameters, UtxoEntry};
+pub use metrics::{
+    BroadcastMetrics, LedgerMetrics, MetricsAggregator, MetricsSummary, PerformanceMetrics,
+    PipelineMetrics, ProductionMetrics, PrometheusExporter, SlotMetrics,
 };
 pub use ouroboros::{
     BlockNo, ChainDensityCalculator, ChainQuality, EpochNo, EpochTransition, KesManager, KesVkey,
     OperationalCertificate, OuroborosState, PoolId, ProtocolParameters, SlotLeadershipCalculator,
     SlotLeadershipTest, SlotNo, StakeDistribution, StakePool, VrfVkey,
 };
+pub use slot_notifier::{SlotEvent, SlotNotifier, SlotNotifierConfig, SlotNotifierStats};
 pub use slots::*;
 pub use validation::*;
 
@@ -65,6 +89,7 @@ pub enum ConsensusError {
     InvalidInput(String),
     InvalidScript(String),
     InvalidSignature(String),
+    InvalidStake(String),
 }
 
 impl fmt::Display for ConsensusError {
@@ -105,6 +130,7 @@ impl fmt::Display for ConsensusError {
             ConsensusError::InvalidInput(msg) => write!(f, "Invalid input: {}", msg),
             ConsensusError::InvalidScript(msg) => write!(f, "Invalid script: {}", msg),
             ConsensusError::InvalidSignature(msg) => write!(f, "Invalid signature: {}", msg),
+            ConsensusError::InvalidStake(msg) => write!(f, "Invalid stake: {}", msg),
         }
     }
 }

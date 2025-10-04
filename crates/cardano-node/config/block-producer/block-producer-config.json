@@ -1,0 +1,50 @@
+{
+  "comment": "Complete Block Producer Configuration Example",
+  "comment2": "This shows all available options with production-ready defaults",
+  "block_producer": {
+    "enabled": true,
+    "pool_id": "pool1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq",
+    "vrf_key": {
+      "signing_key_file": "/opt/cardano/keys/vrf.skey",
+      "verification_key_file": "/opt/cardano/keys/vrf.vkey",
+      "format": "cardano-cli"
+    },
+    "kes_key": {
+      "signing_key_file": "/opt/cardano/keys/kes.skey",
+      "verification_key_file": "/opt/cardano/keys/kes.vkey",
+      "kes_period": 432,
+      "max_kes_evolutions": 62,
+      "start_kes_period": 420,
+      "format": "cardano-cli",
+      "auto_rotation": {
+        "enabled": true,
+        "rotation_margin_periods": 5,
+        "rotation_dir": "/opt/cardano/keys/rotated",
+        "alert_margin_periods": 10
+      }
+    },
+    "operational_cert": {
+      "cert_file": "/opt/cardano/keys/node.cert",
+      "issue_counter": 15,
+      "counter_file": "/opt/cardano/keys/cold.counter"
+    },
+    "cold_key": {
+      "verification_key_file": "/opt/cardano/keys/cold.vkey",
+      "format": "cardano-cli"
+    },
+    "forging_behavior": {
+      "forging_delay_ms": 100,
+      "max_txs_per_block": 10000,
+      "max_block_size_bytes": 90112,
+      "prefer_high_fees": true,
+      "include_txs": true,
+      "continue_on_tx_validation_failure": true
+    },
+    "leader_schedule": {
+      "schedule_lookahead_epochs": 2,
+      "log_schedule": false,
+      "export_schedule_file": "/opt/cardano/logs/leader-schedule.json",
+      "schedule_refresh_interval": 2160
+    }
+  }
+}

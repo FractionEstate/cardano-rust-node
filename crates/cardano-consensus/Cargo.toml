@@ -31,6 +31,15 @@ tracing.workspace = true
 # Time handling for slots
 chrono.workspace = true
 
+# Big integer arithmetic for VRF threshold calculations
+num-bigint = "0.4"
+num-traits = "0.2"
+lazy_static = "1.4"
+hex = "0.4"
+
 [dev-dependencies]
 proptest.workspace = true
 tokio-test.workspace = true
+hex.workspace = true
+axum = "0.7"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

@@ -11,10 +11,14 @@
 //!
 //! Reference: <https://github.com/IntersectMBO/cardano-node/tree/master>
 
+pub mod block_producer;
+
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+
+pub use block_producer::BlockProducerConfig;
 
 /// Full Haskell-compatible node configuration structure
 /// Compatible with cardano-node v10.5.1+
@@ -208,6 +212,12 @@ pub struct NodeConfiguration {
     pub metrics_port: Option<u16>,
     #[serde(skip)]
     pub topology_file: Option<PathBuf>,
+
+    // Block Producer Configuration (Rust-specific extension)
+    /// Block producer / stake pool operator configuration
+    /// This is a Rust-specific extension for running the node as a block producer
+    #[serde(skip)]
+    pub block_producer: Option<BlockProducerConfig>,
 }
 
 /// LedgerDB configuration
@@ -545,6 +555,7 @@ impl NodeConfiguration {
             enable_metrics: Some(false),
             metrics_port: Some(8080),
             topology_file: Some(PathBuf::from("topology.json")),
+            block_producer: None, // Not a block producer by default
         }
     }
 
@@ -937,6 +948,7 @@ impl ConfigTestHelper {
             enable_metrics: Some(true),
             metrics_port: Some(12798),
             topology_file: Some(PathBuf::from("/tmp/topology.json")),
+            block_producer: None, // Not a block producer by default
         };
 
         config.to_file(&self.config_file)?;

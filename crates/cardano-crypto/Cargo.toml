@@ -37,6 +37,7 @@ anyhow.workspace = true
 
 # Random number generation
 rand_core.workspace = true
+rand.workspace = true
 getrandom.workspace = true
 
 [dev-dependencies]

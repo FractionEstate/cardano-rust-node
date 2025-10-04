@@ -29,6 +29,8 @@ hex.workspace = true
 # Internal dependencies
 cardano-ledger = { path = "../cardano-ledger" }
 cardano-network = { path = "../cardano-network" }
+cardano-consensus = { path = "../cardano-consensus" }
+cardano-crypto = { path = "../cardano-crypto" }
 
 # Error handling and logging
 thiserror.workspace = true

@@ -21,7 +21,7 @@ pub struct TransactionInfo {
 }
 
 /// Mempool statistics
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MempoolStats {
     /// Number of transactions in mempool
     pub size: usize,

@@ -22,7 +22,7 @@ pub struct ProtocolParameters {
 pub struct SlotNo(pub u64);
 
 /// Epoch number
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct EpochNo(pub u64);
 
 /// Block height

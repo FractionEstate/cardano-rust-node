@@ -84,17 +84,21 @@ impl MessageFrame {
 
     /// Get frame size including header
     pub fn frame_size(&self) -> usize {
-        // 4 bytes for frame header + payload size
-        4 + self.payload.len()
+        // 8 bytes for mux frame header + payload size
+        // Header format: [timestamp: u16][protocol_id: u16][length: u16][reserved: u16]
+        8 + self.payload.len()
     }
 
     /// Encode frame to bytes
     pub fn encode(&self) -> Result<Bytes> {
         let mut buf = BytesMut::with_capacity(self.frame_size());
 
-        // Frame format: [protocol_id: u16][length: u16][payload: bytes]
-        buf.put_u16(self.protocol_id.value());
-        buf.put_u16(self.payload.len() as u16);
+        // Cardano mux frame format (from ouroboros-network):
+        // [timestamp: u32][protocol_id: u16][payload_length: u16][payload: bytes]
+        // timestamp: transmission time (0x00000000 for basic mode)
+        buf.put_u32(0x00000000); // timestamp (unused in basic mode) - 32 bits!
+        buf.put_u16(self.protocol_id.value()); // protocol ID - 16 bits
+        buf.put_u16(self.payload.len() as u16); // length - 16 bits
         buf.put(self.payload.clone());
 
         Ok(buf.freeze())
@@ -102,16 +106,26 @@ impl MessageFrame {
 
     /// Decode frame from bytes
     pub fn decode(mut data: Bytes) -> Result<Self> {
-        if data.len() < 4 {
+        if data.len() < 8 {
             return Err(MultiplexerError::InvalidFrameSize {
-                expected: 4,
+                expected: 8,
                 actual: data.len(),
             }
             .into());
         }
 
-        let protocol_id = ProtocolId::new(data.get_u16());
-        let payload_len = data.get_u16() as usize;
+        // Cardano mux frame format: [timestamp: u32][protocol_id: u16][length: u16][payload]
+        let _timestamp = data.get_u32(); // unused - 32 bits
+        let raw_protocol_id = data.get_u16(); // 16 bits - includes mode bit
+        let payload_len = data.get_u16() as usize; // 16 bits
+
+        // Extract protocol ID by masking off the mode bit (bit 15)
+        // Bit 15: 0 = Initiator, 1 = Responder
+        // We use the base protocol ID for routing
+        let protocol_id = ProtocolId::new(raw_protocol_id & 0x7FFF);
+
+        tracing::trace!(raw_protocol_id, actual_protocol_id = protocol_id.value(),
+            is_responder = (raw_protocol_id & 0x8000) != 0, "Decoded protocol ID");
 
         if data.len() < payload_len {
             return Err(MultiplexerError::InvalidFrameSize {
@@ -141,6 +155,9 @@ pub trait ProtocolHandler: Send + Sync {
 
     /// Protocol name for logging
     fn name(&self) -> &str;
+
+    /// Allow downcasting to concrete types
+    fn as_any(&self) -> &dyn std::any::Any;
 }
 
 /// Multiplexer error types
@@ -306,30 +323,40 @@ impl ConnectionMultiplexer {
         let task = tokio::spawn(async move {
             let mut buffer = BytesMut::with_capacity(8192);
 
+            tracing::debug!(?connection_id, "Multiplexer reader task started");
+
             loop {
                 // Read frame header
                 match reader.read_buf(&mut buffer).await {
                     Ok(0) => {
                         // Connection closed
+                        tracing::debug!(?connection_id, "Connection closed (read 0 bytes)");
                         break;
                     }
-                    Ok(_) => {
+                    Ok(n) => {
+                        tracing::trace!(?connection_id, bytes_read = n, buffer_len = buffer.len(), "Read data from connection");
+
                         // Process complete frames
-                        while buffer.len() >= 4 {
+                        while buffer.len() >= 8 {
                             let frame_len = {
                                 let mut header = buffer.as_ref();
-                                header.get_u16(); // protocol_id
-                                header.get_u16() as usize // payload_length
-                            } + 4; // + header size
+                                header.get_u32(); // timestamp (32-bit)
+                                header.get_u16(); // protocol_id (16-bit)
+                                let payload_len = header.get_u16() as usize; // payload_length (16-bit)
+                                payload_len
+                            } + 8; // + 8-byte mux header (4 + 2 + 2)
+
+                            tracing::trace!(?connection_id, frame_len, buffer_len = buffer.len(), "Frame detected");
 
                             if frame_len > max_frame_size {
                                 // Frame too large, close connection
-                                eprintln!("Frame too large: {} bytes", frame_len);
+                                tracing::error!(?connection_id, frame_len, max_frame_size, "Frame too large");
                                 break;
                             }
 
                             if buffer.len() < frame_len {
                                 // Need more data
+                                tracing::trace!(?connection_id, frame_len, buffer_len = buffer.len(), "Need more data for complete frame");
                                 break;
                             }
 
@@ -338,23 +365,26 @@ impl ConnectionMultiplexer {
 
                             match MessageFrame::decode(frame_data.freeze()) {
                                 Ok(frame) => {
+                                    tracing::debug!(?connection_id, protocol_id = %frame.protocol_id, payload_len = frame.payload.len(), "Received frame");
                                     // Handle frame
                                     Self::handle_incoming_frame(connection_id, frame, &handlers)
                                         .await;
                                 }
                                 Err(e) => {
-                                    eprintln!("Frame decode error: {}", e);
+                                    tracing::error!(?connection_id, error = %e, "Frame decode error");
                                     // Continue processing other frames
                                 }
                             }
                         }
                     }
                     Err(e) => {
-                        eprintln!("Read error: {}", e);
+                        tracing::error!(?connection_id, error = %e, "Read error");
                         break;
                     }
                 }
             }
+
+            tracing::debug!(?connection_id, "Multiplexer reader task terminated");
         });
 
         Ok(task)
@@ -366,21 +396,39 @@ impl ConnectionMultiplexer {
         mut writer: tokio::net::tcp::OwnedWriteHalf,
         mut outbound_rx: mpsc::UnboundedReceiver<MessageFrame>,
     ) -> Result<JoinHandle<()>> {
+        let connection_id = self.connection_id;
+
         let task = tokio::spawn(async move {
+            tracing::debug!(?connection_id, "Multiplexer writer task started");
+
             while let Some(frame) = outbound_rx.recv().await {
+                tracing::debug!(?connection_id, protocol_id = %frame.protocol_id, payload_len = frame.payload.len(), "Sending frame");
+
                 match frame.encode() {
                     Ok(data) => {
+                        tracing::debug!(?connection_id, protocol_id = %frame.protocol_id, payload_len = frame.payload.len(),
+                            frame_hex = hex::encode(&data[..data.len().min(64)]),
+                            "Sending frame (first 64 bytes in hex)");
+
                         if let Err(e) = writer.write_all(&data).await {
-                            eprintln!("Write error: {}", e);
+                            tracing::error!(?connection_id, error = %e, "Write error");
                             break;
                         }
+                        // Flush to ensure data is sent immediately
+                        if let Err(e) = writer.flush().await {
+                            tracing::error!(?connection_id, error = %e, "Flush error");
+                            break;
+                        }
+                        tracing::trace!(?connection_id, bytes_written = data.len(), "Frame sent and flushed");
                     }
                     Err(e) => {
-                        eprintln!("Frame encode error: {}", e);
+                        tracing::error!(?connection_id, error = %e, "Frame encode error");
                         // Continue with next frame
                     }
                 }
             }
+
+            tracing::debug!(?connection_id, "Multiplexer writer task terminated");
         });
 
         Ok(task)
@@ -494,6 +542,10 @@ impl ProtocolHandler for EchoProtocolHandler {
 
     fn name(&self) -> &str {
         &self.name
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
 

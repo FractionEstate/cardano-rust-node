@@ -219,7 +219,7 @@ impl ValidationPipeline {
 
         // Phase 4: Cryptographic validation
         if self.validation_config.validate_vrf_proofs {
-            if let Err(e) = self.validate_vrf_proof(&block.header, &block.proof_of_leadership) {
+            if let Err(e) = self.validate_vrf_proof(&block.header, &block.proof_of_leadership.vrf_proof) {
                 errors.push(ValidationError::VrfValidation(e.to_string()));
             }
         }

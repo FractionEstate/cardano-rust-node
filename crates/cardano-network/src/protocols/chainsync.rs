@@ -141,20 +141,22 @@ pub struct BlockHeaderWire {
     #[n(0)]
     slot: u64,
     #[n(1)]
-    prev_hash: Blake2b256Hash,
+    block_number: u64,
     #[n(2)]
-    issuer_vkey: [u8; 20],
+    prev_hash: Blake2b256Hash,
     #[n(3)]
-    vrf_proof: Vec<u8>,
+    issuer_vkey: [u8; 20],
     #[n(4)]
-    vrf_output: Vec<u8>,
+    vrf_proof: Vec<u8>,
     #[n(5)]
-    block_body_hash: Blake2b256Hash,
+    vrf_output: Vec<u8>,
     #[n(6)]
-    block_size: u32,
+    block_body_hash: Blake2b256Hash,
     #[n(7)]
-    operational_cert: OperationalCertificateWire,
+    block_size: u32,
     #[n(8)]
+    operational_cert: OperationalCertificateWire,
+    #[n(9)]
     protocol_magic: u32,
 }
 
@@ -293,6 +295,7 @@ impl From<&BlockHeader> for BlockHeaderWire {
     fn from(header: &BlockHeader) -> Self {
         Self {
             slot: header.slot.0,
+            block_number: header.block_number,
             prev_hash: header.prev_hash,
             issuer_vkey: *header.issuer_vkey.as_bytes(),
             vrf_proof: header.vrf_proof.to_bytes().to_vec(),
@@ -350,6 +353,7 @@ impl TryFrom<BlockHeaderWire> for BlockHeader {
 
         Ok(Self {
             slot: SlotNo(wire.slot),
+            block_number: wire.block_number,
             prev_hash: wire.prev_hash,
             issuer_vkey: Ed25519KeyHash::from_bytes(wire.issuer_vkey),
             vrf_proof,
@@ -878,6 +882,7 @@ pub fn create_mock_chain(length: usize) -> Vec<BlockHeader> {
 
         headers.push(BlockHeader {
             slot: SlotNo(i as u64),
+            block_number: i as u64,
             prev_hash: if i == 0 {
                 Blake2b256Hash::from_bytes(&[0u8; 32]).unwrap()
             } else {
@@ -1021,6 +1026,10 @@ impl ProtocolHandler for ChainSyncProtocolHandler {
 
     fn name(&self) -> &str {
         self.name
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
 impl ChainSyncProtocolHandler {

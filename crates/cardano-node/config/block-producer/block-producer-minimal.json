@@ -1,0 +1,20 @@
+{
+  "comment": "Minimal Block Producer Configuration",
+  "comment2": "Only required fields for basic block production",
+  "block_producer": {
+    "enabled": true,
+    "vrf_key": {
+      "signing_key_file": "keys/vrf.skey"
+    },
+    "kes_key": {
+      "signing_key_file": "keys/kes.skey",
+      "kes_period": 0,
+      "max_kes_evolutions": 62,
+      "start_kes_period": 0
+    },
+    "operational_cert": {
+      "cert_file": "keys/node.cert",
+      "issue_counter": 0
+    }
+  }
+}
