@@ -52,9 +52,11 @@
 //! ```
 
 use crate::{CryptoError, Result};
-use ed25519_dalek::{Signer, SigningKey, Verifier, VerifyingKey, Signature as Ed25519Signature};
 use blake2::Blake2b512;
 use blake2::Digest;
+use cardano_crypto_class::dsign::ed25519::{Ed25519, Ed25519SigningKey};
+use cardano_crypto_class::dsign::DsignAlgorithm;
+use cardano_crypto_class::seed::mk_seed_from_bytes;
 use serde::{Deserialize, Serialize};
 
 /// KES signature with period information
@@ -78,13 +80,14 @@ impl KesSignature {
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
         if bytes.len() < 8 + 64 + 32 {
             return Err(CryptoError::InvalidSignature(
-                "KES signature too short".to_string()
+                "KES signature too short".to_string(),
             ));
         }
 
         let period = u64::from_le_bytes(
-            bytes[0..8].try_into()
-                .map_err(|_| CryptoError::InvalidSignature("Invalid period bytes".to_string()))?
+            bytes[0..8]
+                .try_into()
+                .map_err(|_| CryptoError::InvalidSignature("Invalid period bytes".to_string()))?,
         );
         let signature = bytes[8..72].to_vec();
         let period_vkey = bytes[72..104].to_vec();
@@ -159,30 +162,27 @@ impl KesPublicKey {
         }
 
         // Verify using the period-specific verification key included in the signature
-        let verifying_key = VerifyingKey::from_bytes(
-            &signature.period_vkey[..32].try_into()
-                .map_err(|_| CryptoError::InvalidPublicKey)?
-        ).map_err(|_| CryptoError::InvalidPublicKey)?;
+        let verifying_key = Ed25519::raw_deserialize_verification_key(&signature.period_vkey[..32])
+            .ok_or(CryptoError::InvalidPublicKey)?;
 
-        let ed_sig = Ed25519Signature::from_bytes(
-            &signature.signature[..64].try_into()
-                .map_err(|_| CryptoError::InvalidSignature("Invalid signature length".to_string()))?
-        );
+        let ed_sig = Ed25519::raw_deserialize_signature(&signature.signature[..64]).ok_or(
+            CryptoError::InvalidSignature("Invalid signature length".to_string()),
+        )?;
 
         // Verify the signature
         // In a full implementation, we would also verify that period_vkey
         // was correctly derived from the root key using the auth_path
-        Ok(verifying_key.verify(message, &ed_sig).is_ok())
+        Ok(Ed25519::verify_bytes(&(), &verifying_key, message, &ed_sig).is_ok())
     }
 }
 
 /// KES secret key (signing key)
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct KesSecretKey {
     /// Root public key (constant across all periods)
     root_public_key: Vec<u8>,
     /// Current signing key (at current period)
-    current_key: SigningKey,
+    current_key: Ed25519SigningKey,
     /// Current period
     current_period: u64,
     /// Maximum period
@@ -200,9 +200,15 @@ impl KesSecretKey {
     /// # Arguments
     /// * `depth` - Tree depth (6 for mainnet = 64 periods)
     pub fn generate(depth: u32) -> Self {
-        let mut rng = rand::thread_rng();
-        let signing_key = SigningKey::generate(&mut rng);
-        let root_public_key = signing_key.verifying_key().to_bytes().to_vec();
+        // Generate a random seed for Ed25519
+        let mut seed_bytes = [0u8; 32];
+        use rand::RngCore;
+        rand::thread_rng().fill_bytes(&mut seed_bytes);
+
+        let seed = mk_seed_from_bytes(seed_bytes.to_vec());
+        let signing_key = Ed25519::gen_key(&seed);
+        let verifying_key = Ed25519::derive_verification_key(&signing_key);
+        let root_public_key = Ed25519::raw_serialize_verification_key(&verifying_key);
 
         // Calculate max_period safely, cap at u64::MAX if depth is too large
         let max_period = if depth >= 64 {
@@ -226,11 +232,11 @@ impl KesSecretKey {
             return Err(CryptoError::InvalidKeyLength);
         }
 
-        let signing_key = SigningKey::from_bytes(
-            &bytes[..32].try_into()
-                .map_err(|_| CryptoError::InvalidKeyLength)?
-        );
-        let root_public_key = signing_key.verifying_key().to_bytes().to_vec();
+        // Deserialize signing key from seed bytes
+        let signing_key =
+            Ed25519::raw_deserialize_signing_key(bytes).ok_or(CryptoError::InvalidKeyLength)?;
+        let verifying_key = Ed25519::derive_verification_key(&signing_key);
+        let root_public_key = Ed25519::raw_serialize_verification_key(&verifying_key);
 
         let max_period = (1u64 << depth) - 2;
 
@@ -245,7 +251,7 @@ impl KesSecretKey {
 
     /// Convert to raw bytes (current key only)
     pub fn to_bytes(&self) -> Vec<u8> {
-        self.current_key.to_bytes().to_vec()
+        Ed25519::raw_serialize_signing_key(&self.current_key)
     }
 
     /// Get the public key
@@ -280,25 +286,28 @@ impl KesSecretKey {
     pub fn sign(&self, period: u64, message: &[u8]) -> Result<KesSignature> {
         // Verify period matches current period
         if period != self.current_period {
-            return Err(CryptoError::InvalidSignature(
-                format!("Period mismatch: expected {}, got {}", self.current_period, period)
-            ));
+            return Err(CryptoError::InvalidSignature(format!(
+                "Period mismatch: expected {}, got {}",
+                self.current_period, period
+            )));
         }
 
         // Check not expired
         if self.is_expired() {
-            return Err(CryptoError::InvalidSignature(
-                format!("KES key expired at period {}", self.max_period)
-            ));
+            return Err(CryptoError::InvalidSignature(format!(
+                "KES key expired at period {}",
+                self.max_period
+            )));
         }
 
         // Sign with current key
-        let signature = self.current_key.sign(message);
-        let period_vkey = self.current_key.verifying_key().to_bytes().to_vec();
+        let signature = Ed25519::sign_bytes(&(), message, &self.current_key);
+        let verifying_key = Ed25519::derive_verification_key(&self.current_key);
+        let period_vkey = Ed25519::raw_serialize_verification_key(&verifying_key);
 
         Ok(KesSignature {
             period,
-            signature: signature.to_bytes().to_vec(),
+            signature: Ed25519::raw_serialize_signature(&signature),
             period_vkey,
             auth_path: vec![], // Simplified
         })
@@ -313,22 +322,23 @@ impl KesSecretKey {
 
         // Check if we can evolve
         if next_period > self.max_period {
-            return Err(CryptoError::InvalidSignature(
-                format!("Cannot evolve past max period {}", self.max_period)
-            ));
+            return Err(CryptoError::InvalidSignature(format!(
+                "Cannot evolve past max period {}",
+                self.max_period
+            )));
         }
 
         // Derive next key using Blake2b-512
         // In practice: next_key = KDF(current_key, period)
         let mut hasher = Blake2b512::new();
-        hasher.update(&self.current_key.to_bytes());
+        let current_key_bytes = Ed25519::raw_serialize_signing_key(&self.current_key);
+        hasher.update(&current_key_bytes);
         hasher.update(&next_period.to_le_bytes());
         let hash = hasher.finalize();
 
-        let next_key = SigningKey::from_bytes(
-            &hash[..32].try_into()
-                .map_err(|_| CryptoError::InvalidKeyLength)?
-        );
+        // Use first 32 bytes as seed for next key
+        let next_key = Ed25519::raw_deserialize_signing_key(&hash[..32])
+            .ok_or(CryptoError::InvalidKeyLength)?;
 
         Ok(Self {
             root_public_key: self.root_public_key.clone(), // Keep root key constant
@@ -342,25 +352,43 @@ impl KesSecretKey {
     /// Evolve to a specific period
     ///
     /// This repeatedly evolves the key until reaching the target period.
-    pub fn evolve_to(&self, target_period: u64) -> Result<Self> {
+    /// Consumes self for security (no key copies).
+    pub fn evolve_to(mut self, target_period: u64) -> Result<Self> {
         if target_period < self.current_period {
             return Err(CryptoError::InvalidSignature(
-                "Cannot evolve backwards".to_string()
+                "Cannot evolve backwards".to_string(),
             ));
         }
 
         if target_period > self.max_period {
-            return Err(CryptoError::InvalidSignature(
-                format!("Target period {} exceeds max {}", target_period, self.max_period)
-            ));
+            return Err(CryptoError::InvalidSignature(format!(
+                "Target period {} exceeds max {}",
+                target_period, self.max_period
+            )));
         }
 
-        let mut key = self.clone();
-        while key.current_period < target_period {
-            key = key.evolve()?;
+        while self.current_period < target_period {
+            self = self.evolve()?;
         }
 
-        Ok(key)
+        Ok(self)
+    }
+}
+
+impl Drop for KesSecretKey {
+    fn drop(&mut self) {
+        // Securely zero out the root public key
+        self.root_public_key.iter_mut().for_each(|b| *b = 0);
+        self.root_public_key.clear();
+
+        // Note: Ed25519SigningKey from cardano-crypto-class should ideally
+        // implement zeroization internally. We zero what we can control.
+        // The signing key will be dropped normally but without explicit zeroing.
+
+        // Zero out period counters for good measure
+        self.current_period = 0;
+        self.max_period = 0;
+        self.depth = 0;
     }
 }
 
@@ -410,6 +438,9 @@ mod tests {
     fn test_kes_evolution_multiple_periods() {
         let key = KesSecretKey::generate(6);
 
+        // Get public key before evolving
+        let public_key = key.to_public();
+
         // Evolve to period 5
         let key5 = key.evolve_to(5).unwrap();
         assert_eq!(key5.current_period(), 5);
@@ -418,7 +449,6 @@ mod tests {
         let message = b"block at period 5";
         let sig = key5.sign(5, message).unwrap();
 
-        let public_key = key.to_public();
         assert!(public_key.verify(5, message, &sig).unwrap());
     }
 

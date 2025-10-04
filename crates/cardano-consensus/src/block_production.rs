@@ -2,17 +2,19 @@
 //!
 //! Handles slot leader election and block creation based on Ouroboros Praos protocol.
 
-use crate::leadership::{LeadershipProof};
+use crate::leadership::LeadershipProof;
 use crate::ouroboros::{PoolId, SlotNo};
 use crate::{ConsensusError, Result};
 use cardano_crypto::{
-    Blake2b256Hash, Ed25519KeyHash, KesSecretKey, KesSignature, VrfOutput, VrfPrivateKey,
-    VrfProof, VrfPublicKey, VRF_SEED_LENGTH,
+    Blake2b256Hash, Ed25519KeyHash, KesSecretKey, KesSignature, VrfOutput, VrfPrivateKey, VrfProof,
+    VrfPublicKey, VRF_SEED_LENGTH,
 };
 use std::collections::HashMap;
 
-/// Block producer with cryptographic credentials
-#[derive(Debug, Clone)]
+/// Block producer - coordinates VRF leadership and KES signing
+///
+/// Note: Does not derive Clone for security - contains KES keys that should not be duplicated
+#[derive(Debug)]
 pub struct BlockProducer {
     pub pool_id: PoolId,
     pub vrf_key: VrfKey,
@@ -28,8 +30,10 @@ pub struct VrfKey {
     pub private_key: VrfPrivateKey,
 }
 
-/// KES (Key Evolving Signature) key for block signing
-#[derive(Debug, Clone)]
+/// KES key wrapper
+///
+/// Note: Does not derive Clone for security - KES keys should not be duplicated
+#[derive(Debug)]
 pub struct KesKey {
     /// The actual KES secret key from cardano-crypto
     pub secret_key: KesSecretKey,
@@ -77,9 +81,11 @@ impl KesKey {
             ));
         }
 
-        // Evolve the secret key
-        self.secret_key = self.secret_key.evolve_to(target_period)
-            .map_err(|e| ConsensusError::InvalidKesEvolution(format!("KES evolution failed: {}", e)))?;
+        // Evolve the secret key - take ownership, evolve, and replace
+        let old_key = std::mem::replace(&mut self.secret_key, KesSecretKey::generate(6)); // Temporary
+        self.secret_key = old_key.evolve_to(target_period).map_err(|e| {
+            ConsensusError::InvalidKesEvolution(format!("KES evolution failed: {}", e))
+        })?;
 
         Ok(())
     }
@@ -87,7 +93,8 @@ impl KesKey {
     /// Sign block header with KES key
     pub fn sign_block(&self, header_bytes: &[u8]) -> Result<KesSignature> {
         let period = self.secret_key.current_period();
-        self.secret_key.sign(period, header_bytes)
+        self.secret_key
+            .sign(period, header_bytes)
             .map_err(|e| ConsensusError::InvalidKesSignature(format!("KES signing failed: {}", e)))
     }
 }

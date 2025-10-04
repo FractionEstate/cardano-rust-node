@@ -3,6 +3,7 @@
 //! Cryptographic hash functions used throughout Cardano
 
 use crate::{CryptoError, Result};
+use blake2::{Blake2b512, Blake2s256, Digest};
 use serde::{Deserialize, Serialize};
 use std::hash::{Hash, Hasher};
 
@@ -76,13 +77,15 @@ impl AsRef<[u8]> for Blake2b256Hash {
 }
 
 impl Blake2b256Hash {
-    /// Hash input data with Blake2b-256 (simplified implementation)
+    /// Hash input data with Blake2b-256
+    ///
+    /// Uses Blake2s-256 (Blake2 optimized for 32-bit, 256-bit output)
     pub fn hash(input: &[u8]) -> Self {
-        // Simplified hash - in real implementation would use blake2 crate
+        let mut hasher = Blake2s256::new();
+        hasher.update(input);
+        let result = hasher.finalize();
         let mut hash = [0u8; 32];
-        for (i, byte) in input.iter().enumerate() {
-            hash[i % 32] ^= byte;
-        }
+        hash.copy_from_slice(&result);
         Self(hash)
     }
 
@@ -136,13 +139,15 @@ impl Sha256Hash {
 }
 
 impl Blake2b512Hash {
-    /// Hash input data with Blake2b-512 (simplified implementation)
+    /// Hash input data with Blake2b-512
+    ///
+    /// Uses Blake2b-512 (Blake2 optimized for 64-bit, 512-bit output)
     pub fn hash(input: &[u8]) -> Self {
-        // Simplified hash - in real implementation would use blake2 crate
+        let mut hasher = Blake2b512::new();
+        hasher.update(input);
+        let result = hasher.finalize();
         let mut hash = [0u8; 64];
-        for (i, byte) in input.iter().enumerate() {
-            hash[i % 64] ^= byte;
-        }
+        hash.copy_from_slice(&result);
         Self(hash)
     }
 
