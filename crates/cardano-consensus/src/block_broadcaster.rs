@@ -151,10 +151,7 @@ impl BlockBroadcaster {
     }
 
     /// Broadcast a block to all connected peers
-    async fn broadcast_block_to_peers(
-        &self,
-        header: BlockHeader,
-    ) -> Result<usize> {
+    async fn broadcast_block_to_peers(&self, header: BlockHeader) -> Result<usize> {
         let peers = self.peers.read().await;
         let mut successful_broadcasts = 0;
         let mut failures = Vec::new();
@@ -205,10 +202,7 @@ impl BlockBroadcaster {
     }
 
     /// Run the block broadcaster, receiving blocks from a channel
-    pub async fn run(
-        self: Arc<Self>,
-        mut block_rx: mpsc::Receiver<ForgedBlock>,
-    ) -> Result<()> {
+    pub async fn run(self: Arc<Self>, mut block_rx: mpsc::Receiver<ForgedBlock>) -> Result<()> {
         tracing::info!("Starting block broadcaster");
 
         let mut stats_ticker = interval(Duration::from_secs(10));
@@ -264,7 +258,10 @@ impl BlockBroadcaster {
         let start_time = std::time::Instant::now();
 
         loop {
-            match self.broadcast_block_to_peers(forged_block.header.clone()).await {
+            match self
+                .broadcast_block_to_peers(forged_block.header.clone())
+                .await
+            {
                 Ok(peer_count) => {
                     let latency = start_time.elapsed().as_millis() as u64;
 
@@ -277,8 +274,9 @@ impl BlockBroadcaster {
                         if stats.blocks_broadcast == 1 {
                             stats.avg_broadcast_latency_ms = latency;
                         } else {
-                            stats.avg_broadcast_latency_ms =
-                                (stats.avg_broadcast_latency_ms * (stats.blocks_broadcast - 1) + latency)
+                            stats.avg_broadcast_latency_ms = (stats.avg_broadcast_latency_ms
+                                * (stats.blocks_broadcast - 1)
+                                + latency)
                                 / stats.blocks_broadcast;
                         }
                     }
@@ -438,7 +436,8 @@ mod tests {
             },
             kes_signature: KesSignature::from_bytes(&[7u8; 448]).unwrap(),
         }
-    }    #[tokio::test]
+    }
+    #[tokio::test]
     async fn test_broadcaster_creation() {
         let config = BlockBroadcasterConfig::default();
         let broadcaster = BlockBroadcaster::new(config);
@@ -556,7 +555,9 @@ mod tests {
             .unwrap();
 
         match event1 {
-            BroadcastEvent::BlockQueued { slot, block_number, .. } => {
+            BroadcastEvent::BlockQueued {
+                slot, block_number, ..
+            } => {
                 assert_eq!(slot, 100);
                 assert_eq!(block_number, 50);
             }

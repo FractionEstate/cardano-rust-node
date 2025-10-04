@@ -473,8 +473,14 @@ mod tests {
 
     fn create_test_version_table() -> VersionTable {
         let mut versions = HashMap::new();
-        versions.insert(NodeToNodeVersion::V14, NodeToNodeVersionData::preview_testnet());
-        versions.insert(NodeToNodeVersion::V15, NodeToNodeVersionData::preview_testnet());
+        versions.insert(
+            NodeToNodeVersion::V14,
+            NodeToNodeVersionData::preview_testnet(),
+        );
+        versions.insert(
+            NodeToNodeVersion::V15,
+            NodeToNodeVersionData::preview_testnet(),
+        );
         versions
     }
 

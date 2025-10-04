@@ -30,10 +30,7 @@ pub enum HandshakeState {
         completed_at: Instant,
     },
     /// Handshake failed
-    Failed {
-        error: String,
-        failed_at: Instant,
-    },
+    Failed { error: String, failed_at: Instant },
 }
 
 impl HandshakeState {
@@ -62,7 +59,12 @@ impl std::fmt::Display for HandshakeState {
             Self::Start => write!(f, "Start"),
             Self::AwaitAccept { .. } => write!(f, "AwaitAccept"),
             Self::Done { result, .. } => {
-                write!(f, "Done(version={}, network={})", result.version, result.network_magic().network_name())
+                write!(
+                    f,
+                    "Done(version={}, network={})",
+                    result.version,
+                    result.network_magic().network_name()
+                )
             }
             Self::Failed { error, .. } => write!(f, "Failed({})", error),
         }
@@ -128,7 +130,8 @@ impl HandshakeClient {
         );
 
         table
-    }    /// Get current state
+    }
+    /// Get current state
     pub fn state(&self) -> &HandshakeState {
         &self.state
     }
@@ -158,9 +161,10 @@ impl HandshakeClient {
 
                 Ok(encoded)
             }
-            _ => Err(HandshakeError::ProtocolViolation(
-                format!("Cannot start handshake from state: {}", self.state)
-            )),
+            _ => Err(HandshakeError::ProtocolViolation(format!(
+                "Cannot start handshake from state: {}",
+                self.state
+            ))),
         }
     }
 
@@ -176,12 +180,21 @@ impl HandshakeClient {
 
         match (&self.state, message) {
             // Expecting AcceptVersion in AwaitAccept state
-            (HandshakeState::AwaitAccept { sent_at, .. }, HandshakeMessage::MsgAcceptVersion { version, version_data }) => {
+            (
+                HandshakeState::AwaitAccept { sent_at, .. },
+                HandshakeMessage::MsgAcceptVersion {
+                    version,
+                    version_data,
+                },
+            ) => {
                 let elapsed = sent_at.elapsed();
 
                 // Verify version was in our proposal
                 if !self.supported_versions.contains_key(&version) {
-                    let error = format!("Server accepted version {} which we did not propose", version);
+                    let error = format!(
+                        "Server accepted version {} which we did not propose",
+                        version
+                    );
                     warn!(%error);
                     self.state = HandshakeState::Failed {
                         error: error.clone(),
@@ -288,8 +301,8 @@ impl HandshakeClient {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::messages::RefuseReason;
+    use super::*;
 
     #[test]
     fn test_handshake_client_start() {
@@ -358,7 +371,10 @@ mod tests {
 
         let result = client.handle_message(&encoded);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), HandshakeError::Refused { .. }));
+        assert!(matches!(
+            result.unwrap_err(),
+            HandshakeError::Refused { .. }
+        ));
         assert!(client.state().is_failed());
     }
 

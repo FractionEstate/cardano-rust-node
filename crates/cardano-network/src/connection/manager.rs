@@ -546,7 +546,10 @@ impl ConnectionManagerHandle {
         })
         .await;
 
-        debug!(?connection_id, "TCP connection established, creating multiplexer");
+        debug!(
+            ?connection_id,
+            "TCP connection established, creating multiplexer"
+        );
 
         // Create multiplexer with the TCP stream
         let mut multiplexer =
@@ -560,7 +563,12 @@ impl ConnectionManagerHandle {
 
         for handler in handlers {
             let protocol_id = handler.protocol_id();
-            debug!(?connection_id, ?protocol_id, name = handler.name(), "Registering protocol handler");
+            debug!(
+                ?connection_id,
+                ?protocol_id,
+                name = handler.name(),
+                "Registering protocol handler"
+            );
             multiplexer.register_protocol(handler).await?;
         }
 
@@ -572,25 +580,30 @@ impl ConnectionManagerHandle {
             handlers
                 .get(&ProtocolId::HANDSHAKE)
                 .cloned()
-                .ok_or_else(|| NetworkError::ProtocolError("Handshake handler not registered".to_string()))?
+                .ok_or_else(|| {
+                    NetworkError::ProtocolError("Handshake handler not registered".to_string())
+                })?
         };
 
         // Downcast to HandshakeProtocolHandler to access start method
         let handshake_handler = handshake_handler
             .as_any()
             .downcast_ref::<HandshakeProtocolHandler>()
-            .ok_or_else(|| NetworkError::ProtocolError("Failed to downcast handshake handler".to_string()))?;
+            .ok_or_else(|| {
+                NetworkError::ProtocolError("Failed to downcast handshake handler".to_string())
+            })?;
 
         info!(?connection_id, "Starting handshake protocol");
-        let initial_msg = handshake_handler
-            .start(connection_id)
-            .await
-            .map_err(|e| ConnectionError::ProtocolViolation(format!("Failed to start handshake: {}", e)))?;
+        let initial_msg = handshake_handler.start(connection_id).await.map_err(|e| {
+            ConnectionError::ProtocolViolation(format!("Failed to start handshake: {}", e))
+        })?;
 
         // Send initial handshake message
         multiplexer_arc
             .send_message(ProtocolId::HANDSHAKE, initial_msg)
-            .map_err(|e| ConnectionError::ProtocolViolation(format!("Failed to send handshake: {}", e)))?;
+            .map_err(|e| {
+                ConnectionError::ProtocolViolation(format!("Failed to send handshake: {}", e))
+            })?;
 
         // Wait for handshake to complete with timeout
         let handshake_start = std::time::Instant::now();
@@ -610,7 +623,9 @@ impl ConnectionManagerHandle {
             // Check if handshake failed
             if handshake_handler.is_failed(connection_id).await {
                 error!(?connection_id, "Handshake failed");
-                return Err(ConnectionError::ProtocolViolation("Handshake failed".to_string()).into());
+                return Err(
+                    ConnectionError::ProtocolViolation("Handshake failed".to_string()).into(),
+                );
             }
 
             tokio::time::sleep(Duration::from_millis(100)).await;
@@ -651,9 +666,13 @@ impl ConnectionManagerHandle {
             }
         }
 
-        info!(?connection_id, "Connection fully established and authenticated");
+        info!(
+            ?connection_id,
+            "Connection fully established and authenticated"
+        );
         Ok(())
-    }    async fn handle_connection_error(
+    }
+    async fn handle_connection_error(
         &self,
         connection_id: ConnectionId,
         error: ConnectionError,

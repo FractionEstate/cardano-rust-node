@@ -2,17 +2,16 @@
 //!
 //! HTTP and local socket request handlers for transaction submission.
 
-use std::sync::Arc;
 use serde_json::Value;
+use std::sync::Arc;
 use tracing::{debug, error};
 
-use crate::{ApiError, Result};
 use super::{
-    SubmitApiService, SubmissionResult, SubmissionStatus, MempoolStats,
-    validation::{CardanoTransactionValidator, MockUtxoProvider, MockScriptValidator},
     mempool::InMemoryMempool,
-    SubmitApiConfig,
+    validation::{CardanoTransactionValidator, MockScriptValidator, MockUtxoProvider},
+    MempoolStats, SubmissionResult, SubmitApiConfig, SubmitApiService,
 };
+use crate::{ApiError, Result};
 
 /// Submit API handlers for different interfaces
 pub struct SubmitApiHandlers {
@@ -61,8 +60,14 @@ impl SubmitApiHandlers {
     }
 
     /// Handle batch transaction submission
-    pub async fn handle_batch_submit(&self, transactions: &[Value]) -> Result<Vec<SubmissionResult>> {
-        debug!("Handling batch transaction submission of {} transactions", transactions.len());
+    pub async fn handle_batch_submit(
+        &self,
+        transactions: &[Value],
+    ) -> Result<Vec<SubmissionResult>> {
+        debug!(
+            "Handling batch transaction submission of {} transactions",
+            transactions.len()
+        );
 
         let mut results = Vec::new();
         for tx_data in transactions {
@@ -154,7 +159,8 @@ impl SubmitApiHandlers {
 
     /// Handle local socket batch submission
     pub async fn socket_batch_submit(&self, params: &Value) -> Result<Value> {
-        let transactions = params.get("transactions")
+        let transactions = params
+            .get("transactions")
             .and_then(|t| t.as_array())
             .ok_or_else(|| ApiError::RequestError("Missing transactions array".to_string()))?;
 
@@ -188,7 +194,10 @@ mod tests {
         assert!(result.tx_id.starts_with("cbor_tx_"));
         // Transaction may be accepted or rejected depending on validation
         // The important thing is that it processes without error
-        assert!(matches!(result.status, super::SubmissionStatus::Accepted | super::SubmissionStatus::Rejected));
+        assert!(matches!(
+            result.status,
+            super::SubmissionStatus::Accepted | super::SubmissionStatus::Rejected
+        ));
     }
 
     #[tokio::test]
@@ -204,10 +213,10 @@ mod tests {
         let handlers = SubmitApiHandlers::with_default_config();
 
         let json_body = r#"{"cborData": "84a400818258203b40265111d8bb3c3c608d95b3a0bf83461ace32d79336579a", "fee": 174593}"#;
-        let result = handlers.rest_submit_transaction(
-            json_body.as_bytes(),
-            Some("application/json")
-        ).await.unwrap();
+        let result = handlers
+            .rest_submit_transaction(json_body.as_bytes(), Some("application/json"))
+            .await
+            .unwrap();
 
         assert!(result.get("txId").is_some());
         assert!(result.get("status").is_some());
@@ -217,11 +226,14 @@ mod tests {
     async fn test_rest_submit_cbor() {
         let handlers = SubmitApiHandlers::with_default_config();
 
-        let cbor_data = hex::decode("84a400818258203b40265111d8bb3c3c608d95b3a0bf83461ace32d79336579a1939b3aad1c0b70001").unwrap();
-        let result = handlers.rest_submit_transaction(
-            &cbor_data,
-            Some("application/cbor")
-        ).await.unwrap();
+        let cbor_data = hex::decode(
+            "84a400818258203b40265111d8bb3c3c608d95b3a0bf83461ace32d79336579a1939b3aad1c0b70001",
+        )
+        .unwrap();
+        let result = handlers
+            .rest_submit_transaction(&cbor_data, Some("application/cbor"))
+            .await
+            .unwrap();
 
         assert!(result.get("txId").is_some());
         assert!(result.get("status").is_some());
@@ -256,7 +268,10 @@ mod tests {
             "cborData": "84a400818258203b40265111d8bb3c3c608d95b3a0bf83461ace32d79336579a",
             "fee": 174593
         });
-        let submit_result = handlers.socket_submit_transaction(&tx_params).await.unwrap();
+        let submit_result = handlers
+            .socket_submit_transaction(&tx_params)
+            .await
+            .unwrap();
         assert!(submit_result.get("txId").is_some());
 
         // Test socket mempool query

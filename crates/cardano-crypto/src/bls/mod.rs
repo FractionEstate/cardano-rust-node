@@ -139,7 +139,8 @@ impl BlsPublicKey {
 
         // Check if pairings are equal
         pairing1 == pairing2
-    }    /// Aggregate multiple public keys
+    }
+    /// Aggregate multiple public keys
     pub fn aggregate(keys: &[BlsPublicKey]) -> Result<Self> {
         if keys.is_empty() {
             return Err(CryptoError::BlsError(

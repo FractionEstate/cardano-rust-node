@@ -56,19 +56,27 @@ impl HandshakeProtocolHandler {
     /// Get the current handshake result (if completed)
     pub async fn result(&self, connection_id: ConnectionId) -> Option<HandshakeResult> {
         let clients = self.clients.lock().await;
-        clients.get(&connection_id).and_then(|c| c.result().cloned())
+        clients
+            .get(&connection_id)
+            .and_then(|c| c.result().cloned())
     }
 
     /// Check if handshake is complete
     pub async fn is_done(&self, connection_id: ConnectionId) -> bool {
         let clients = self.clients.lock().await;
-        clients.get(&connection_id).map(|c| c.state().is_done()).unwrap_or(false)
+        clients
+            .get(&connection_id)
+            .map(|c| c.state().is_done())
+            .unwrap_or(false)
     }
 
     /// Check if handshake failed
     pub async fn is_failed(&self, connection_id: ConnectionId) -> bool {
         let clients = self.clients.lock().await;
-        clients.get(&connection_id).map(|c| c.state().is_failed()).unwrap_or(false)
+        clients
+            .get(&connection_id)
+            .map(|c| c.state().is_failed())
+            .unwrap_or(false)
     }
 
     /// Check for handshake timeout
@@ -126,7 +134,9 @@ impl ProtocolHandler for HandshakeProtocolHandler {
                 }
             } else {
                 error!(connection_id = ?connection_id, "No handshake client for connection");
-                Err(crate::NetworkError::ProtocolError("Handshake not started for connection".to_string()))
+                Err(crate::NetworkError::ProtocolError(
+                    "Handshake not started for connection".to_string(),
+                ))
             }
         })
     }

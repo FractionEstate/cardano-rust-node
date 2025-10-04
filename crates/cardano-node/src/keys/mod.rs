@@ -208,12 +208,8 @@ fn load_vrf_verification_key_cardano_cli(path: &Path) -> Result<VrfVerificationK
     let content = fs::read_to_string(path)
         .with_context(|| format!("Failed to read VRF verification key from {:?}", path))?;
 
-    let envelope: CardanoCliKeyEnvelope = serde_json::from_str(&content).with_context(|| {
-        format!(
-            "Failed to parse VRF verification key JSON from {:?}",
-            path
-        )
-    })?;
+    let envelope: CardanoCliKeyEnvelope = serde_json::from_str(&content)
+        .with_context(|| format!("Failed to parse VRF verification key JSON from {:?}", path))?;
 
     if !envelope.key_type.contains("VrfVerificationKey") {
         return Err(anyhow!(
@@ -222,19 +218,11 @@ fn load_vrf_verification_key_cardano_cli(path: &Path) -> Result<VrfVerificationK
         ));
     }
 
-    let cbor_bytes = hex::decode(&envelope.cbor_hex).with_context(|| {
-        format!(
-            "Failed to decode VRF verification key hex from {:?}",
-            path
-        )
-    })?;
+    let cbor_bytes = hex::decode(&envelope.cbor_hex)
+        .with_context(|| format!("Failed to decode VRF verification key hex from {:?}", path))?;
 
-    let key_bytes = parse_cbor_key_bytes(&cbor_bytes).with_context(|| {
-        format!(
-            "Failed to parse VRF verification key CBOR from {:?}",
-            path
-        )
-    })?;
+    let key_bytes = parse_cbor_key_bytes(&cbor_bytes)
+        .with_context(|| format!("Failed to parse VRF verification key CBOR from {:?}", path))?;
 
     // VRF public key is 32 bytes
     if key_bytes.len() != 32 {
@@ -258,12 +246,8 @@ fn load_vrf_verification_key_raw_hex(path: &Path) -> Result<VrfVerificationKey> 
     let content = fs::read_to_string(path)
         .with_context(|| format!("Failed to read VRF verification key from {:?}", path))?;
 
-    let key_bytes = hex::decode(content.trim()).with_context(|| {
-        format!(
-            "Failed to decode VRF verification key hex from {:?}",
-            path
-        )
-    })?;
+    let key_bytes = hex::decode(content.trim())
+        .with_context(|| format!("Failed to decode VRF verification key hex from {:?}", path))?;
 
     if key_bytes.len() != 32 {
         return Err(anyhow!(
@@ -392,9 +376,9 @@ pub fn load_operational_certificate(path: &Path) -> Result<OperationalCertificat
 
     Ok(OperationalCertificate {
         kes_vkey_hash: Vec::new(), // TODO: Extract from CBOR
-        issue_number: 0,            // TODO: Extract from CBOR
-        kes_period: 0,              // TODO: Extract from CBOR
-        signature: Vec::new(),      // TODO: Extract from CBOR
+        issue_number: 0,           // TODO: Extract from CBOR
+        kes_period: 0,             // TODO: Extract from CBOR
+        signature: Vec::new(),     // TODO: Extract from CBOR
         raw_data: cbor_bytes,
     })
 }
@@ -447,7 +431,10 @@ fn parse_cbor_key_bytes(cbor_data: &[u8]) -> Result<Vec<u8>> {
         return Ok(cbor_data[3..3 + length].to_vec());
     }
 
-    Err(anyhow!("Unsupported CBOR format: first byte = 0x{:02x}", first_byte))
+    Err(anyhow!(
+        "Unsupported CBOR format: first byte = 0x{:02x}",
+        first_byte
+    ))
 }
 
 #[cfg(test)]

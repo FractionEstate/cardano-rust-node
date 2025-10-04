@@ -305,8 +305,14 @@ mod tests {
 
     #[test]
     fn test_version_conversion() {
-        assert_eq!(NodeToNodeVersion::from_tag(14), Some(NodeToNodeVersion::V14));
-        assert_eq!(NodeToNodeVersion::from_tag(15), Some(NodeToNodeVersion::V15));
+        assert_eq!(
+            NodeToNodeVersion::from_tag(14),
+            Some(NodeToNodeVersion::V14)
+        );
+        assert_eq!(
+            NodeToNodeVersion::from_tag(15),
+            Some(NodeToNodeVersion::V15)
+        );
         assert_eq!(NodeToNodeVersion::from_tag(99), None);
     }
 

@@ -7,7 +7,9 @@
 //! 4. Verify leadership proofs from other pools
 
 use cardano_consensus::leadership::{LeadershipCalculator, LeadershipCheck};
-use cardano_consensus::ouroboros::{EpochNo, PoolId, ProtocolParameters, SlotNo, StakeDistribution};
+use cardano_consensus::ouroboros::{
+    EpochNo, PoolId, ProtocolParameters, SlotNo, StakeDistribution,
+};
 use cardano_crypto::vrf::VrfPrivateKey;
 use cardano_crypto::Blake2b256Hash;
 use std::collections::HashMap;
@@ -27,7 +29,10 @@ fn main() {
 
     println!("Protocol Parameters:");
     println!("  Security parameter (k): {}", params.security_parameter);
-    println!("  Active slot coefficient (f): {}", params.active_slot_coefficient);
+    println!(
+        "  Active slot coefficient (f): {}",
+        params.active_slot_coefficient
+    );
     println!("  Epoch length: {} slots", params.epoch_length);
     println!();
 
@@ -47,7 +52,10 @@ fn main() {
     println!("Stake Distribution:");
     println!("  Total stake: {} ADA", total_stake / 1_000_000);
     println!("  Pool stake: {} ADA", pool_stake / 1_000_000);
-    println!("  Pool relative stake: {:.2}%", (pool_stake as f64 / total_stake as f64) * 100.0);
+    println!(
+        "  Pool relative stake: {:.2}%",
+        (pool_stake as f64 / total_stake as f64) * 100.0
+    );
     println!();
 
     // 3. Generate VRF key for the pool
@@ -56,7 +64,10 @@ fn main() {
     let vrf_public_key = vrf_private_key.public_key();
 
     println!("VRF Keys:");
-    println!("  VRF public key: {}...", hex::encode(&vrf_public_key.to_bytes()[..8]));
+    println!(
+        "  VRF public key: {}...",
+        hex::encode(&vrf_public_key.to_bytes()[..8])
+    );
     println!();
 
     // 4. Create leadership calculator
@@ -72,7 +83,10 @@ fn main() {
 
     println!("Leadership Calculator:");
     println!("  Epoch: {}", current_epoch.0);
-    println!("  Epoch nonce: {}...", hex::encode(&epoch_nonce.as_bytes()[..8]));
+    println!(
+        "  Epoch nonce: {}...",
+        hex::encode(&epoch_nonce.as_bytes()[..8])
+    );
     println!();
 
     // 5. Calculate expected blocks
@@ -92,16 +106,14 @@ fn main() {
     for i in 0..10 {
         let slot = SlotNo(first_slot.0 + i);
 
-        match calculator.check_slot_leadership(
-            &pool_id,
-            pool_stake,
-            &vrf_private_key,
-            slot,
-        ) {
+        match calculator.check_slot_leadership(&pool_id, pool_stake, &vrf_private_key, slot) {
             Ok(LeadershipCheck::Leader(proof)) => {
                 leader_count += 1;
                 println!("  Slot {}: ✓ LEADER", slot.0);
-                println!("    VRF output: {}...", hex::encode(&proof.vrf_output.to_bytes()[..8]));
+                println!(
+                    "    VRF output: {}...",
+                    hex::encode(&proof.vrf_output.to_bytes()[..8])
+                );
             }
             Ok(LeadershipCheck::NotLeader { .. }) => {
                 println!("  Slot {}: ✗ Not leader", slot.0);
@@ -121,12 +133,9 @@ fn main() {
     for i in 0..1000 {
         let slot = SlotNo(first_slot.0 + i);
 
-        if let Ok(LeadershipCheck::Leader(proof)) = calculator.check_slot_leadership(
-            &pool_id,
-            pool_stake,
-            &vrf_private_key,
-            slot,
-        ) {
+        if let Ok(LeadershipCheck::Leader(proof)) =
+            calculator.check_slot_leadership(&pool_id, pool_stake, &vrf_private_key, slot)
+        {
             schedule.push(proof);
         }
     }
@@ -134,7 +143,10 @@ fn main() {
     println!("Leader Schedule Results:");
     println!("  Slots checked: 1000");
     println!("  Leader slots found: {}", schedule.len());
-    println!("  Leadership rate: {:.2}%", (schedule.len() as f64 / 1000.0) * 100.0);
+    println!(
+        "  Leadership rate: {:.2}%",
+        (schedule.len() as f64 / 1000.0) * 100.0
+    );
 
     if !schedule.is_empty() {
         println!("\nFirst 5 Leader Slots:");
@@ -169,12 +181,9 @@ fn main() {
         for i in 0..100 {
             let slot = SlotNo(epoch_first_slot.0 + i);
 
-            if let Ok(LeadershipCheck::Leader(_)) = calculator.check_slot_leadership(
-                &pool_id,
-                pool_stake,
-                &vrf_private_key,
-                slot,
-            ) {
+            if let Ok(LeadershipCheck::Leader(_)) =
+                calculator.check_slot_leadership(&pool_id, pool_stake, &vrf_private_key, slot)
+            {
                 epoch_leaders += 1;
             }
         }
@@ -190,12 +199,21 @@ fn main() {
 
     // 10. Stake requirements for target blocks
     println!("Stake Requirements:");
-    println!("  For 1 block per epoch: {} ADA",
-        cardano_consensus::leadership::min_stake_for_expected_blocks(1.0, total_stake, &params) / 1_000_000);
-    println!("  For 10 blocks per epoch: {} ADA",
-        cardano_consensus::leadership::min_stake_for_expected_blocks(10.0, total_stake, &params) / 1_000_000);
-    println!("  For 100 blocks per epoch: {} ADA",
-        cardano_consensus::leadership::min_stake_for_expected_blocks(100.0, total_stake, &params) / 1_000_000);
+    println!(
+        "  For 1 block per epoch: {} ADA",
+        cardano_consensus::leadership::min_stake_for_expected_blocks(1.0, total_stake, &params)
+            / 1_000_000
+    );
+    println!(
+        "  For 10 blocks per epoch: {} ADA",
+        cardano_consensus::leadership::min_stake_for_expected_blocks(10.0, total_stake, &params)
+            / 1_000_000
+    );
+    println!(
+        "  For 100 blocks per epoch: {} ADA",
+        cardano_consensus::leadership::min_stake_for_expected_blocks(100.0, total_stake, &params)
+            / 1_000_000
+    );
     println!();
 
     println!("===========================================");

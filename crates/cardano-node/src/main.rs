@@ -114,9 +114,14 @@ async fn main() -> Result<()> {
                 println!("==================================");
                 println!();
                 println!("Version:        {}", env!("CARGO_PKG_VERSION"));
-                println!("Build:          {} ({})",
+                println!(
+                    "Build:          {} ({})",
                     env!("CARGO_PKG_VERSION"),
-                    if cfg!(debug_assertions) { "debug" } else { "release" }
+                    if cfg!(debug_assertions) {
+                        "debug"
+                    } else {
+                        "release"
+                    }
                 );
                 println!("Platform:       {}", std::env::consts::OS);
                 println!("Architecture:   {}", std::env::consts::ARCH);
@@ -124,7 +129,9 @@ async fn main() -> Result<()> {
                 if info_args.protocol {
                     println!();
                     println!("Protocol Information:");
-                    println!("  Supported Eras:  Byron, Shelley, Allegra, Mary, Alonzo, Babbage, Conway");
+                    println!(
+                        "  Supported Eras:  Byron, Shelley, Allegra, Mary, Alonzo, Babbage, Conway"
+                    );
                     println!("  Current Era:     Conway");
                     println!("  Protocol Version: 8.0");
                 }

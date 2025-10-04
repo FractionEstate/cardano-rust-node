@@ -1,5 +1,5 @@
 use cardano_crypto::vrf::{
-    VrfOutput, VrfPrivateKey, VrfProof, VRF_PRIVATE_KEY_LENGTH, VRF_PROOF_LENGTH,
+    VrfPrivateKey, VRF_PRIVATE_KEY_LENGTH, VRF_PROOF_LENGTH,
 };
 
 #[test]

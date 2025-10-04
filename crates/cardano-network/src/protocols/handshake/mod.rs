@@ -31,7 +31,10 @@ pub mod types;
 pub use handler::HandshakeProtocolHandler;
 pub use messages::{HandshakeMessage, RefuseReason};
 pub use state::{HandshakeClient, HandshakeState};
-pub use types::{DiffusionMode, NetworkMagic, NodeToNodeVersion, NodeToNodeVersionData, PeerSharing, VersionTable};
+pub use types::{
+    DiffusionMode, NetworkMagic, NodeToNodeVersion, NodeToNodeVersionData, PeerSharing,
+    VersionTable,
+};
 
 /// Handshake protocol errors
 #[derive(Debug, thiserror::Error)]
@@ -116,10 +119,8 @@ mod tests {
 
     #[test]
     fn test_network_detection() {
-        let mainnet_result = HandshakeResult::new(
-            NodeToNodeVersion::V15,
-            NodeToNodeVersionData::mainnet(),
-        );
+        let mainnet_result =
+            HandshakeResult::new(NodeToNodeVersion::V15, NodeToNodeVersionData::mainnet());
         assert!(mainnet_result.is_mainnet());
         assert!(!mainnet_result.is_preview_testnet());
 

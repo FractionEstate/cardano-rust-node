@@ -1,8 +1,8 @@
 /// Interactive Terminal Dashboard for Cardano Node
 ///
 /// Provides comprehensive real-time monitoring and management interface
-
 use anyhow::Result;
+use chrono::{DateTime, Local};
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
@@ -12,21 +12,20 @@ use ratatui::{
     backend::CrosstermBackend,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
+    symbols,
     text::{Line, Span},
     widgets::{
-        Block, Borders, Cell, Gauge, List, ListItem, Paragraph, Row, Table, Tabs, Wrap,
-        Chart, Dataset, Axis, Clear,
+        Axis, Block, Borders, Cell, Chart, Clear, Dataset, Gauge, List, ListItem, Paragraph, Row,
+        Table, Tabs, Wrap,
     },
-    symbols,
     Frame, Terminal,
 };
 use std::{
+    collections::VecDeque,
     io,
     path::PathBuf,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
-    collections::VecDeque,
 };
-use chrono::{DateTime, Local};
 
 /// Dashboard state and data
 pub struct Dashboard {
@@ -309,7 +308,13 @@ impl Dashboard {
                                     self.input_buffer.clear();
                                 }
                                 KeyCode::Tab => self.selected_tab = (self.selected_tab + 1) % 8,
-                                KeyCode::BackTab => self.selected_tab = if self.selected_tab == 0 { 7 } else { self.selected_tab - 1 },
+                                KeyCode::BackTab => {
+                                    self.selected_tab = if self.selected_tab == 0 {
+                                        7
+                                    } else {
+                                        self.selected_tab - 1
+                                    }
+                                }
                                 KeyCode::Char('1') => self.selected_tab = 0,
                                 KeyCode::Char('2') => self.selected_tab = 1,
                                 KeyCode::Char('3') => self.selected_tab = 2,
@@ -325,8 +330,8 @@ impl Dashboard {
                                 }
                                 KeyCode::Down => {
                                     let max_items = match self.selected_tab {
-                                        2 => self.wallets.len().saturating_sub(1),  // Wallets tab
-                                        6 => self.alerts.len().saturating_sub(1),   // Alerts tab
+                                        2 => self.wallets.len().saturating_sub(1), // Wallets tab
+                                        6 => self.alerts.len().saturating_sub(1),  // Alerts tab
                                         _ => 0,
                                     };
                                     if self.selected_item < max_items {
@@ -336,7 +341,9 @@ impl Dashboard {
                                 KeyCode::Enter => {
                                     if self.input_mode == InputMode::Command {
                                         self.execute_command();
-                                    } else if self.selected_tab == 6 && self.selected_item < self.alerts.len() {
+                                    } else if self.selected_tab == 6
+                                        && self.selected_item < self.alerts.len()
+                                    {
                                         self.alerts[self.selected_item].acknowledged = true;
                                     }
                                 }
@@ -413,33 +420,43 @@ impl Dashboard {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(3),  // Title
-                Constraint::Length(3),  // Tabs
-                Constraint::Min(0),     // Content
-                Constraint::Length(3),  // Status bar
+                Constraint::Length(3), // Title
+                Constraint::Length(3), // Tabs
+                Constraint::Min(0),    // Content
+                Constraint::Length(3), // Status bar
             ])
             .split(size);
 
         // Title
         let title = Paragraph::new("🚀 Cardano Node Dashboard")
-            .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+            .style(
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )
             .alignment(Alignment::Center)
             .block(Block::default().borders(Borders::ALL));
         f.render_widget(title, chunks[0]);
 
         // Tabs - now with 8 tabs instead of 4
         let tabs = Tabs::new(vec![
-            "Overview", "Stake Pool", "Wallets", "Network",
-            "Monitoring", "API Settings", "Alerts", "Logs"
+            "Overview",
+            "Stake Pool",
+            "Wallets",
+            "Network",
+            "Monitoring",
+            "API Settings",
+            "Alerts",
+            "Logs",
         ])
-            .select(self.selected_tab)
-            .block(Block::default().borders(Borders::ALL))
-            .style(Style::default().fg(Color::White))
-            .highlight_style(
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            );
+        .select(self.selected_tab)
+        .block(Block::default().borders(Borders::ALL))
+        .style(Style::default().fg(Color::White))
+        .highlight_style(
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        );
         f.render_widget(tabs, chunks[1]);
 
         // Content based on selected tab
@@ -469,7 +486,10 @@ impl Dashboard {
         } else {
             Line::from(vec![
                 Span::raw("Press "),
-                Span::styled("q", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "q",
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                ),
                 Span::raw(" to quit | "),
                 Span::styled("1-8", Style::default().fg(Color::Yellow)),
                 Span::raw(" to switch tabs | "),
@@ -521,7 +541,7 @@ impl Dashboard {
                 Block::default()
                     .borders(Borders::ALL)
                     .title("Help")
-                    .border_style(Style::default().fg(Color::Yellow))
+                    .border_style(Style::default().fg(Color::Yellow)),
             )
             .wrap(Wrap { trim: true })
             .style(Style::default().fg(Color::White));
@@ -535,15 +555,19 @@ impl Dashboard {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(3),  // Sync gauge
-                Constraint::Length(3),  // Uptime
-                Constraint::Min(0),     // Stats table
+                Constraint::Length(3), // Sync gauge
+                Constraint::Length(3), // Uptime
+                Constraint::Min(0),    // Stats table
             ])
             .split(area);
 
         // Sync progress
         let gauge = Gauge::default()
-            .block(Block::default().title("Sync Progress").borders(Borders::ALL))
+            .block(
+                Block::default()
+                    .title("Sync Progress")
+                    .borders(Borders::ALL),
+            )
             .gauge_style(Style::default().fg(Color::Green))
             .percent((self.stats.sync_progress * 100.0) as u16)
             .label(format!("{:.2}%", self.stats.sync_progress * 100.0));
@@ -602,10 +626,17 @@ impl Dashboard {
             stats_rows,
             [Constraint::Percentage(50), Constraint::Percentage(50)],
         )
-        .block(Block::default().title("Node Statistics").borders(Borders::ALL))
+        .block(
+            Block::default()
+                .title("Node Statistics")
+                .borders(Borders::ALL),
+        )
         .header(
-            Row::new(vec!["Metric", "Value"])
-                .style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Row::new(vec!["Metric", "Value"]).style(
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
         );
         f.render_widget(stats_table, chunks[2]);
     }
@@ -617,14 +648,24 @@ impl Dashboard {
             .split(area);
 
         // Network stats
-        let network_info = [format!("Connected Peers: {}", self.stats.peer_count),
+        let network_info = [
+            format!("Connected Peers: {}", self.stats.peer_count),
             format!("Network In: {} MB", self.stats.network_in / 1024 / 1024),
             format!("Network Out: {} MB", self.stats.network_out / 1024 / 1024),
-            format!("Bandwidth: ↓ {:.2} MB/s ↑ {:.2} MB/s",
+            format!(
+                "Bandwidth: ↓ {:.2} MB/s ↑ {:.2} MB/s",
                 self.stats.network_in as f64 / 1024.0 / 1024.0 / self.stats.uptime.as_secs() as f64,
-                self.stats.network_out as f64 / 1024.0 / 1024.0 / self.stats.uptime.as_secs() as f64)];
-        let network_para = Paragraph::new(network_info.join("\n"))
-            .block(Block::default().title("Network Statistics").borders(Borders::ALL));
+                self.stats.network_out as f64
+                    / 1024.0
+                    / 1024.0
+                    / self.stats.uptime.as_secs() as f64
+            ),
+        ];
+        let network_para = Paragraph::new(network_info.join("\n")).block(
+            Block::default()
+                .title("Network Statistics")
+                .borders(Borders::ALL),
+        );
         f.render_widget(network_para, chunks[0]);
 
         // Peer list (mock data)
@@ -638,8 +679,11 @@ impl Dashboard {
                 ))
             })
             .collect();
-        let peers_list = List::new(peers)
-            .block(Block::default().title("Connected Peers").borders(Borders::ALL));
+        let peers_list = List::new(peers).block(
+            Block::default()
+                .title("Connected Peers")
+                .borders(Borders::ALL),
+        );
         f.render_widget(peers_list, chunks[1]);
     }
 
@@ -662,8 +706,8 @@ impl Dashboard {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(8),  // Pool Info
-                Constraint::Min(0),     // Performance Stats
+                Constraint::Length(8), // Pool Info
+                Constraint::Min(0),    // Performance Stats
             ])
             .split(area);
 
@@ -675,31 +719,53 @@ impl Dashboard {
             PoolStatus::Inactive => Color::Gray,
         };
 
-        let pool_info = [format!("Pool ID: {}", self.stake_pool.pool_id),
-            format!("Ticker: {} | Name: {}", self.stake_pool.ticker, self.stake_pool.name),
+        let pool_info = [
+            format!("Pool ID: {}", self.stake_pool.pool_id),
+            format!(
+                "Ticker: {} | Name: {}",
+                self.stake_pool.ticker, self.stake_pool.name
+            ),
             format!("Status: {:?}", self.stake_pool.status),
-            format!("Pledge: {} ₳ | Margin: {:.2}% | Fixed Cost: {} ₳",
+            format!(
+                "Pledge: {} ₳ | Margin: {:.2}% | Fixed Cost: {} ₳",
                 self.stake_pool.pledge / 1_000_000,
                 self.stake_pool.margin * 100.0,
-                self.stake_pool.fixed_cost / 1_000_000),
-            format!("Active Stake: {} ₳ ({:.2}% saturation)",
+                self.stake_pool.fixed_cost / 1_000_000
+            ),
+            format!(
+                "Active Stake: {} ₳ ({:.2}% saturation)",
                 self.stake_pool.active_stake / 1_000_000,
-                self.stake_pool.saturation * 100.0),
-            format!("Delegators: {} | Rank: #{}", self.stake_pool.delegators, self.stake_pool.rank)];
+                self.stake_pool.saturation * 100.0
+            ),
+            format!(
+                "Delegators: {} | Rank: #{}",
+                self.stake_pool.delegators, self.stake_pool.rank
+            ),
+        ];
 
         let info_widget = Paragraph::new(pool_info.join("\n"))
-            .block(Block::default()
-                .title("Stake Pool Information")
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(pool_status_color)))
+            .block(
+                Block::default()
+                    .title("Stake Pool Information")
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(pool_status_color)),
+            )
             .style(Style::default().fg(Color::White));
         f.render_widget(info_widget, chunks[0]);
 
         // Performance Stats
-        let perf_data = [vec!["Metric".to_string(), "Current Epoch".to_string(), "Lifetime".to_string()],
+        let perf_data = [
+            vec![
+                "Metric".to_string(),
+                "Current Epoch".to_string(),
+                "Lifetime".to_string(),
+            ],
             vec![
                 "Blocks Minted".to_string(),
-                format!("{} / {} expected", self.stake_pool.blocks_minted, self.stake_pool.blocks_expected),
+                format!(
+                    "{} / {} expected",
+                    self.stake_pool.blocks_minted, self.stake_pool.blocks_expected
+                ),
                 self.stake_pool.lifetime_blocks.to_string(),
             ],
             vec![
@@ -710,23 +776,40 @@ impl Dashboard {
             vec![
                 "Performance".to_string(),
                 if self.stake_pool.blocks_expected > 0 {
-                    format!("{:.1}%", (self.stake_pool.blocks_minted as f64 / self.stake_pool.blocks_expected as f64) * 100.0)
+                    format!(
+                        "{:.1}%",
+                        (self.stake_pool.blocks_minted as f64
+                            / self.stake_pool.blocks_expected as f64)
+                            * 100.0
+                    )
                 } else {
                     "N/A".to_string()
                 },
                 "N/A".to_string(),
-            ]];
+            ],
+        ];
 
         let table = Table::new(
-            perf_data.iter().map(|row| {
-                Row::new(row.iter().map(|c| Cell::from(c.as_str())))
-            }),
-            [Constraint::Percentage(33), Constraint::Percentage(33), Constraint::Percentage(34)]
+            perf_data
+                .iter()
+                .map(|row| Row::new(row.iter().map(|c| Cell::from(c.as_str())))),
+            [
+                Constraint::Percentage(33),
+                Constraint::Percentage(33),
+                Constraint::Percentage(34),
+            ],
         )
-        .block(Block::default().title("Performance Metrics").borders(Borders::ALL))
+        .block(
+            Block::default()
+                .title("Performance Metrics")
+                .borders(Borders::ALL),
+        )
         .header(
-            Row::new(vec!["Metric", "Current Epoch", "Lifetime"])
-                .style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+            Row::new(vec!["Metric", "Current Epoch", "Lifetime"]).style(
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
         )
         .style(Style::default().fg(Color::White));
 
@@ -737,19 +820,22 @@ impl Dashboard {
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
-                Constraint::Percentage(40),  // Wallet List
-                Constraint::Percentage(60),  // Wallet Details
+                Constraint::Percentage(40), // Wallet List
+                Constraint::Percentage(60), // Wallet Details
             ])
             .split(area);
 
         // Wallet List
-        let wallet_items: Vec<ListItem> = self.wallets
+        let wallet_items: Vec<ListItem> = self
+            .wallets
             .iter()
             .enumerate()
             .map(|(i, wallet)| {
                 let content = format!("{} - {} ₳", wallet.name, wallet.balance / 1_000_000);
                 let style = if i == self.selected_item {
-                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default().fg(Color::White)
                 };
@@ -759,7 +845,11 @@ impl Dashboard {
 
         let wallet_list = List::new(wallet_items)
             .block(Block::default().title("Wallets").borders(Borders::ALL))
-            .highlight_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD));
+            .highlight_style(
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            );
         f.render_widget(wallet_list, chunks[0]);
 
         // Wallet Details
@@ -770,7 +860,13 @@ impl Dashboard {
                 format!("Balance: {} ₳", wallet.balance / 1_000_000),
                 format!("Staked: {} ₳", wallet.staked / 1_000_000),
                 format!("Rewards: {} ₳", wallet.rewards / 1_000_000),
-                format!("Delegated to: {}", wallet.delegated_pool.as_ref().unwrap_or(&"None".to_string())),
+                format!(
+                    "Delegated to: {}",
+                    wallet
+                        .delegated_pool
+                        .as_ref()
+                        .unwrap_or(&"None".to_string())
+                ),
                 format!("UTxO Count: {}", wallet.utxo_count),
                 format!("Transactions: {}", wallet.tx_count),
                 "".to_string(),
@@ -781,7 +877,11 @@ impl Dashboard {
             ];
 
             let details_widget = Paragraph::new(details.join("\n"))
-                .block(Block::default().title("Wallet Details").borders(Borders::ALL))
+                .block(
+                    Block::default()
+                        .title("Wallet Details")
+                        .borders(Borders::ALL),
+                )
                 .style(Style::default().fg(Color::White))
                 .wrap(Wrap { trim: true });
             f.render_widget(details_widget, chunks[1]);
@@ -792,33 +892,30 @@ impl Dashboard {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Percentage(50),  // Graphs
-                Constraint::Percentage(50),  // Recent Metrics
+                Constraint::Percentage(50), // Graphs
+                Constraint::Percentage(50), // Recent Metrics
             ])
             .split(area);
 
         let graph_chunks = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Percentage(50),
-                Constraint::Percentage(50),
-            ])
+            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
             .split(chunks[0]);
 
         // CPU Usage Graph
-        let cpu_data: Vec<(f64, f64)> = self.metrics_history.cpu
+        let cpu_data: Vec<(f64, f64)> = self
+            .metrics_history
+            .cpu
             .iter()
             .enumerate()
             .map(|(i, &val)| (i as f64, val as f64))
             .collect();
 
-        let cpu_dataset = vec![
-            Dataset::default()
-                .name("CPU %")
-                .marker(symbols::Marker::Braille)
-                .style(Style::default().fg(Color::Cyan))
-                .data(&cpu_data)
-        ];
+        let cpu_dataset = vec![Dataset::default()
+            .name("CPU %")
+            .marker(symbols::Marker::Braille)
+            .style(Style::default().fg(Color::Cyan))
+            .data(&cpu_data)];
 
         let cpu_chart = Chart::new(cpu_dataset)
             .block(Block::default().title("CPU Usage").borders(Borders::ALL))
@@ -828,68 +925,78 @@ impl Dashboard {
                     .labels(vec![
                         Span::raw("0"),
                         Span::raw(format!("{}", self.metrics_history.max_samples / 2)),
-                        Span::raw(format!("{}", self.metrics_history.max_samples))
-                    ])
+                        Span::raw(format!("{}", self.metrics_history.max_samples)),
+                    ]),
             )
-            .y_axis(
-                Axis::default()
-                    .bounds([0.0, 100.0])
-                    .labels(vec![
-                        Span::raw("0%"),
-                        Span::raw("50%"),
-                        Span::raw("100%")
-                    ])
-            );
+            .y_axis(Axis::default().bounds([0.0, 100.0]).labels(vec![
+                Span::raw("0%"),
+                Span::raw("50%"),
+                Span::raw("100%"),
+            ]));
         f.render_widget(cpu_chart, graph_chunks[0]);
 
         // Memory Usage Graph
-        let mem_data: Vec<(f64, f64)> = self.metrics_history.memory
+        let mem_data: Vec<(f64, f64)> = self
+            .metrics_history
+            .memory
             .iter()
             .enumerate()
             .map(|(i, &val)| (i as f64, (val / 1_000_000_000) as f64))
             .collect();
 
-        let mem_dataset = vec![
-            Dataset::default()
-                .name("Memory GB")
-                .marker(symbols::Marker::Braille)
-                .style(Style::default().fg(Color::Green))
-                .data(&mem_data)
-        ];
+        let mem_dataset = vec![Dataset::default()
+            .name("Memory GB")
+            .marker(symbols::Marker::Braille)
+            .style(Style::default().fg(Color::Green))
+            .data(&mem_data)];
 
         let mem_chart = Chart::new(mem_dataset)
-            .block(Block::default().title("Memory Usage (GB)").borders(Borders::ALL))
+            .block(
+                Block::default()
+                    .title("Memory Usage (GB)")
+                    .borders(Borders::ALL),
+            )
             .x_axis(
                 Axis::default()
                     .bounds([0.0, self.metrics_history.max_samples as f64])
                     .labels(vec![
                         Span::raw("0"),
                         Span::raw(format!("{}", self.metrics_history.max_samples / 2)),
-                        Span::raw(format!("{}", self.metrics_history.max_samples))
-                    ])
+                        Span::raw(format!("{}", self.metrics_history.max_samples)),
+                    ]),
             )
-            .y_axis(
-                Axis::default()
-                    .bounds([0.0, 8.0])
-                    .labels(vec![
-                        Span::raw("0GB"),
-                        Span::raw("4GB"),
-                        Span::raw("8GB")
-                    ])
-            );
+            .y_axis(Axis::default().bounds([0.0, 8.0]).labels(vec![
+                Span::raw("0GB"),
+                Span::raw("4GB"),
+                Span::raw("8GB"),
+            ]));
         f.render_widget(mem_chart, graph_chunks[1]);
 
         // Recent Metrics Table
-        let metrics_data = [vec!["Metric".to_string(), "Current".to_string(), "Average".to_string()],
+        let metrics_data = [
+            vec![
+                "Metric".to_string(),
+                "Current".to_string(),
+                "Average".to_string(),
+            ],
             vec![
                 "CPU".to_string(),
                 format!("{:.1}%", self.stats.cpu_usage),
-                format!("{:.1}%", self.metrics_history.cpu.iter().sum::<f32>() / self.metrics_history.cpu.len() as f32),
+                format!(
+                    "{:.1}%",
+                    self.metrics_history.cpu.iter().sum::<f32>()
+                        / self.metrics_history.cpu.len() as f32
+                ),
             ],
             vec![
                 "Memory".to_string(),
                 format!("{:.2} GB", self.stats.memory_usage as f64 / 1_000_000_000.0),
-                format!("{:.2} GB", self.metrics_history.memory.iter().sum::<u64>() as f64 / self.metrics_history.memory.len() as f64 / 1_000_000_000.0),
+                format!(
+                    "{:.2} GB",
+                    self.metrics_history.memory.iter().sum::<u64>() as f64
+                        / self.metrics_history.memory.len() as f64
+                        / 1_000_000_000.0
+                ),
             ],
             vec![
                 "Network In".to_string(),
@@ -900,18 +1007,30 @@ impl Dashboard {
                 "Network Out".to_string(),
                 format!("{:.2} MB/s", self.stats.network_out as f64 / 1_000_000.0),
                 "N/A".to_string(),
-            ]];
+            ],
+        ];
 
         let metrics_table = Table::new(
-            metrics_data.iter().map(|row| {
-                Row::new(row.iter().map(|c| Cell::from(c.as_str())))
-            }),
-            [Constraint::Percentage(33), Constraint::Percentage(33), Constraint::Percentage(34)]
+            metrics_data
+                .iter()
+                .map(|row| Row::new(row.iter().map(|c| Cell::from(c.as_str())))),
+            [
+                Constraint::Percentage(33),
+                Constraint::Percentage(33),
+                Constraint::Percentage(34),
+            ],
         )
-        .block(Block::default().title("System Metrics").borders(Borders::ALL))
+        .block(
+            Block::default()
+                .title("System Metrics")
+                .borders(Borders::ALL),
+        )
         .header(
-            Row::new(vec!["Metric", "Current", "Average"])
-                .style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+            Row::new(vec!["Metric", "Current", "Average"]).style(
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
         )
         .style(Style::default().fg(Color::White));
 
@@ -922,21 +1041,51 @@ impl Dashboard {
         let settings_text = vec![
             "API Configuration".to_string(),
             "".to_string(),
-            format!("REST API:       {} (Port: {})",
-                if self.api_settings.rest_enabled { "✓ Enabled" } else { "✗ Disabled" },
-                self.api_settings.rest_port),
-            format!("WebSocket:      {} (Port: {})",
-                if self.api_settings.websocket_enabled { "✓ Enabled" } else { "✗ Disabled" },
-                self.api_settings.websocket_port),
-            format!("Prometheus:     {} (Port: {})",
-                if self.api_settings.prometheus_enabled { "✓ Enabled" } else { "✗ Disabled" },
-                self.api_settings.prometheus_port),
-            format!("EKG:            {} (Port: {})",
-                if self.api_settings.ekg_enabled { "✓ Enabled" } else { "✗ Disabled" },
-                self.api_settings.ekg_port),
+            format!(
+                "REST API:       {} (Port: {})",
+                if self.api_settings.rest_enabled {
+                    "✓ Enabled"
+                } else {
+                    "✗ Disabled"
+                },
+                self.api_settings.rest_port
+            ),
+            format!(
+                "WebSocket:      {} (Port: {})",
+                if self.api_settings.websocket_enabled {
+                    "✓ Enabled"
+                } else {
+                    "✗ Disabled"
+                },
+                self.api_settings.websocket_port
+            ),
+            format!(
+                "Prometheus:     {} (Port: {})",
+                if self.api_settings.prometheus_enabled {
+                    "✓ Enabled"
+                } else {
+                    "✗ Disabled"
+                },
+                self.api_settings.prometheus_port
+            ),
+            format!(
+                "EKG:            {} (Port: {})",
+                if self.api_settings.ekg_enabled {
+                    "✓ Enabled"
+                } else {
+                    "✗ Disabled"
+                },
+                self.api_settings.ekg_port
+            ),
             "".to_string(),
-            format!("Authentication: {}",
-                if self.api_settings.auth_required { "✓ Required" } else { "✗ Not Required" }),
+            format!(
+                "Authentication: {}",
+                if self.api_settings.auth_required {
+                    "✓ Required"
+                } else {
+                    "✗ Not Required"
+                }
+            ),
             format!("Rate Limiting:  {} req/min", self.api_settings.rate_limit),
             "".to_string(),
             "Configuration Options:".to_string(),
@@ -955,7 +1104,8 @@ impl Dashboard {
     }
 
     fn render_alerts(&self, f: &mut Frame, area: Rect) {
-        let alert_items: Vec<ListItem> = self.alerts
+        let alert_items: Vec<ListItem> = self
+            .alerts
             .iter()
             .enumerate()
             .map(|(i, alert)| {
@@ -967,11 +1117,18 @@ impl Dashboard {
                 };
 
                 let prefix = if alert.acknowledged { "✓" } else { "•" };
-                let content = format!("{} [{:?}] {}: {}",
-                    prefix, alert.level, alert.timestamp.format("%H:%M:%S"), alert.message);
+                let content = format!(
+                    "{} [{:?}] {}: {}",
+                    prefix,
+                    alert.level,
+                    alert.timestamp.format("%H:%M:%S"),
+                    alert.message
+                );
 
                 let style = if i == self.selected_item {
-                    Style::default().fg(color).add_modifier(Modifier::BOLD | Modifier::REVERSED)
+                    Style::default()
+                        .fg(color)
+                        .add_modifier(Modifier::BOLD | Modifier::REVERSED)
                 } else if alert.acknowledged {
                     Style::default().fg(Color::Gray)
                 } else {
@@ -983,9 +1140,11 @@ impl Dashboard {
             .collect();
 
         let alerts_list = List::new(alert_items)
-            .block(Block::default()
-                .title("System Alerts (Press Enter to acknowledge)")
-                .borders(Borders::ALL))
+            .block(
+                Block::default()
+                    .title("System Alerts (Press Enter to acknowledge)")
+                    .borders(Borders::ALL),
+            )
             .highlight_style(Style::default().add_modifier(Modifier::BOLD));
         f.render_widget(alerts_list, area);
     }
@@ -1012,7 +1171,8 @@ impl Dashboard {
         // Minimal incrementing for demonstration (not real data)
         self.stats.chain_tip += 1;
         self.stats.total_blocks = self.stats.chain_tip + 100;
-        self.stats.sync_progress = (self.stats.chain_tip as f64 / self.stats.total_blocks as f64).min(1.0);
+        self.stats.sync_progress =
+            (self.stats.chain_tip as f64 / self.stats.total_blocks as f64).min(1.0);
         self.stats.uptime += self.refresh_interval;
 
         // These should come from actual queries:
@@ -1032,7 +1192,10 @@ impl Dashboard {
             let hours = (now / 3600) % 24;
             let minutes = (now / 60) % 60;
             let seconds = now % 60;
-            self.logs.push(format!("[{:02}:{:02}:{:02}] Awaiting node connection", hours, minutes, seconds));
+            self.logs.push(format!(
+                "[{:02}:{:02}:{:02}] Awaiting node connection",
+                hours, minutes, seconds
+            ));
             if self.logs.len() > 100 {
                 self.logs.remove(0);
             }
@@ -1084,11 +1247,7 @@ fn setup_terminal() -> Result<Terminal<CrosstermBackend<std::io::Stdout>>> {
 /// Restore terminal to normal mode
 fn restore_terminal() -> Result<()> {
     disable_raw_mode()?;
-    execute!(
-        io::stdout(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
+    execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture)?;
     Ok(())
 }
 

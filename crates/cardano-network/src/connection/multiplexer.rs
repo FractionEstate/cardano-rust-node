@@ -124,8 +124,12 @@ impl MessageFrame {
         // We use the base protocol ID for routing
         let protocol_id = ProtocolId::new(raw_protocol_id & 0x7FFF);
 
-        tracing::trace!(raw_protocol_id, actual_protocol_id = protocol_id.value(),
-            is_responder = (raw_protocol_id & 0x8000) != 0, "Decoded protocol ID");
+        tracing::trace!(
+            raw_protocol_id,
+            actual_protocol_id = protocol_id.value(),
+            is_responder = (raw_protocol_id & 0x8000) != 0,
+            "Decoded protocol ID"
+        );
 
         if data.len() < payload_len {
             return Err(MultiplexerError::InvalidFrameSize {
@@ -334,7 +338,12 @@ impl ConnectionMultiplexer {
                         break;
                     }
                     Ok(n) => {
-                        tracing::trace!(?connection_id, bytes_read = n, buffer_len = buffer.len(), "Read data from connection");
+                        tracing::trace!(
+                            ?connection_id,
+                            bytes_read = n,
+                            buffer_len = buffer.len(),
+                            "Read data from connection"
+                        );
 
                         // Process complete frames
                         while buffer.len() >= 8 {
@@ -346,17 +355,32 @@ impl ConnectionMultiplexer {
                                 payload_len
                             } + 8; // + 8-byte mux header (4 + 2 + 2)
 
-                            tracing::trace!(?connection_id, frame_len, buffer_len = buffer.len(), "Frame detected");
+                            tracing::trace!(
+                                ?connection_id,
+                                frame_len,
+                                buffer_len = buffer.len(),
+                                "Frame detected"
+                            );
 
                             if frame_len > max_frame_size {
                                 // Frame too large, close connection
-                                tracing::error!(?connection_id, frame_len, max_frame_size, "Frame too large");
+                                tracing::error!(
+                                    ?connection_id,
+                                    frame_len,
+                                    max_frame_size,
+                                    "Frame too large"
+                                );
                                 break;
                             }
 
                             if buffer.len() < frame_len {
                                 // Need more data
-                                tracing::trace!(?connection_id, frame_len, buffer_len = buffer.len(), "Need more data for complete frame");
+                                tracing::trace!(
+                                    ?connection_id,
+                                    frame_len,
+                                    buffer_len = buffer.len(),
+                                    "Need more data for complete frame"
+                                );
                                 break;
                             }
 
@@ -419,7 +443,11 @@ impl ConnectionMultiplexer {
                             tracing::error!(?connection_id, error = %e, "Flush error");
                             break;
                         }
-                        tracing::trace!(?connection_id, bytes_written = data.len(), "Frame sent and flushed");
+                        tracing::trace!(
+                            ?connection_id,
+                            bytes_written = data.len(),
+                            "Frame sent and flushed"
+                        );
                     }
                     Err(e) => {
                         tracing::error!(?connection_id, error = %e, "Frame encode error");

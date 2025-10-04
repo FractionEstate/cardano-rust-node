@@ -1,6 +1,6 @@
+use crate::cli::commands::*;
 /// Command handlers for extended CLI functionality
 use anyhow::Result;
-use crate::cli::commands::*;
 use tracing::info;
 
 /// Run the interactive dashboard
@@ -84,7 +84,10 @@ pub async fn handle_query_command(args: QueryArgs) -> Result<()> {
             println!("  Pool2: 12.3%");
             println!("  Pool3: 8.9%");
         }
-        QueryCommands::LeadershipSchedule { pool_id, vrf_signing_key_file } => {
+        QueryCommands::LeadershipSchedule {
+            pool_id,
+            vrf_signing_key_file,
+        } => {
             info!("Querying leadership schedule for pool: {}", pool_id);
             println!("VRF key file: {:?}", vrf_signing_key_file);
             println!("Leadership slots in next epoch:");
@@ -99,7 +102,13 @@ pub async fn handle_query_command(args: QueryArgs) -> Result<()> {
 /// Handle transaction commands
 pub async fn handle_transaction_command(args: TransactionArgs) -> Result<()> {
     match args.command {
-        TransactionCommands::Build { tx_in, tx_out, change_address, out_file, protocol_params_file } => {
+        TransactionCommands::Build {
+            tx_in,
+            tx_out,
+            change_address,
+            out_file,
+            protocol_params_file,
+        } => {
             info!("Building transaction");
             println!("Transaction inputs: {:?}", tx_in);
             println!("Transaction outputs: {:?}", tx_out);
@@ -108,13 +117,20 @@ pub async fn handle_transaction_command(args: TransactionArgs) -> Result<()> {
             }
             println!("Transaction body written to: {:?}", out_file);
         }
-        TransactionCommands::Sign { tx_body_file, signing_key_file, out_file } => {
+        TransactionCommands::Sign {
+            tx_body_file,
+            signing_key_file,
+            out_file,
+        } => {
             info!("Signing transaction");
             println!("Transaction body: {:?}", tx_body_file);
             println!("Signing keys: {:?}", signing_key_file);
             println!("Signed transaction written to: {:?}", out_file);
         }
-        TransactionCommands::Submit { tx_file, socket_path } => {
+        TransactionCommands::Submit {
+            tx_file,
+            socket_path,
+        } => {
             info!("Submitting transaction");
             println!("Transaction file: {:?}", tx_file);
             println!("Socket: {:?}", socket_path.unwrap_or_default());
@@ -139,13 +155,21 @@ pub async fn handle_transaction_command(args: TransactionArgs) -> Result<()> {
 /// Handle stake pool commands
 pub async fn handle_stake_pool_command(args: StakePoolArgs) -> Result<()> {
     match args.command {
-        StakePoolCommands::Register { pool_registration_cert, signing_key_file, out_file } => {
+        StakePoolCommands::Register {
+            pool_registration_cert,
+            signing_key_file,
+            out_file,
+        } => {
             info!("Registering stake pool");
             println!("Pool certificate: {:?}", pool_registration_cert);
             println!("Signing keys: {:?}", signing_key_file);
             println!("Registration transaction written to: {:?}", out_file);
         }
-        StakePoolCommands::Deregister { pool_id, epoch, out_file } => {
+        StakePoolCommands::Deregister {
+            pool_id,
+            epoch,
+            out_file,
+        } => {
             info!("Deregistering stake pool: {}", pool_id);
             println!("Retirement epoch: {}", epoch);
             println!("Retirement certificate written to: {:?}", out_file);
@@ -155,7 +179,9 @@ pub async fn handle_stake_pool_command(args: StakePoolArgs) -> Result<()> {
             println!("Metadata file: {:?}", metadata_file);
             println!("Metadata hash: abc123...");
         }
-        StakePoolCommands::Id { cold_verification_key_file } => {
+        StakePoolCommands::Id {
+            cold_verification_key_file,
+        } => {
             info!("Generating pool ID");
             eprintln!("Error: Pool ID generation requires cryptographic key operations");
             eprintln!("Cold key file: {:?}", cold_verification_key_file);
@@ -169,7 +195,11 @@ pub async fn handle_stake_pool_command(args: StakePoolArgs) -> Result<()> {
 /// Handle stake address commands
 pub async fn handle_stake_address_command(args: StakeAddressArgs) -> Result<()> {
     match args.command {
-        StakeAddressCommands::Build { stake_verification_key_file, network_id, out_file } => {
+        StakeAddressCommands::Build {
+            stake_verification_key_file,
+            network_id,
+            out_file,
+        } => {
             info!("Building stake address");
             println!("Stake key: {:?}", stake_verification_key_file);
             let addr = format!("stake_test1{}", network_id);
@@ -180,16 +210,27 @@ pub async fn handle_stake_address_command(args: StakeAddressArgs) -> Result<()> 
                 println!("{}", addr);
             }
         }
-        StakeAddressCommands::Register { stake_address, key_deposit, out_file } => {
+        StakeAddressCommands::Register {
+            stake_address,
+            key_deposit,
+            out_file,
+        } => {
             info!("Registering stake address: {}", stake_address);
             println!("Key deposit: {} lovelace", key_deposit);
             println!("Registration certificate written to: {:?}", out_file);
         }
-        StakeAddressCommands::Deregister { stake_address, out_file } => {
+        StakeAddressCommands::Deregister {
+            stake_address,
+            out_file,
+        } => {
             info!("Deregistering stake address: {}", stake_address);
             println!("Deregistration certificate written to: {:?}", out_file);
         }
-        StakeAddressCommands::Delegate { stake_address, stake_pool_id, out_file } => {
+        StakeAddressCommands::Delegate {
+            stake_address,
+            stake_pool_id,
+            out_file,
+        } => {
             info!("Delegating stake address: {}", stake_address);
             println!("Delegating to pool: {}", stake_pool_id);
             println!("Delegation certificate written to: {:?}", out_file);
@@ -201,7 +242,12 @@ pub async fn handle_stake_address_command(args: StakeAddressArgs) -> Result<()> 
 /// Handle address commands
 pub async fn handle_address_command(args: AddressArgs) -> Result<()> {
     match args.command {
-        AddressCommands::Build { payment_verification_key_file, stake_verification_key_file, network_id, out_file } => {
+        AddressCommands::Build {
+            payment_verification_key_file,
+            stake_verification_key_file,
+            network_id,
+            out_file,
+        } => {
             info!("Building payment address");
             let addr = format!("addr_test1{}", network_id);
             if let Some(file) = out_file {
@@ -225,11 +271,21 @@ pub async fn handle_address_command(args: AddressArgs) -> Result<()> {
 /// Handle governance commands
 pub async fn handle_governance_command(args: GovernanceArgs) -> Result<()> {
     match args.command {
-        GovernanceCommands::CreateAction { action_type, anchor_url, anchor_hash, out_file } => {
+        GovernanceCommands::CreateAction {
+            action_type,
+            anchor_url,
+            anchor_hash,
+            out_file,
+        } => {
             info!("Creating governance action: {}", action_type);
             println!("Governance action created: {:?}", out_file);
         }
-        GovernanceCommands::Vote { action_id, vote, signing_key_file, out_file } => {
+        GovernanceCommands::Vote {
+            action_id,
+            vote,
+            signing_key_file,
+            out_file,
+        } => {
             info!("Voting on action: {}", action_id);
             println!("Vote: {}", vote);
             println!("Vote certificate written to: {:?}", out_file);
@@ -294,7 +350,10 @@ async fn handle_db_command(command: DbCommands) -> Result<()> {
             println!("Exporting from: {:?}", db_path);
             println!("Snapshot written to: {:?}", out_file);
         }
-        DbCommands::Import { snapshot_file, db_path } => {
+        DbCommands::Import {
+            snapshot_file,
+            db_path,
+        } => {
             info!("Importing database snapshot");
             println!("Importing from: {:?}", snapshot_file);
             println!("Database restored to: {:?}", db_path);

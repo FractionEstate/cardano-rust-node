@@ -32,7 +32,7 @@ pub struct ForgingConfig {
 impl Default for ForgingConfig {
     fn default() -> Self {
         Self {
-            max_block_size: 90112,  // ~88KB
+            max_block_size: 90112, // ~88KB
             max_transactions: 1000,
             protocol_magic: 764824073, // Mainnet
             kes_period_length: 129600, // ~36 hours
@@ -90,10 +90,7 @@ impl BlockForger {
     /// Returns `Ok(Some(block))` if elected leader and block forged successfully
     /// Returns `Ok(None)` if not elected leader for this slot
     /// Returns `Err` if an error occurs during block production
-    pub fn try_forge_block(
-        &mut self,
-        context: &ForgingContext,
-    ) -> Result<Option<ForgedBlock>> {
+    pub fn try_forge_block(&mut self, context: &ForgingContext) -> Result<Option<ForgedBlock>> {
         // Check if we're elected leader for this slot
         let leadership_check = self.leadership_calculator.check_slot_leadership(
             &self.pool_id,
@@ -129,11 +126,7 @@ impl BlockForger {
         let body = self.construct_block_body(&context.mempool)?;
 
         // Build block header
-        let header = self.construct_block_header(
-            context,
-            &leadership_proof,
-            &body,
-        )?;
+        let header = self.construct_block_header(context, &leadership_proof, &body)?;
 
         // Sign block header with KES
         let header_bytes = header.to_bytes_for_signing();
@@ -165,7 +158,9 @@ impl BlockForger {
         sorted_txs.sort_by(|a, b| {
             let density_a = a.fee as f64 / a.size.max(1) as f64;
             let density_b = b.fee as f64 / b.size.max(1) as f64;
-            density_b.partial_cmp(&density_a).unwrap_or(std::cmp::Ordering::Equal)
+            density_b
+                .partial_cmp(&density_a)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         // Greedily select transactions
@@ -346,12 +341,8 @@ mod tests {
         let epoch_nonce = Blake2b256Hash::hash(b"epoch_nonce");
         let current_epoch = EpochNo(100);
 
-        let leadership_calc = LeadershipCalculator::new(
-            stake_dist,
-            protocol_params,
-            epoch_nonce,
-            current_epoch,
-        );
+        let leadership_calc =
+            LeadershipCalculator::new(stake_dist, protocol_params, epoch_nonce, current_epoch);
 
         let forger = BlockForger::new(
             pool_id,
@@ -394,12 +385,8 @@ mod tests {
         let epoch_nonce = Blake2b256Hash::hash(b"epoch_nonce");
         let current_epoch = EpochNo(100);
 
-        let leadership_calc = LeadershipCalculator::new(
-            stake_dist,
-            protocol_params,
-            epoch_nonce,
-            current_epoch,
-        );
+        let leadership_calc =
+            LeadershipCalculator::new(stake_dist, protocol_params, epoch_nonce, current_epoch);
 
         let forger = BlockForger::new(
             pool_id,

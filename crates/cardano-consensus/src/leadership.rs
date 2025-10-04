@@ -432,12 +432,8 @@ mod tests {
         };
 
         let epoch_nonce = Blake2b256Hash::hash(b"test_epoch_nonce");
-        let calculator = LeadershipCalculator::new(
-            stake_dist,
-            params,
-            epoch_nonce.clone(),
-            EpochNo(42),
-        );
+        let calculator =
+            LeadershipCalculator::new(stake_dist, params, epoch_nonce.clone(), EpochNo(42));
 
         let slot = SlotNo(1000);
         let vrf_input = calculator.construct_vrf_input(slot);
@@ -449,10 +445,7 @@ mod tests {
         assert_eq!(&vrf_input[..32], epoch_nonce.as_bytes());
 
         // Next 8 bytes should be slot number
-        assert_eq!(
-            &vrf_input[32..40],
-            &slot.0.to_le_bytes()
-        );
+        assert_eq!(&vrf_input[32..40], &slot.0.to_le_bytes());
 
         // Last bytes should be tag
         assert_eq!(&vrf_input[40..], VRF_TAG_TEST);

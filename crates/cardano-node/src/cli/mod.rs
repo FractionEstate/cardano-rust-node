@@ -256,7 +256,7 @@ impl CardanoNodeCli {
             Commands::Validate(args) => self.validate_validate_args(args)?,
             Commands::Info(args) => self.validate_info_args(args)?,
             // Other commands have their own validation logic
-            _ => {},
+            _ => {}
         }
 
         Ok(())

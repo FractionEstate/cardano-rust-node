@@ -15,7 +15,7 @@ resolver = "2"
 [workspace.package]
 version = "10.5.1"
 edition = "2021"
-rust-version = "1.75"
+rust-version = "1.80"
 authors = ["Cardano Rust Team"]
 license = "Apache-2.0"
 repository = "https://github.com/cardano-rust/cardano-node-rust"

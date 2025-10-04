@@ -4,9 +4,9 @@
 //! with comprehensive metrics collection and monitoring.
 
 use cardano_consensus::{
-    BlockBroadcaster, BlockBroadcasterConfig, BlockProductionConfig,
-    ForgingConfig, LedgerState, LedgerProtocolParameters,
-    MetricsAggregator, PoolId, PrometheusExporter, SlotNotifier, SlotNotifierConfig,
+    BlockBroadcaster, BlockBroadcasterConfig, BlockProductionConfig, ForgingConfig,
+    LedgerProtocolParameters, LedgerState, MetricsAggregator, PoolId, PrometheusExporter,
+    SlotNotifier, SlotNotifierConfig,
 };
 use cardano_crypto::hash::Blake2b256Hash;
 use std::sync::Arc;
@@ -57,9 +57,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 5. Create block production service
     let _production_config = BlockProductionConfig {
         pool_id: pool_id.clone(),
-        pool_stake: 5_000_000_000_000,    // 5M ADA
+        pool_stake: 5_000_000_000_000,       // 5M ADA
         total_stake: 35_000_000_000_000_000, // 35B ADA (mainnet total)
-        active_slot_coeff: 0.05,           // 5% active slot coefficient
+        active_slot_coeff: 0.05,             // 5% active slot coefficient
         epoch: cardano_consensus::EpochNo(500),
         epoch_nonce: Blake2b256Hash::from_bytes(&[2u8; 32]).unwrap(),
         forging_config,
@@ -111,10 +111,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         slot_stats,
                         production_stats,
                         broadcast_stats,
-                        50000,              // utxo_count
-                        1_000_000_000_000,  // total_value (1M ADA)
-                        200,                // transactions_processed
-                        12.5,               // avg_validation_time_ms
+                        50000,             // utxo_count
+                        1_000_000_000_000, // total_value (1M ADA)
+                        200,               // transactions_processed
+                        12.5,              // avg_validation_time_ms
                         ledger_epoch,
                         ledger_slot,
                     )
@@ -178,9 +178,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tokio::spawn(async move {
             use axum::{extract::State, routing::get, Router};
 
-            async fn metrics_handler(
-                State(aggregator): State<Arc<MetricsAggregator>>,
-            ) -> String {
+            async fn metrics_handler(State(aggregator): State<Arc<MetricsAggregator>>) -> String {
                 let history = aggregator.get_history().await;
                 if let Some(latest) = history.last() {
                     PrometheusExporter::export(latest)
@@ -189,9 +187,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
 
-            async fn health_handler(
-                State(aggregator): State<Arc<MetricsAggregator>>,
-            ) -> String {
+            async fn health_handler(State(aggregator): State<Arc<MetricsAggregator>>) -> String {
                 let history = aggregator.get_history().await;
                 if let Some(latest) = history.last() {
                     format!(

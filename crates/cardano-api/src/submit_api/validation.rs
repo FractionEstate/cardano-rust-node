@@ -3,10 +3,10 @@
 //! Comprehensive transaction validation including syntax, semantics,
 //! and script execution validation.
 
-use crate::{ApiError, Result};
 use super::{ParsedTransaction, SubmitApiConfig};
+use crate::{ApiError, Result};
 use serde_json::Value;
-use tracing::{debug, warn};
+use tracing::debug;
 
 /// Transaction validation error types
 #[derive(Debug, Clone)]
@@ -39,7 +39,9 @@ impl std::fmt::Display for ValidationError {
             ValidationError::InvalidSignature(msg) => write!(f, "Invalid signature: {}", msg),
             ValidationError::UtxoNotFound(msg) => write!(f, "UTxO not found: {}", msg),
             ValidationError::TransactionExpired(msg) => write!(f, "Transaction expired: {}", msg),
-            ValidationError::FeeCalculationError(msg) => write!(f, "Fee calculation error: {}", msg),
+            ValidationError::FeeCalculationError(msg) => {
+                write!(f, "Fee calculation error: {}", msg)
+            }
         }
     }
 }
@@ -87,23 +89,24 @@ impl CardanoTransactionValidator {
         }
 
         // Check minimum fee
-        if tx.fee < 155381 { // Minimum fee constant
+        if tx.fee < 155381 {
+            // Minimum fee constant
             return Err(ApiError::RequestError(
-                "Transaction fee below minimum".to_string()
+                "Transaction fee below minimum".to_string(),
             ));
         }
 
         // Validate inputs are not empty
         if tx.inputs.is_empty() {
             return Err(ApiError::RequestError(
-                "Transaction must have at least one input".to_string()
+                "Transaction must have at least one input".to_string(),
             ));
         }
 
         // Validate outputs are not empty
         if tx.outputs.is_empty() {
             return Err(ApiError::RequestError(
-                "Transaction must have at least one output".to_string()
+                "Transaction must have at least one output".to_string(),
             ));
         }
 
@@ -119,19 +122,27 @@ impl CardanoTransactionValidator {
 
         // Validate inputs and calculate total input value
         for input in &tx.inputs {
-            match self.utxo_provider.get_utxo(&input.tx_id, input.output_index).await {
+            match self
+                .utxo_provider
+                .get_utxo(&input.tx_id, input.output_index)
+                .await
+            {
                 Ok(Some(utxo)) => {
-                    total_input_value = total_input_value.checked_add(utxo.value)
-                        .ok_or_else(|| ApiError::RequestError("Input value overflow".to_string()))?;
+                    total_input_value =
+                        total_input_value.checked_add(utxo.value).ok_or_else(|| {
+                            ApiError::RequestError("Input value overflow".to_string())
+                        })?;
                 }
                 Ok(None) => {
                     return Err(ApiError::RequestError(format!(
-                        "UTxO not found: {}#{}", input.tx_id, input.output_index
+                        "UTxO not found: {}#{}",
+                        input.tx_id, input.output_index
                     )));
                 }
                 Err(e) => {
                     return Err(ApiError::RequestError(format!(
-                        "Failed to fetch UTxO: {}", e
+                        "Failed to fetch UTxO: {}",
+                        e
                     )));
                 }
             }
@@ -139,12 +150,14 @@ impl CardanoTransactionValidator {
 
         // Calculate total output value
         for output in &tx.outputs {
-            total_output_value = total_output_value.checked_add(output.value)
+            total_output_value = total_output_value
+                .checked_add(output.value)
                 .ok_or_else(|| ApiError::RequestError("Output value overflow".to_string()))?;
         }
 
         // Validate balance equation: inputs = outputs + fee
-        let expected_input = total_output_value.checked_add(tx.fee)
+        let expected_input = total_output_value
+            .checked_add(tx.fee)
             .ok_or_else(|| ApiError::RequestError("Fee calculation overflow".to_string()))?;
 
         if total_input_value != expected_input {
@@ -165,12 +178,9 @@ impl CardanoTransactionValidator {
         for input in &tx.inputs {
             if let Some(witness) = &input.witness {
                 // Validate script witness
-                self.script_validator.validate_script_witness(
-                    &input.tx_id,
-                    input.output_index,
-                    witness,
-                    tx,
-                ).await?;
+                self.script_validator
+                    .validate_script_witness(&input.tx_id, input.output_index, witness, tx)
+                    .await?;
             }
         }
 

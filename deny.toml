@@ -2,7 +2,15 @@
 # https://github.com/EmbarkStudios/cargo-deny
 
 [advisories]
-ignore = []
+# TODO: Replace these unmaintained dependencies
+# - lmdb -> lmdb-rkv (https://github.com/mozilla/lmdb-rs)
+# - paste -> pastey (https://crates.io/crates/pastey)
+# - serde_cbor -> ciborium or minicbor
+ignore = [
+    "RUSTSEC-2022-0001", # lmdb unmaintained
+    "RUSTSEC-2024-0436", # paste unmaintained
+    "RUSTSEC-2021-0127", # serde_cbor unmaintained
+]
 
 [licenses]
 # Allow OSI/FSF free software licenses
@@ -34,6 +42,4 @@ highlight = "all"
 unknown-registry = "deny"
 unknown-git = "warn"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-allow-git = [
-    "https://github.com/FractionEstate/cardano-base-rust",
-]
+allow-git = ["https://github.com/FractionEstate/cardano-base-rust"]

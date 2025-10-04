@@ -39,9 +39,9 @@ pub struct SlotNotifierConfig {
 impl Default for SlotNotifierConfig {
     fn default() -> Self {
         Self {
-            slot_length_secs: 1, // 1 second slots for Cardano
+            slot_length_secs: 1,      // 1 second slots for Cardano
             genesis_time: UNIX_EPOCH, // Will be overridden with actual genesis
-            max_drift_ms: 100,         // Warn if drift exceeds 100ms
+            max_drift_ms: 100,        // Warn if drift exceeds 100ms
             channel_size: 100,
         }
     }
@@ -84,8 +84,7 @@ impl SlotNotifier {
 
     /// Get the expected start time for a slot
     pub fn slot_start_time(&self, slot: SlotNo) -> SystemTime {
-        self.config.genesis_time
-            + Duration::from_secs(slot.0 * self.config.slot_length_secs)
+        self.config.genesis_time + Duration::from_secs(slot.0 * self.config.slot_length_secs)
     }
 
     /// Get the expected end time for a slot
@@ -147,10 +146,7 @@ impl SlotNotifier {
                 drift_ms,
             };
 
-            debug!(
-                "Slot {} start (drift: {}ms)",
-                current_slot.0, drift_ms
-            );
+            debug!("Slot {} start (drift: {}ms)", current_slot.0, drift_ms);
 
             // Send to all subscribers
             match self.sender.send(event) {
@@ -172,7 +168,8 @@ impl SlotNotifier {
             match next_slot_time.duration_since(now) {
                 Ok(sleep_duration) => {
                     // Add a small buffer to ensure we don't wake up too early
-                    let buffered_duration = sleep_duration.saturating_sub(Duration::from_millis(10));
+                    let buffered_duration =
+                        sleep_duration.saturating_sub(Duration::from_millis(10));
                     sleep(buffered_duration).await;
 
                     // Busy wait for the precise moment
@@ -182,10 +179,7 @@ impl SlotNotifier {
                 }
                 Err(_) => {
                     // We're already past the next slot time
-                    error!(
-                        "Slot notifier is lagging! Missed slot {}",
-                        current_slot.0
-                    );
+                    error!("Slot notifier is lagging! Missed slot {}", current_slot.0);
                     // Catch up to current time
                     current_slot = self.current_slot()?;
                 }

@@ -109,12 +109,12 @@ impl MempoolBridge {
         // Convert outputs
         let mut outputs = Vec::with_capacity(tx.outputs.len());
         for output in &tx.outputs {
-            let address_hex = if output.address.starts_with("0x") || output.address.starts_with("0X")
-            {
-                &output.address[2..]
-            } else {
-                &output.address
-            };
+            let address_hex =
+                if output.address.starts_with("0x") || output.address.starts_with("0X") {
+                    &output.address[2..]
+                } else {
+                    &output.address
+                };
 
             let address_bytes = hex::decode(address_hex)
                 .map_err(|e| format!("Invalid output address hex '{}': {}", output.address, e))?;

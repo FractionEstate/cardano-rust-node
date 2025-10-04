@@ -5,8 +5,8 @@
 
 #[cfg_attr(not(test), allow(unused_imports))]
 use crate::{
-    BlockForger, EpochNo, ForgingConfig, ForgingContext, ForgedBlock, PoolId,
-    Result, SimplifiedLedgerState, SlotEvent, SlotNotifier, StakeDistribution, Transaction,
+    BlockForger, EpochNo, ForgedBlock, ForgingConfig, ForgingContext, PoolId, Result,
+    SimplifiedLedgerState, SlotEvent, SlotNotifier, StakeDistribution, Transaction,
 };
 use cardano_crypto::Blake2b256Hash;
 use std::sync::Arc;
@@ -22,15 +22,9 @@ pub enum BlockProductionEvent {
         timestamp: std::time::SystemTime,
     },
     /// Leadership check performed
-    LeadershipChecked {
-        slot: u64,
-        is_leader: bool,
-    },
+    LeadershipChecked { slot: u64, is_leader: bool },
     /// Block forging started
-    ForgingStarted {
-        slot: u64,
-        tx_count: usize,
-    },
+    ForgingStarted { slot: u64, tx_count: usize },
     /// Block successfully forged
     BlockForged {
         slot: u64,
@@ -39,15 +33,9 @@ pub enum BlockProductionEvent {
         block_size: usize,
     },
     /// Block forging failed
-    ForgingFailed {
-        slot: u64,
-        error: String,
-    },
+    ForgingFailed { slot: u64, error: String },
     /// KES key evolved
-    KesEvolved {
-        from_period: u64,
-        to_period: u64,
-    },
+    KesEvolved { from_period: u64, to_period: u64 },
 }
 
 /// Configuration for block production service
@@ -90,10 +78,7 @@ pub struct BlockProductionStats {
 
 impl BlockProductionService {
     /// Create a new block production service
-    pub fn new(
-        config: BlockProductionConfig,
-        forger: BlockForger,
-    ) -> Self {
+    pub fn new(config: BlockProductionConfig, forger: BlockForger) -> Self {
         let (event_tx, _) = broadcast::channel(100);
 
         Self {
@@ -303,7 +288,7 @@ impl BlockProductionService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{KesKey, LeadershipCalculator, VrfKey, BlockProductionOperationalCertificate};
+    use crate::{BlockProductionOperationalCertificate, KesKey, LeadershipCalculator, VrfKey};
     use cardano_crypto::Ed25519KeyHash;
 
     fn create_test_config() -> BlockProductionConfig {
@@ -332,7 +317,9 @@ mod tests {
 
         let stake_dist = StakeDistribution {
             total_stake: 10_000_000_000_000,
-            pools: vec![(pool_id.clone(), 1_000_000_000_000)].into_iter().collect(),
+            pools: vec![(pool_id.clone(), 1_000_000_000_000)]
+                .into_iter()
+                .collect(),
         };
 
         let leadership_calc = LeadershipCalculator::new(

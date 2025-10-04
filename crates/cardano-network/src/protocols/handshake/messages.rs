@@ -155,10 +155,7 @@ pub enum RefuseReason {
 
 impl RefuseReason {
     /// Create a version mismatch reason
-    pub fn version_mismatch(
-        proposed: Vec<NodeToNodeVersion>,
-        unknown_tags: Vec<i64>,
-    ) -> Self {
+    pub fn version_mismatch(proposed: Vec<NodeToNodeVersion>, unknown_tags: Vec<i64>) -> Self {
         Self::VersionMismatch {
             proposed,
             unknown_tags,
@@ -232,10 +229,7 @@ mod tests {
 
     #[test]
     fn test_refuse_reason_creation() {
-        let reason = RefuseReason::version_mismatch(
-            vec![NodeToNodeVersion::V14],
-            vec![1, 2, 3],
-        );
+        let reason = RefuseReason::version_mismatch(vec![NodeToNodeVersion::V14], vec![1, 2, 3]);
         match reason {
             RefuseReason::VersionMismatch {
                 proposed,

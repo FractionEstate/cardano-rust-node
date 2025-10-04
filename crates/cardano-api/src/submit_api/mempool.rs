@@ -8,8 +8,8 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
-use crate::{ApiError, Result};
 use super::{ParsedTransaction, SubmissionStatus, SubmitApiConfig};
+use crate::{ApiError, Result};
 
 /// Transaction information in mempool
 #[derive(Debug, Clone)]
@@ -41,6 +41,7 @@ struct MempoolEntry {
     /// Priority score for ordering
     priority: f64,
     /// Number of validation attempts
+    #[allow(dead_code)]
     validation_attempts: u32,
 }
 
@@ -151,7 +152,10 @@ impl InMemoryMempool {
 
         if queue_len > self.config.max_mempool_size {
             let excess = queue_len - self.config.max_mempool_size;
-            info!("Mempool over limit, removing {} lowest priority transactions", excess);
+            info!(
+                "Mempool over limit, removing {} lowest priority transactions",
+                excess
+            );
 
             // Remove lowest priority transactions
             let to_remove = {
@@ -178,7 +182,10 @@ impl MempoolManager for InMemoryMempool {
             .unwrap_or_default()
             .as_secs();
 
-        debug!("Adding transaction {} to mempool with priority {}", tx_id, priority);
+        debug!(
+            "Adding transaction {} to mempool with priority {}",
+            tx_id, priority
+        );
 
         let entry = MempoolEntry {
             transaction: tx,
@@ -191,13 +198,16 @@ impl MempoolManager for InMemoryMempool {
         {
             let mut transactions = self.transactions.write().await;
             if transactions.contains_key(&tx_id) {
-                return Err(ApiError::RequestError("Transaction already in mempool".to_string()));
+                return Err(ApiError::RequestError(
+                    "Transaction already in mempool".to_string(),
+                ));
             }
             transactions.insert(tx_id.clone(), entry);
         }
 
         // Add to priority queue
-        self.insert_into_priority_queue(tx_id.clone(), priority).await;
+        self.insert_into_priority_queue(tx_id.clone(), priority)
+            .await;
 
         // Cleanup and enforce limits
         self.cleanup_expired_transactions().await?;
@@ -244,8 +254,12 @@ impl MempoolManager for InMemoryMempool {
         let transactions = self.transactions.read().await;
 
         let size = transactions.len();
-        let bytes = transactions.values().map(|entry| entry.transaction.size).sum();
-        let oldest_timestamp = transactions.values()
+        let bytes = transactions
+            .values()
+            .map(|entry| entry.transaction.size)
+            .sum();
+        let oldest_timestamp = transactions
+            .values()
             .map(|entry| entry.timestamp)
             .min()
             .unwrap_or(0);

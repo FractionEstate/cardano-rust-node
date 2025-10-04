@@ -3,20 +3,20 @@
 //! Provides transaction validation pipeline, mempool integration, and
 //! comprehensive error handling for transaction submission.
 
-use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 
 use crate::{ApiError, Result};
 
-pub mod validation;
-pub mod mempool;
 pub mod handlers;
+pub mod mempool;
+pub mod validation;
 
-pub use validation::*;
-pub use mempool::*;
 pub use handlers::SubmitApiHandlers;
+pub use mempool::*;
+pub use validation::*;
 
 /// Transaction submission configuration
 #[derive(Debug, Clone)]
@@ -34,9 +34,9 @@ pub struct SubmitApiConfig {
 impl Default for SubmitApiConfig {
     fn default() -> Self {
         Self {
-            max_tx_size: 16384,      // 16KB max transaction size
-            max_mempool_size: 1000,  // Max 1000 transactions in mempool
-            tx_timeout: 300,         // 5 minute timeout
+            max_tx_size: 16384,     // 16KB max transaction size
+            max_mempool_size: 1000, // Max 1000 transactions in mempool
+            tx_timeout: 300,        // 5 minute timeout
             strict_validation: true,
         }
     }
@@ -199,7 +199,9 @@ impl SubmitApiService {
             return self.parse_cbor_transaction(hex_str);
         }
 
-        Err(ApiError::RequestError("Invalid transaction data format".to_string()))
+        Err(ApiError::RequestError(
+            "Invalid transaction data format".to_string(),
+        ))
     }
 
     /// Parse CBOR transaction from hex string
@@ -217,7 +219,10 @@ impl SubmitApiService {
 
         // For now, create a mock transaction from CBOR data
         // In a real implementation, this would use minicbor to decode the transaction
-        let tx_id = format!("cbor_tx_{}", hex::encode(&cbor_bytes[..std::cmp::min(32, cbor_bytes.len())]));
+        let tx_id = format!(
+            "cbor_tx_{}",
+            hex::encode(&cbor_bytes[..std::cmp::min(32, cbor_bytes.len())])
+        );
         let size = cbor_bytes.len();
 
         Ok(ParsedTransaction {
@@ -315,7 +320,8 @@ mod tests {
 
         let service = SubmitApiService::new(config, validator, mempool);
 
-        let hex_data = "84a400818258203b40265111d8bb3c3c608d95b3a0bf83461ace32d79336579a1939b3aad1c0b70001";
+        let hex_data =
+            "84a400818258203b40265111d8bb3c3c608d95b3a0bf83461ace32d79336579a1939b3aad1c0b70001";
         let tx_data = serde_json::json!({
             "cborData": hex_data
         });

@@ -23,14 +23,13 @@
 //! ```
 
 use crate::{
-    block_broadcaster::BroadcastStats,
-    block_production_service::BlockProductionStats,
+    block_broadcaster::BroadcastStats, block_production_service::BlockProductionStats,
     slot_notifier::SlotNotifierStats,
 };
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::SystemTime;
 use tokio::sync::RwLock;
-use serde::{Deserialize, Serialize};
 
 /// Comprehensive metrics for the entire block production pipeline
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -178,7 +177,10 @@ impl MetricsAggregator {
             .as_secs();
 
         // Calculate time since last block
-        let time_since_last_block_secs = self.last_block_time.read().await
+        let time_since_last_block_secs = self
+            .last_block_time
+            .read()
+            .await
             .and_then(|last_time| SystemTime::now().duration_since(last_time).ok())
             .map(|d| d.as_secs())
             .unwrap_or(0);
@@ -194,7 +196,8 @@ impl MetricsAggregator {
 
         // Production metrics with success rate
         let success_rate = if production_stats.leadership_won > 0 {
-            (production_stats.blocks_forged as f64) / (production_stats.leadership_won as f64) * 100.0
+            (production_stats.blocks_forged as f64) / (production_stats.leadership_won as f64)
+                * 100.0
         } else {
             100.0
         };
@@ -341,9 +344,11 @@ impl MetricsAggregator {
         let cutoff_time = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
-            .as_secs() - (minutes * 60);
+            .as_secs()
+            - (minutes * 60);
 
-        let recent: Vec<_> = history.iter()
+        let recent: Vec<_> = history
+            .iter()
             .filter(|m| m.timestamp >= cutoff_time)
             .collect();
 
@@ -354,16 +359,22 @@ impl MetricsAggregator {
         let total_blocks = recent.last().unwrap().production_metrics.blocks_forged
             - recent.first().unwrap().production_metrics.blocks_forged;
 
-        let avg_health = recent.iter()
+        let avg_health = recent
+            .iter()
             .map(|m| m.performance_metrics.health_score)
-            .sum::<f64>() / recent.len() as f64;
+            .sum::<f64>()
+            / recent.len() as f64;
 
         Some(MetricsSummary {
             time_window_minutes: minutes,
             blocks_produced: total_blocks,
             avg_health_score: avg_health,
             total_transactions: recent.last().unwrap().production_metrics.total_transactions
-                - recent.first().unwrap().production_metrics.total_transactions,
+                - recent
+                    .first()
+                    .unwrap()
+                    .production_metrics
+                    .total_transactions,
         })
     }
 }
@@ -390,65 +401,139 @@ impl PrometheusExporter {
         let mut output = String::new();
 
         // Slot metrics
-        output.push_str(&format!("# HELP cardano_slot_current Current slot number\n"));
+        output.push_str(&format!(
+            "# HELP cardano_slot_current Current slot number\n"
+        ));
         output.push_str(&format!("# TYPE cardano_slot_current gauge\n"));
-        output.push_str(&format!("cardano_slot_current {}\n", metrics.slot_metrics.current_slot));
+        output.push_str(&format!(
+            "cardano_slot_current {}\n",
+            metrics.slot_metrics.current_slot
+        ));
 
-        output.push_str(&format!("# HELP cardano_slot_subscribers Number of active slot event subscribers\n"));
+        output.push_str(&format!(
+            "# HELP cardano_slot_subscribers Number of active slot event subscribers\n"
+        ));
         output.push_str(&format!("# TYPE cardano_slot_subscribers gauge\n"));
-        output.push_str(&format!("cardano_slot_subscribers {}\n", metrics.slot_metrics.active_subscribers));
+        output.push_str(&format!(
+            "cardano_slot_subscribers {}\n",
+            metrics.slot_metrics.active_subscribers
+        ));
 
         // Production metrics
-        output.push_str(&format!("# HELP cardano_blocks_forged_total Total blocks successfully forged\n"));
+        output.push_str(&format!(
+            "# HELP cardano_blocks_forged_total Total blocks successfully forged\n"
+        ));
         output.push_str(&format!("# TYPE cardano_blocks_forged_total counter\n"));
-        output.push_str(&format!("cardano_blocks_forged_total {}\n", metrics.production_metrics.blocks_forged));
+        output.push_str(&format!(
+            "cardano_blocks_forged_total {}\n",
+            metrics.production_metrics.blocks_forged
+        ));
 
-        output.push_str(&format!("# HELP cardano_leadership_won_total Total times leadership was won\n"));
+        output.push_str(&format!(
+            "# HELP cardano_leadership_won_total Total times leadership was won\n"
+        ));
         output.push_str(&format!("# TYPE cardano_leadership_won_total counter\n"));
-        output.push_str(&format!("cardano_leadership_won_total {}\n", metrics.production_metrics.leadership_won));
+        output.push_str(&format!(
+            "cardano_leadership_won_total {}\n",
+            metrics.production_metrics.leadership_won
+        ));
 
-        output.push_str(&format!("# HELP cardano_production_success_rate Block production success rate percentage\n"));
+        output.push_str(&format!(
+            "# HELP cardano_production_success_rate Block production success rate percentage\n"
+        ));
         output.push_str(&format!("# TYPE cardano_production_success_rate gauge\n"));
-        output.push_str(&format!("cardano_production_success_rate {}\n", metrics.production_metrics.success_rate));
+        output.push_str(&format!(
+            "cardano_production_success_rate {}\n",
+            metrics.production_metrics.success_rate
+        ));
 
         // Broadcast metrics
-        output.push_str(&format!("# HELP cardano_blocks_broadcast_total Total blocks broadcast to network\n"));
+        output.push_str(&format!(
+            "# HELP cardano_blocks_broadcast_total Total blocks broadcast to network\n"
+        ));
         output.push_str(&format!("# TYPE cardano_blocks_broadcast_total counter\n"));
-        output.push_str(&format!("cardano_blocks_broadcast_total {}\n", metrics.broadcast_metrics.blocks_broadcast));
+        output.push_str(&format!(
+            "cardano_blocks_broadcast_total {}\n",
+            metrics.broadcast_metrics.blocks_broadcast
+        ));
 
-        output.push_str(&format!("# HELP cardano_broadcast_latency_ms Average broadcast latency in milliseconds\n"));
+        output.push_str(&format!(
+            "# HELP cardano_broadcast_latency_ms Average broadcast latency in milliseconds\n"
+        ));
         output.push_str(&format!("# TYPE cardano_broadcast_latency_ms gauge\n"));
-        output.push_str(&format!("cardano_broadcast_latency_ms {}\n", metrics.broadcast_metrics.avg_broadcast_latency_ms));
+        output.push_str(&format!(
+            "cardano_broadcast_latency_ms {}\n",
+            metrics.broadcast_metrics.avg_broadcast_latency_ms
+        ));
 
-        output.push_str(&format!("# HELP cardano_broadcast_queue_size Current broadcast queue size\n"));
+        output.push_str(&format!(
+            "# HELP cardano_broadcast_queue_size Current broadcast queue size\n"
+        ));
         output.push_str(&format!("# TYPE cardano_broadcast_queue_size gauge\n"));
-        output.push_str(&format!("cardano_broadcast_queue_size {}\n", metrics.broadcast_metrics.current_queue_size));
+        output.push_str(&format!(
+            "cardano_broadcast_queue_size {}\n",
+            metrics.broadcast_metrics.current_queue_size
+        ));
 
         // Ledger metrics
-        output.push_str(&format!("# HELP cardano_utxo_count Current UTxO set size\n"));
+        output.push_str(&format!(
+            "# HELP cardano_utxo_count Current UTxO set size\n"
+        ));
         output.push_str(&format!("# TYPE cardano_utxo_count gauge\n"));
-        output.push_str(&format!("cardano_utxo_count {}\n", metrics.ledger_metrics.utxo_count));
+        output.push_str(&format!(
+            "cardano_utxo_count {}\n",
+            metrics.ledger_metrics.utxo_count
+        ));
 
-        output.push_str(&format!("# HELP cardano_total_value_lovelace Total value in UTxO set (lovelace)\n"));
+        output.push_str(&format!(
+            "# HELP cardano_total_value_lovelace Total value in UTxO set (lovelace)\n"
+        ));
         output.push_str(&format!("# TYPE cardano_total_value_lovelace gauge\n"));
-        output.push_str(&format!("cardano_total_value_lovelace {}\n", metrics.ledger_metrics.total_value));
+        output.push_str(&format!(
+            "cardano_total_value_lovelace {}\n",
+            metrics.ledger_metrics.total_value
+        ));
 
-        output.push_str(&format!("# HELP cardano_transactions_processed_total Total transactions processed\n"));
-        output.push_str(&format!("# TYPE cardano_transactions_processed_total counter\n"));
-        output.push_str(&format!("cardano_transactions_processed_total {}\n", metrics.ledger_metrics.transactions_processed));
+        output.push_str(&format!(
+            "# HELP cardano_transactions_processed_total Total transactions processed\n"
+        ));
+        output.push_str(&format!(
+            "# TYPE cardano_transactions_processed_total counter\n"
+        ));
+        output.push_str(&format!(
+            "cardano_transactions_processed_total {}\n",
+            metrics.ledger_metrics.transactions_processed
+        ));
 
         // Performance metrics
-        output.push_str(&format!("# HELP cardano_health_score Overall pipeline health score (0-100)\n"));
+        output.push_str(&format!(
+            "# HELP cardano_health_score Overall pipeline health score (0-100)\n"
+        ));
         output.push_str(&format!("# TYPE cardano_health_score gauge\n"));
-        output.push_str(&format!("cardano_health_score {}\n", metrics.performance_metrics.health_score));
+        output.push_str(&format!(
+            "cardano_health_score {}\n",
+            metrics.performance_metrics.health_score
+        ));
 
-        output.push_str(&format!("# HELP cardano_blocks_per_hour Block production rate per hour\n"));
+        output.push_str(&format!(
+            "# HELP cardano_blocks_per_hour Block production rate per hour\n"
+        ));
         output.push_str(&format!("# TYPE cardano_blocks_per_hour gauge\n"));
-        output.push_str(&format!("cardano_blocks_per_hour {}\n", metrics.performance_metrics.blocks_per_hour));
+        output.push_str(&format!(
+            "cardano_blocks_per_hour {}\n",
+            metrics.performance_metrics.blocks_per_hour
+        ));
 
-        output.push_str(&format!("# HELP cardano_time_since_last_block_seconds Time since last block was produced\n"));
-        output.push_str(&format!("# TYPE cardano_time_since_last_block_seconds gauge\n"));
-        output.push_str(&format!("cardano_time_since_last_block_seconds {}\n", metrics.performance_metrics.time_since_last_block_secs));
+        output.push_str(&format!(
+            "# HELP cardano_time_since_last_block_seconds Time since last block was produced\n"
+        ));
+        output.push_str(&format!(
+            "# TYPE cardano_time_since_last_block_seconds gauge\n"
+        ));
+        output.push_str(&format!(
+            "cardano_time_since_last_block_seconds {}\n",
+            metrics.performance_metrics.time_since_last_block_secs
+        ));
 
         output
     }
@@ -493,17 +578,19 @@ mod tests {
             avg_broadcast_latency_ms: 150,
         };
 
-        let metrics = aggregator.collect_metrics(
-            slot_stats,
-            production_stats,
-            broadcast_stats,
-            50000,
-            1_000_000_000_000,
-            450,
-            12.5,
-            100,
-            12345,
-        ).await;
+        let metrics = aggregator
+            .collect_metrics(
+                slot_stats,
+                production_stats,
+                broadcast_stats,
+                50000,
+                1_000_000_000_000,
+                450,
+                12.5,
+                100,
+                12345,
+            )
+            .await;
 
         assert_eq!(metrics.slot_metrics.current_slot, 12345);
         assert_eq!(metrics.production_metrics.blocks_forged, 9);

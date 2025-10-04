@@ -348,7 +348,9 @@ impl BlockProducerConfig {
 
     /// Get the current KES evolution number
     pub fn current_kes_evolution(&self) -> u64 {
-        self.kes_key.kes_period.saturating_sub(self.kes_key.start_kes_period)
+        self.kes_key
+            .kes_period
+            .saturating_sub(self.kes_key.start_kes_period)
     }
 
     /// Check if KES key needs rotation

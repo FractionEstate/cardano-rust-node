@@ -11,10 +11,10 @@
 //! The implementation must maintain complete compatibility with the Haskell
 //! consensus layer to ensure network consensus safety.
 
+pub mod block_broadcaster;
+pub mod block_forging;
 pub mod block_production;
 pub mod block_production_service;
-pub mod block_forging;
-pub mod block_broadcaster;
 pub mod chain_selection;
 pub mod leadership;
 pub mod ledger_state;
@@ -24,6 +24,10 @@ pub mod slot_notifier;
 pub mod slots;
 pub mod validation;
 
+pub use block_broadcaster::{
+    BlockBroadcaster, BlockBroadcasterConfig, BroadcastEvent, BroadcastStats, PeerConnection,
+};
+pub use block_forging::{BlockForger, ForgingConfig};
 pub use block_production::{
     BlockBody, BlockProducer, ForgedBlock, ForgingContext, KesKey,
     OperationalCertificate as BlockProductionOperationalCertificate, ProducedBlock,
@@ -32,17 +36,13 @@ pub use block_production::{
 pub use block_production_service::{
     BlockProductionConfig, BlockProductionEvent, BlockProductionService, BlockProductionStats,
 };
-pub use block_forging::{BlockForger, ForgingConfig};
-pub use block_broadcaster::{
-    BlockBroadcaster, BlockBroadcasterConfig, BroadcastEvent, BroadcastStats, PeerConnection,
-};
 pub use chain_selection::{
     BlockSummary, ChainCandidate, ChainOrdering, ChainSelectionConfig, ChainSelector, ChainTip,
     SelectionChainQuality, VrfTiebreakerFlavor,
 };
 pub use leadership::{
-    LeadershipCalculator, LeadershipCheck, LeadershipProof, min_stake_for_expected_blocks,
-    vrf_output_to_probability,
+    min_stake_for_expected_blocks, vrf_output_to_probability, LeadershipCalculator,
+    LeadershipCheck, LeadershipProof,
 };
 pub use ledger_state::{LedgerState, ProtocolParameters as LedgerProtocolParameters, UtxoEntry};
 pub use metrics::{

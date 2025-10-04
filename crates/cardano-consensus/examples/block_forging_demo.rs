@@ -4,11 +4,7 @@
 /// 1. KES (Key Evolving Signature) - Forward-secure block signing
 /// 2. VRF (Verifiable Random Function) - Slot leadership determination
 /// 3. Block structure and signing
-
-use cardano_consensus::{
-    KesKey, VrfKey, BlockProductionOperationalCertificate,
-    SlotNo, PoolId,
-};
+use cardano_consensus::{BlockProductionOperationalCertificate, KesKey, PoolId, SlotNo, VrfKey};
 use cardano_crypto::{Blake2b256Hash, Ed25519KeyHash};
 
 fn main() {
@@ -30,10 +26,15 @@ fn main() {
 
     println!("   Pool ID: {:?}", &pool_id.0.as_bytes()[..8]);
     println!("   VRF key: Initialized");
-    println!("   KES key: Initialized (period {}, max period {})",
-             kes_key.current_period(), kes_key.max_period);
-    println!("   Operational certificate: Created (sequence {})\n",
-             operational_cert.sequence_number);
+    println!(
+        "   KES key: Initialized (period {}, max period {})",
+        kes_key.current_period(),
+        kes_key.max_period
+    );
+    println!(
+        "   Operational certificate: Created (sequence {})\n",
+        operational_cert.sequence_number
+    );
 
     // Step 2: Demonstrate VRF evaluation for slot leadership
     println!("2. Demonstrating VRF-based slot leadership...");
@@ -45,7 +46,8 @@ fn main() {
     println!("   Epoch nonce: {:?}", &epoch_nonce.as_bytes()[..8]);
 
     // VRF evaluation determines leadership
-    let (vrf_output, vrf_proof) = vrf_key.evaluate_leadership(slot, &epoch_nonce)
+    let (vrf_output, vrf_proof) = vrf_key
+        .evaluate_leadership(slot, &epoch_nonce)
         .expect("Failed to evaluate VRF");
 
     println!("   VRF output: {:?}", &vrf_output.to_bytes()[..8]);
@@ -53,8 +55,13 @@ fn main() {
 
     // Verify the VRF proof
     let vrf_input = format!("slot_{}_nonce_{:?}", slot.0, epoch_nonce);
-    let verified = vrf_key.public_key.verify(vrf_input.as_bytes(), &vrf_output, &vrf_proof);
-    println!("   VRF verification: {}\n", if verified { "✓ Valid" } else { "✗ Invalid" });
+    let verified = vrf_key
+        .public_key
+        .verify(vrf_input.as_bytes(), &vrf_output, &vrf_proof);
+    println!(
+        "   VRF verification: {}\n",
+        if verified { "✓ Valid" } else { "✗ Invalid" }
+    );
 
     // Step 3: Demonstrate KES key evolution
     println!("3. Demonstrating KES key evolution (forward-secure signatures)...");
@@ -101,11 +108,15 @@ fn main() {
     println!("     - Data size: {} bytes", block_header_data.len());
 
     // Sign with KES (at current period)
-    let kes_signature = kes_key.sign_block(block_header_data.as_bytes())
+    let kes_signature = kes_key
+        .sign_block(block_header_data.as_bytes())
         .expect("Failed to sign block");
 
     println!("\n   Block signed with KES:");
-    println!("     - KES signature size: {} bytes", kes_signature.to_bytes().len());
+    println!(
+        "     - KES signature size: {} bytes",
+        kes_signature.to_bytes().len()
+    );
     println!("     - Signed at period: {}", kes_signature.period);
     println!("     - ✓ Ready for broadcast to network");
 
@@ -126,9 +137,15 @@ fn main() {
     println!();
     println!("   Operational Certificate:");
     println!("     • Links hot KES key to cold pool key");
-    println!("     • Sequence number: {}", operational_cert.sequence_number);
+    println!(
+        "     • Sequence number: {}",
+        operational_cert.sequence_number
+    );
     println!("     • Valid KES period: {}", operational_cert.kes_period);
-    println!("     • Cold signature: {:?}", &operational_cert.sigma.as_bytes()[..8]);
+    println!(
+        "     • Cold signature: {:?}",
+        &operational_cert.sigma.as_bytes()[..8]
+    );
 
     println!("\n=== Demo Complete ===");
     println!("\n✓ Block forging capability fully operational");

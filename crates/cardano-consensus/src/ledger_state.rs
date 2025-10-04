@@ -35,10 +35,10 @@ pub struct ProtocolParameters {
 impl Default for ProtocolParameters {
     fn default() -> Self {
         Self {
-            min_fee_a: 44,      // Conway era default
-            min_fee_b: 155381,  // Conway era default
-            max_tx_size: 16384, // 16 KB
-            max_block_size: 90112, // ~90 KB
+            min_fee_a: 44,             // Conway era default
+            min_fee_b: 155381,         // Conway era default
+            max_tx_size: 16384,        // 16 KB
+            max_block_size: 90112,     // ~90 KB
             min_utxo_value: 1_000_000, // 1 ADA
             max_tx_per_block: 10000,
         }
@@ -134,7 +134,13 @@ impl LedgerState {
     /// Add a UTxO entry to the set
     pub async fn add_utxo(&self, input: TxInput, output: TxOutput) {
         let mut utxo_set = self.utxo_set.write().await;
-        utxo_set.insert(input, UtxoEntry { output, spent: false });
+        utxo_set.insert(
+            input,
+            UtxoEntry {
+                output,
+                spent: false,
+            },
+        );
     }
 
     /// Mark a UTxO as spent
@@ -150,9 +156,7 @@ impl LedgerState {
             entry.spent = true;
             Ok(())
         } else {
-            Err(ConsensusError::InvalidInput(
-                "UTxO not found".to_string(),
-            ))
+            Err(ConsensusError::InvalidInput("UTxO not found".to_string()))
         }
     }
 
@@ -180,9 +184,10 @@ impl LedgerState {
         // 2. Size validation
         let params = self.protocol_params.read().await;
         if tx.size as usize > params.max_tx_size {
-            return Err(ConsensusError::InvalidTransaction(
-                format!("Transaction too large: {} > {}", tx.size, params.max_tx_size),
-            ));
+            return Err(ConsensusError::InvalidTransaction(format!(
+                "Transaction too large: {} > {}",
+                tx.size, params.max_tx_size
+            )));
         }
 
         // 3. Input validation - all inputs must exist and be unspent
@@ -192,20 +197,21 @@ impl LedgerState {
         for input in &tx.inputs {
             match utxo_set.get(input) {
                 Some(entry) if !entry.spent => {
-                    total_input = total_input.checked_add(entry.output.value)
-                        .ok_or_else(|| ConsensusError::InvalidTransaction(
-                            "Input value overflow".to_string()
-                        ))?;
+                    total_input = total_input.checked_add(entry.output.value).ok_or_else(|| {
+                        ConsensusError::InvalidTransaction("Input value overflow".to_string())
+                    })?;
                 }
                 Some(_) => {
-                    return Err(ConsensusError::InvalidInput(
-                        format!("Input already spent: {:?}", input.tx_hash),
-                    ));
+                    return Err(ConsensusError::InvalidInput(format!(
+                        "Input already spent: {:?}",
+                        input.tx_hash
+                    )));
                 }
                 None => {
-                    return Err(ConsensusError::InvalidInput(
-                        format!("Input not found: {:?}", input.tx_hash),
-                    ));
+                    return Err(ConsensusError::InvalidInput(format!(
+                        "Input not found: {:?}",
+                        input.tx_hash
+                    )));
                 }
             }
         }
@@ -214,37 +220,36 @@ impl LedgerState {
         let mut total_output: u64 = 0;
         for output in &tx.outputs {
             if output.value < params.min_utxo_value {
-                return Err(ConsensusError::InvalidTransaction(
-                    format!("Output below minimum UTxO: {} < {}",
-                        output.value, params.min_utxo_value),
-                ));
+                return Err(ConsensusError::InvalidTransaction(format!(
+                    "Output below minimum UTxO: {} < {}",
+                    output.value, params.min_utxo_value
+                )));
             }
 
-            total_output = total_output.checked_add(output.value)
-                .ok_or_else(|| ConsensusError::InvalidTransaction(
-                    "Output value overflow".to_string()
-                ))?;
+            total_output = total_output.checked_add(output.value).ok_or_else(|| {
+                ConsensusError::InvalidTransaction("Output value overflow".to_string())
+            })?;
         }
 
         // 5. Fee validation
         let min_fee = params.min_fee_a + (params.min_fee_b * tx.size as u64);
         if tx.fee < min_fee {
-            return Err(ConsensusError::InvalidTransaction(
-                format!("Fee too low: {} < {}", tx.fee, min_fee),
-            ));
+            return Err(ConsensusError::InvalidTransaction(format!(
+                "Fee too low: {} < {}",
+                tx.fee, min_fee
+            )));
         }
 
         // 6. Value conservation: inputs = outputs + fee
-        let expected_total = total_output.checked_add(tx.fee)
-            .ok_or_else(|| ConsensusError::InvalidTransaction(
-                "Output + fee overflow".to_string()
-            ))?;
+        let expected_total = total_output.checked_add(tx.fee).ok_or_else(|| {
+            ConsensusError::InvalidTransaction("Output + fee overflow".to_string())
+        })?;
 
         if total_input != expected_total {
-            return Err(ConsensusError::InvalidTransaction(
-                format!("Value not conserved: inputs={}, outputs+fee={}",
-                    total_input, expected_total),
-            ));
+            return Err(ConsensusError::InvalidTransaction(format!(
+                "Value not conserved: inputs={}, outputs+fee={}",
+                total_input, expected_total
+            )));
         }
 
         Ok(())
@@ -279,10 +284,13 @@ impl LedgerState {
                 tx_hash: tx.tx_id,
                 output_index: index as u32,
             };
-            utxo_set.insert(new_input, UtxoEntry {
-                output: output.clone(),
-                spent: false,
-            });
+            utxo_set.insert(
+                new_input,
+                UtxoEntry {
+                    output: output.clone(),
+                    spent: false,
+                },
+            );
         }
 
         Ok(())
@@ -291,7 +299,11 @@ impl LedgerState {
     /// Apply a block to the ledger state
     ///
     /// This applies all transactions in the block sequentially.
-    pub async fn apply_block(&self, header: &BlockHeader, transactions: &[Transaction]) -> Result<()> {
+    pub async fn apply_block(
+        &self,
+        header: &BlockHeader,
+        transactions: &[Transaction],
+    ) -> Result<()> {
         // Update slot (epoch can be derived from slot if needed, using default 0 for now)
         self.update_slot(header.slot.0, 0).await;
 
@@ -312,7 +324,8 @@ impl LedgerState {
     /// Get total value in UTxO set
     pub async fn total_utxo_value(&self) -> u64 {
         let utxo_set = self.utxo_set.read().await;
-        utxo_set.values()
+        utxo_set
+            .values()
             .filter(|e| !e.spent)
             .map(|e| e.output.value)
             .sum()
