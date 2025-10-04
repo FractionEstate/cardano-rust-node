@@ -1,0 +1,265 @@
+---
+---
+
+/* Custom styles for Cardano Rust Node documentation */
+
+/* Color customization */
+:root {
+  --cardano-blue: #0033AD;
+  --cardano-dark-blue: #00254D;
+  --success-green: #2EA44F;
+  --warning-orange: #FB8C00;
+  --info-blue: #0366D6;
+}
+
+/* Enhanced header styling */
+.site-title {
+  font-weight: 700 !important;
+  font-size: 1.5rem !important;
+}
+
+/* Custom button colors */
+.btn-primary {
+  background-color: var(--cardano-blue) !important;
+  border-color: var(--cardano-blue) !important;
+}
+
+.btn-primary:hover {
+  background-color: var(--cardano-dark-blue) !important;
+  border-color: var(--cardano-dark-blue) !important;
+}
+
+/* Status badges */
+.badge {
+  display: inline-block;
+  padding: 0.25em 0.6em;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1;
+  color: #fff;
+  text-align: center;
+  white-space: nowrap;
+  vertical-align: baseline;
+  border-radius: 0.25rem;
+}
+
+.badge-success {
+  background-color: var(--success-green);
+}
+
+.badge-warning {
+  background-color: var(--warning-orange);
+}
+
+.badge-info {
+  background-color: var(--info-blue);
+}
+
+/* Enhanced code blocks */
+.highlight {
+  border-radius: 6px;
+  border: 1px solid #e1e4e8;
+}
+
+/* Improved tables */
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin-bottom: 1rem;
+}
+
+table th {
+  background-color: #f6f8fa;
+  font-weight: 600;
+  padding: 0.75rem;
+  border: 1px solid #e1e4e8;
+}
+
+table td {
+  padding: 0.75rem;
+  border: 1px solid #e1e4e8;
+}
+
+table tr:nth-child(even) {
+  background-color: #f9f9f9;
+}
+
+/* Feature grid */
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1.5rem;
+  margin: 2rem 0;
+}
+
+.feature-card {
+  padding: 1.5rem;
+  border: 1px solid #e1e4e8;
+  border-radius: 6px;
+  background-color: #f6f8fa;
+}
+
+.feature-card h3 {
+  margin-top: 0;
+  color: var(--cardano-blue);
+}
+
+/* Callout enhancements */
+.note {
+  padding: 1rem;
+  margin: 1rem 0;
+  border-left: 4px solid var(--info-blue);
+  background-color: #f0f7ff;
+  border-radius: 4px;
+}
+
+.warning {
+  padding: 1rem;
+  margin: 1rem 0;
+  border-left: 4px solid var(--warning-orange);
+  background-color: #fff8f0;
+  border-radius: 4px;
+}
+
+.important {
+  padding: 1rem;
+  margin: 1rem 0;
+  border-left: 4px solid #9b51e0;
+  background-color: #f8f0ff;
+  border-radius: 4px;
+}
+
+.tip {
+  padding: 1rem;
+  margin: 1rem 0;
+  border-left: 4px solid var(--success-green);
+  background-color: #f0fff4;
+  border-radius: 4px;
+}
+
+/* Status icons */
+.status-icon {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  margin-right: 0.25em;
+  vertical-align: middle;
+}
+
+.status-icon.success::before {
+  content: "✅";
+}
+
+.status-icon.warning::before {
+  content: "⚠️";
+}
+
+.status-icon.error::before {
+  content: "❌";
+}
+
+.status-icon.info::before {
+  content: "ℹ️";
+}
+
+/* Responsive font sizes */
+@media (max-width: 768px) {
+  .fs-9 {
+    font-size: 2rem !important;
+  }
+
+  .fs-6 {
+    font-size: 1rem !important;
+  }
+}
+
+/* Navigation improvements */
+.nav-list-link {
+  transition: all 0.2s ease;
+}
+
+.nav-list-link:hover {
+  background-color: #f0f7ff;
+  border-radius: 4px;
+}
+
+/* Search box styling */
+.search-input {
+  border-radius: 6px !important;
+  border: 2px solid #e1e4e8 !important;
+}
+
+.search-input:focus {
+  border-color: var(--cardano-blue) !important;
+  box-shadow: 0 0 0 3px rgba(0, 51, 173, 0.1) !important;
+}
+
+/* Footer styling */
+.site-footer {
+  border-top: 1px solid #e1e4e8;
+  padding-top: 1rem;
+  margin-top: 3rem;
+}
+
+/* Code inline */
+code {
+  padding: 0.2em 0.4em;
+  margin: 0;
+  font-size: 85%;
+  background-color: rgba(175, 184, 193, 0.2);
+  border-radius: 6px;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+}
+
+/* Anchor links */
+.anchor-heading {
+  padding-right: 0.5rem;
+}
+
+.anchor-heading svg {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.anchor-heading:hover svg {
+  opacity: 1;
+}
+
+/* TOC styling */
+.text-delta {
+  font-weight: 600;
+  color: var(--cardano-dark-blue);
+}
+
+/* Improve readability */
+.main-content {
+  line-height: 1.7;
+}
+
+.main-content h1,
+.main-content h2,
+.main-content h3,
+.main-content h4,
+.main-content h5,
+.main-content h6 {
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+}
+
+.main-content p {
+  margin-bottom: 1em;
+}
+
+/* Print styles */
+@media print {
+  .site-header,
+  .site-nav,
+  .site-footer,
+  .page-nav {
+    display: none;
+  }
+
+  .main-content {
+    max-width: 100% !important;
+  }
+}

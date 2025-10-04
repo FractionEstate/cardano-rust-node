@@ -6,7 +6,30 @@
 
 
 
----> **Complete documentation hub for cardano-rust-node**Welcome to the Cardano Node Rust documentation! This directory contains all the documentation for the project, organized into the following categories:
+---> ---
+layout: default
+title: Documentation
+nav_order: 2
+description: "Complete documentation index and navigation"
+has_children: true
+permalink: /docs/
+---
+
+# Cardano Rust Node Documentation
+
+**Complete documentation index and navigation for the Cardano Rust Node project.**
+
+---
+
+## 📖 Table of Contents
+
+- [Getting Started](#-getting-started)
+- [User Guides](#-user-guides)
+- [Architecture & Design](#-architecture--design)
+- [API & CLI Reference](#-api--cli-reference)
+- [Operations & Monitoring](#-operations--monitoring)
+- [Reports & Status](#-reports--status)
+  - [Audit Reports](#audit-reports)
 
 
 
