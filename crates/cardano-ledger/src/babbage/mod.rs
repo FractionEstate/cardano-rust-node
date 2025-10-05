@@ -10,12 +10,12 @@
 //! - Improved script validation context
 
 use crate::{LedgerError, Result};
-use crate::mary::{MaryValue, MultiAsset, PolicyId, Coin, Slot, Address, RewardAddress, Certificate, ValidityInterval, Ed25519KeyHash};
+use crate::mary::{MaryValue, MultiAsset, Coin, Slot, Address, RewardAddress, Certificate, ValidityInterval, Ed25519KeyHash};
 use crate::alonzo::{
-    PlutusScript, PlutusVersion, PlutusData, Datum, ScriptRef, NativeScript,
-    ExUnits, RedeemerTag, NetworkId, ScriptPurpose, ScriptContext, TxInfo
+    PlutusScript, PlutusVersion, PlutusData, NativeScript,
+    ExUnits, RedeemerTag, NetworkId, ScriptPurpose
 };
-use cardano_crypto::{Blake2b256Hash, Ed25519Signature};
+use cardano_crypto::Blake2b256Hash;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

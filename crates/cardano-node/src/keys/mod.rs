@@ -3,11 +3,13 @@
 //! This module handles loading, parsing, and managing cryptographic keys
 //! for block production including:
 //! - VRF (Verifiable Random Function) keys
-//! - KES (Key Evolving Signature) keys
+//! - KES (Key Evolving Signature) keys with automatic evolution
 //! - Cold keys (stake pool cold keys)
 //! - Operational certificates
 //!
 //! Supports both Cardano CLI JSON format and raw binary formats.
+
+pub mod kes_evolution;
 
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
@@ -18,6 +20,8 @@ use cardano_crypto::ed25519::{Ed25519PrivateKey, Ed25519PublicKey};
 use cardano_crypto::vrf::{VrfPrivateKey, VrfPublicKey};
 
 use crate::config::block_producer::KeyFormat;
+
+pub use kes_evolution::{KesEvolutionConfig, KesEvolutionTracker};
 
 /// Cardano CLI JSON key envelope (common structure for all key types)
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -43,11 +47,12 @@ pub struct VrfVerificationKey {
 }
 
 /// KES signing key with evolution tracking
+///
+/// For automatic KES key evolution, see `KesEvolutionTracker`.
 #[derive(Debug, Clone)]
 pub struct KesSigningKey {
     // KES keys are complex and evolve over time
-    // For now, we store the raw key material
-    // TODO: Implement proper KES key evolution
+    // Automatic evolution is handled by KesEvolutionTracker
     pub key_data: Vec<u8>,
     pub period: u64,
 }
@@ -369,17 +374,87 @@ pub fn load_operational_certificate(path: &Path) -> Result<OperationalCertificat
 
     // Parse the operational certificate structure
     // Format: [kes_vkey_hash, issue_number, kes_period, signature]
-    // This is a simplified parser - full CBOR parsing would be more robust
+    // This follows the Cardano Conway era certificate format
 
-    // For now, we'll store the raw CBOR and extract what we need
-    // TODO: Implement proper CBOR parsing for operational certificates
+    parse_operational_certificate_cbor(&cbor_bytes).with_context(|| {
+        format!(
+            "Failed to parse operational certificate CBOR from {:?}",
+            path
+        )
+    })
+}
+
+/// Parse operational certificate from CBOR bytes
+///
+/// Cardano operational certificate format (CBOR array):
+/// ```text
+/// [
+///   kes_vkey_hash,    // bytes (32 bytes)
+///   issue_number,     // uint (certificate counter)
+///   kes_period,       // uint (KES period)
+///   signature         // bytes (64 bytes - Ed25519 signature)
+/// ]
+/// ```
+fn parse_operational_certificate_cbor(cbor_data: &[u8]) -> Result<OperationalCertificate> {
+    use minicbor::decode;
+
+    let mut decoder = decode::Decoder::new(cbor_data);
+
+    // Parse array header - expect 4 elements
+    let array_len = decoder
+        .array()
+        .map_err(|e| anyhow!("Failed to parse certificate array: {}", e))?
+        .ok_or_else(|| anyhow!("Certificate array has indefinite length"))?;
+
+    if array_len != 4 {
+        return Err(anyhow!(
+            "Invalid certificate format: expected 4 elements, got {}",
+            array_len
+        ));
+    }
+
+    // Element 0: KES verification key hash (32 bytes)
+    let kes_vkey_hash = decoder
+        .bytes()
+        .map_err(|e| anyhow!("Failed to parse KES vkey hash: {}", e))?
+        .to_vec();
+
+    if kes_vkey_hash.len() != 32 {
+        return Err(anyhow!(
+            "Invalid KES vkey hash length: expected 32 bytes, got {}",
+            kes_vkey_hash.len()
+        ));
+    }
+
+    // Element 1: Issue number (certificate counter)
+    let issue_number = decoder
+        .u64()
+        .map_err(|e| anyhow!("Failed to parse issue number: {}", e))?;
+
+    // Element 2: KES period
+    let kes_period = decoder
+        .u64()
+        .map_err(|e| anyhow!("Failed to parse KES period: {}", e))?;
+
+    // Element 3: Cold key signature (64 bytes - Ed25519)
+    let signature = decoder
+        .bytes()
+        .map_err(|e| anyhow!("Failed to parse signature: {}", e))?
+        .to_vec();
+
+    if signature.len() != 64 {
+        return Err(anyhow!(
+            "Invalid signature length: expected 64 bytes, got {}",
+            signature.len()
+        ));
+    }
 
     Ok(OperationalCertificate {
-        kes_vkey_hash: Vec::new(), // TODO: Extract from CBOR
-        issue_number: 0,           // TODO: Extract from CBOR
-        kes_period: 0,             // TODO: Extract from CBOR
-        signature: Vec::new(),     // TODO: Extract from CBOR
-        raw_data: cbor_bytes,
+        kes_vkey_hash,
+        issue_number,
+        kes_period,
+        signature,
+        raw_data: cbor_data.to_vec(),
     })
 }
 
@@ -464,5 +539,153 @@ mod tests {
         cbor.extend_from_slice(&[0x11, 0x22, 0x33, 0x44]);
         let result = parse_cbor_key_bytes(&cbor).unwrap();
         assert_eq!(result, vec![0x11, 0x22, 0x33, 0x44]);
+    }
+
+    #[test]
+    fn test_parse_operational_certificate() {
+        use minicbor::encode;
+
+        // Create a valid operational certificate CBOR
+        let kes_vkey_hash = vec![0xaa; 32];
+        let issue_number = 5u64;
+        let kes_period = 42u64;
+        let signature = vec![0xbb; 64];
+
+        let mut encoder = encode::Encoder::new(Vec::new());
+        encoder.array(4).unwrap();
+        encoder.bytes(&kes_vkey_hash).unwrap();
+        encoder.u64(issue_number).unwrap();
+        encoder.u64(kes_period).unwrap();
+        encoder.bytes(&signature).unwrap();
+
+        let cbor_bytes = encoder.into_writer();
+
+        // Parse the certificate
+        let cert = parse_operational_certificate_cbor(&cbor_bytes).unwrap();
+
+        assert_eq!(cert.kes_vkey_hash, kes_vkey_hash);
+        assert_eq!(cert.issue_number, 5);
+        assert_eq!(cert.kes_period, 42);
+        assert_eq!(cert.signature, signature);
+    }
+
+    #[test]
+    fn test_parse_operational_certificate_invalid_array_length() {
+        use minicbor::encode;
+
+        // Create a certificate with wrong number of elements
+        let mut encoder = encode::Encoder::new(Vec::new());
+        encoder.array(3).unwrap(); // Only 3 elements instead of 4
+        encoder.bytes(&vec![0xaa; 32]).unwrap();
+        encoder.u64(5).unwrap();
+        encoder.u64(42).unwrap();
+
+        let cbor_bytes = encoder.into_writer();
+
+        // Should fail
+        let result = parse_operational_certificate_cbor(&cbor_bytes);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("expected 4 elements"));
+    }
+
+    #[test]
+    fn test_parse_operational_certificate_invalid_vkey_hash_length() {
+        use minicbor::encode;
+
+        // Create a certificate with wrong vkey hash length
+        let mut encoder = encode::Encoder::new(Vec::new());
+        encoder.array(4).unwrap();
+        encoder.bytes(&vec![0xaa; 16]).unwrap(); // Only 16 bytes instead of 32
+        encoder.u64(5).unwrap();
+        encoder.u64(42).unwrap();
+        encoder.bytes(&vec![0xbb; 64]).unwrap();
+
+        let cbor_bytes = encoder.into_writer();
+
+        // Should fail
+        let result = parse_operational_certificate_cbor(&cbor_bytes);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid KES vkey hash length"));
+    }
+
+    #[test]
+    fn test_parse_operational_certificate_invalid_signature_length() {
+        use minicbor::encode;
+
+        // Create a certificate with wrong signature length
+        let mut encoder = encode::Encoder::new(Vec::new());
+        encoder.array(4).unwrap();
+        encoder.bytes(&vec![0xaa; 32]).unwrap();
+        encoder.u64(5).unwrap();
+        encoder.u64(42).unwrap();
+        encoder.bytes(&vec![0xbb; 32]).unwrap(); // Only 32 bytes instead of 64
+
+        let cbor_bytes = encoder.into_writer();
+
+        // Should fail
+        let result = parse_operational_certificate_cbor(&cbor_bytes);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid signature length"));
+    }
+
+    #[test]
+    fn test_operational_certificate_roundtrip() {
+        use minicbor::encode;
+        use std::io::Write;
+
+        // Create test certificate data
+        let kes_vkey_hash = vec![0x12; 32];
+        let issue_number = 10u64;
+        let kes_period = 100u64;
+        let signature = vec![0x34; 64];
+
+        // Encode to CBOR
+        let mut encoder = encode::Encoder::new(Vec::new());
+        encoder.array(4).unwrap();
+        encoder.bytes(&kes_vkey_hash).unwrap();
+        encoder.u64(issue_number).unwrap();
+        encoder.u64(kes_period).unwrap();
+        encoder.bytes(&signature).unwrap();
+
+        let cbor_bytes = encoder.into_writer();
+        let cbor_hex = hex::encode(&cbor_bytes);
+
+        // Create TextEnvelope JSON
+        let json = format!(
+            r#"{{
+                "type": "NodeOperationalCertificate",
+                "description": "Test Operational Certificate",
+                "cborHex": "{}"
+            }}"#,
+            cbor_hex
+        );
+
+        // Write to temporary file
+        let temp_dir = std::env::temp_dir();
+        let temp_path = temp_dir.join("test_opcert.cert");
+        let mut file = std::fs::File::create(&temp_path).unwrap();
+        file.write_all(json.as_bytes()).unwrap();
+        drop(file);
+
+        // Load from file
+        let cert = load_operational_certificate(&temp_path).unwrap();
+
+        // Verify all fields
+        assert_eq!(cert.kes_vkey_hash, kes_vkey_hash);
+        assert_eq!(cert.issue_number, 10);
+        assert_eq!(cert.kes_period, 100);
+        assert_eq!(cert.signature, signature);
+
+        // Cleanup
+        std::fs::remove_file(&temp_path).ok();
     }
 }

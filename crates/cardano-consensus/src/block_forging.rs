@@ -120,7 +120,19 @@ impl BlockForger {
     ) -> Result<ForgedBlock> {
         // Calculate KES period and evolve key if needed
         let kes_period = context.current_slot.0 / self.config.kes_period_length;
-        self.evolve_kes_if_needed(kes_period)?;
+
+        if let Some((from, to)) = self.evolve_kes_if_needed(kes_period)? {
+            tracing::info!("✓ KES key evolved from period {} to {}", from, to);
+
+            // Check if approaching expiration and warn
+            let remaining = self.kes_key.periods_remaining();
+            if remaining <= 10 {
+                tracing::warn!(
+                    "⚠️  KES key approaching expiration! Only {} periods remaining. Generate new keys soon.",
+                    remaining
+                );
+            }
+        }
 
         // Select transactions for the block
         let body = self.construct_block_body(&context.mempool)?;
@@ -213,17 +225,34 @@ impl BlockForger {
     }
 
     /// Evolve KES key if current period has advanced
-    fn evolve_kes_if_needed(&mut self, current_kes_period: u64) -> Result<()> {
+    ///
+    /// Returns (evolved, from_period, to_period) tuple
+    /// - evolved: true if evolution occurred
+    /// - from_period: the period before evolution (if evolved)
+    /// - to_period: the period after evolution (if evolved)
+    fn evolve_kes_if_needed(&mut self, current_kes_period: u64) -> Result<Option<(u64, u64)>> {
         if self.kes_key.needs_evolution(current_kes_period) {
+            let from_period = self.kes_key.current_period();
+
+            // Check if key is expired before attempting evolution
+            if self.kes_key.is_expired() {
+                return Err(ConsensusError::KesKeyExpired(format!(
+                    "KES key expired at period {}",
+                    from_period
+                )));
+            }
+
             // Evolve the KES key
             self.kes_key.evolve(current_kes_period)?;
 
             // Update operational certificate
             self.operational_cert.kes_period = current_kes_period;
             self.operational_cert.sequence_number += 1;
+
+            return Ok(Some((from_period, current_kes_period)));
         }
 
-        Ok(())
+        Ok(None)
     }
 
     /// Basic transaction validation
@@ -298,6 +327,21 @@ impl BlockForger {
     /// Check if KES key is expired
     pub fn is_kes_expired(&self) -> bool {
         self.kes_key.is_expired()
+    }
+
+    /// Get number of KES periods remaining until expiration
+    pub fn kes_periods_remaining(&self) -> u64 {
+        self.kes_key.periods_remaining()
+    }
+
+    /// Check if KES key is approaching expiration
+    pub fn is_kes_approaching_expiration(&self, threshold: u64) -> bool {
+        self.kes_key.is_approaching_expiration(threshold)
+    }
+
+    /// Get maximum KES period
+    pub fn kes_max_period(&self) -> u64 {
+        self.kes_key.max_period
     }
 
     /// Get pool ID

@@ -1,5 +1,14 @@
 //! KES (Key Evolving Signature) Implementation
 //!
+//! **IMPORTANT: These are temporary stub implementations for compatibility.**
+//! The real KES implementation (CompactSum7Kes with 128 periods) is available in
+//! the `cardano-crypto-class` crate from cardano-base-rust.
+//!
+//! TODO: Replace these stubs with proper wrappers around cardano-crypto-class types:
+//! - KesSecretKey → Wrap cardano_crypto_class::kes::compact_sum::CompactSum7Kes signing key
+//! - KesPublicKey → Wrap cardano_crypto_class::kes::compact_sum::CompactSum7Kes verifying key
+//! - KesSignature → Wrap SignedKes structure
+//!
 //! KES is a forward-secure signature scheme where the signing key evolves over time periods.
 //! This provides forward security: if a key is compromised at period t, signatures from
 //! periods < t remain secure.
@@ -29,7 +38,9 @@
 //! - When a subtree is exhausted, it's deleted (forward security)
 //! - Period numbering: 0 to (2^depth - 1)
 //!
-//! ## Usage
+//! ## Usage Examples
+//!
+//! ### Generating and using keys programmatically
 //!
 //! ```rust,ignore
 //! use cardano_crypto::kes::{KesSecretKey, KesPublicKey};
@@ -50,6 +61,23 @@
 //! // Verify signature
 //! assert!(public_key.verify(1, b"next block", &signature)?);
 //! ```
+//!
+//! ### Loading keys from Cardano CLI format
+//!
+//! ```rust,ignore
+//! use cardano_crypto::kes::{KesSecretKey, KesPublicKey};
+//!
+//! // Load KES signing key from cardano-cli generated file
+//! // File format: JSON TextEnvelope with CBOR hex data
+//! let secret_key = KesSecretKey::from_file("kes.skey", 0)?;
+//!
+//! // Load verification key
+//! let public_key = KesPublicKey::from_file("kes.vkey")?;
+//!
+//! // Keys are now ready for use in block production
+//! let signature = secret_key.sign(0, b"block data")?;
+//! assert!(public_key.verify(0, b"block data", &signature)?);
+//! ```
 
 use crate::{CryptoError, Result};
 use blake2::Blake2b512;
@@ -58,6 +86,28 @@ use cardano_crypto_class::dsign::ed25519::{Ed25519, Ed25519SigningKey};
 use cardano_crypto_class::dsign::DsignAlgorithm;
 use cardano_crypto_class::seed::mk_seed_from_bytes;
 use serde::{Deserialize, Serialize};
+
+/// Cardano CLI Text Envelope format for keys
+///
+/// This is the JSON format used by cardano-cli to store keys:
+/// ```json
+/// {
+///   "type": "KesSigningKey_ed25519_kes_2^6",
+///   "description": "KES Signing Key",
+///   "cborHex": "582052d8..."
+/// }
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TextEnvelope {
+    /// Type descriptor (e.g., "KesSigningKey_ed25519_kes_2^6")
+    #[serde(rename = "type")]
+    pub type_: String,
+    /// Human-readable description
+    pub description: String,
+    /// CBOR-encoded key data in hex
+    pub cbor_hex: String,
+}
 
 /// KES signature with period information
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -139,6 +189,90 @@ impl KesPublicKey {
         })
     }
 
+    /// Load KES verification key from Cardano CLI format file
+    ///
+    /// Supports the TextEnvelope JSON format used by cardano-cli:
+    /// ```json
+    /// {
+    ///   "type": "KesVerificationKey_ed25519_kes_2^6",
+    ///   "description": "KES Verification Key",
+    ///   "cborHex": "5820ab12..."
+    /// }
+    /// ```
+    ///
+    /// # Arguments
+    /// * `path` - Path to the .vkey file
+    ///
+    /// # Returns
+    /// * `Ok(KesPublicKey)` - Successfully loaded key
+    /// * `Err(CryptoError)` - If file cannot be read or parsed
+    pub fn from_file<P: AsRef<std::path::Path>>(path: P) -> Result<Self> {
+        let content = std::fs::read_to_string(path).map_err(|e| {
+            CryptoError::InvalidSignature(format!(
+                "Failed to read KES verification key file: {}",
+                e
+            ))
+        })?;
+
+        let envelope: TextEnvelope = serde_json::from_str(&content).map_err(|e| {
+            CryptoError::InvalidSignature(format!("Failed to parse TextEnvelope: {}", e))
+        })?;
+
+        // Validate type
+        if !envelope.type_.contains("KesVerificationKey") {
+            return Err(CryptoError::InvalidSignature(format!(
+                "Invalid key type: expected KesVerificationKey, got {}",
+                envelope.type_
+            )));
+        }
+
+        // Extract depth from type string
+        let depth = if let Some(idx) = envelope.type_.find("2^") {
+            let depth_str = &envelope.type_[idx + 2..];
+            let depth_str: String = depth_str
+                .chars()
+                .take_while(|c| c.is_ascii_digit())
+                .collect();
+            depth_str.parse::<u32>().unwrap_or(6)
+        } else {
+            6 // Default
+        };
+
+        let max_period = (1u64 << depth).saturating_sub(2);
+
+        // Decode hex CBOR
+        let cbor_bytes = hex::decode(&envelope.cbor_hex).map_err(|e| {
+            CryptoError::InvalidSignature(format!("Failed to decode CBOR hex: {}", e))
+        })?;
+
+        // Parse CBOR to extract key bytes
+        let key_bytes = if cbor_bytes.len() >= 34 && cbor_bytes[0] == 0x58 && cbor_bytes[1] == 0x20
+        {
+            cbor_bytes[2..34].to_vec()
+        } else if cbor_bytes.len() >= 2 && cbor_bytes[0] == 0x58 {
+            let len = cbor_bytes[1] as usize;
+            if cbor_bytes.len() < 2 + len {
+                return Err(CryptoError::InvalidSignature(
+                    "CBOR length mismatch".to_string(),
+                ));
+            }
+            cbor_bytes[2..2 + len].to_vec()
+        } else {
+            return Err(CryptoError::InvalidSignature(
+                "Invalid CBOR format for KES verification key".to_string(),
+            ));
+        };
+
+        if key_bytes.len() != Self::SIZE {
+            return Err(CryptoError::InvalidKeyLength);
+        }
+
+        Ok(Self {
+            vkey: key_bytes,
+            max_period,
+        })
+    }
+
     /// Convert to raw bytes
     pub fn to_bytes(&self) -> Vec<u8> {
         self.vkey.clone()
@@ -200,10 +334,11 @@ impl KesSecretKey {
     /// # Arguments
     /// * `depth` - Tree depth (6 for mainnet = 64 periods)
     pub fn generate(depth: u32) -> Self {
-        // Generate a random seed for Ed25519
+        // Generate a cryptographically secure random seed for Ed25519
+        // SECURITY: Use OsRng for key generation, not thread_rng
         let mut seed_bytes = [0u8; 32];
-        use rand::RngCore;
-        rand::thread_rng().fill_bytes(&mut seed_bytes);
+        use rand_core::{OsRng, RngCore};
+        OsRng.fill_bytes(&mut seed_bytes);
 
         let seed = mk_seed_from_bytes(seed_bytes.to_vec());
         let signing_key = Ed25519::gen_key(&seed);
@@ -247,6 +382,113 @@ impl KesSecretKey {
             max_period,
             depth,
         })
+    }
+
+    /// Load KES key from Cardano CLI format file
+    ///
+    /// Supports the TextEnvelope JSON format used by cardano-cli:
+    /// ```json
+    /// {
+    ///   "type": "KesSigningKey_ed25519_kes_2^6",
+    ///   "description": "KES Signing Key",
+    ///   "cborHex": "582052d8..."
+    /// }
+    /// ```
+    ///
+    /// # Arguments
+    /// * `path` - Path to the .skey file
+    /// * `period` - Current KES period (default 0 for fresh key)
+    ///
+    /// # Returns
+    /// * `Ok(KesSecretKey)` - Successfully loaded key
+    /// * `Err(CryptoError)` - If file cannot be read or parsed
+    pub fn from_file<P: AsRef<std::path::Path>>(path: P, period: u64) -> Result<Self> {
+        let content = std::fs::read_to_string(path).map_err(|e| {
+            CryptoError::InvalidSignature(format!("Failed to read KES key file: {}", e))
+        })?;
+
+        let envelope: TextEnvelope = serde_json::from_str(&content).map_err(|e| {
+            CryptoError::InvalidSignature(format!("Failed to parse TextEnvelope: {}", e))
+        })?;
+
+        // Validate type
+        if !envelope.type_.contains("KesSigningKey") {
+            return Err(CryptoError::InvalidSignature(format!(
+                "Invalid key type: expected KesSigningKey, got {}",
+                envelope.type_
+            )));
+        }
+
+        // Extract depth from type string (e.g., "KesSigningKey_ed25519_kes_2^6")
+        let depth = Self::extract_depth_from_type(&envelope.type_)?;
+
+        // Decode hex CBOR
+        let cbor_bytes = hex::decode(&envelope.cbor_hex).map_err(|e| {
+            CryptoError::InvalidSignature(format!("Failed to decode CBOR hex: {}", e))
+        })?;
+
+        // Parse CBOR to extract key bytes
+        // Cardano CLI stores KES keys as CBOR byte strings with tag
+        let key_bytes = Self::parse_cbor_key(&cbor_bytes)?;
+
+        // Create key from bytes
+        Self::from_bytes(&key_bytes, period, depth)
+    }
+
+    /// Extract KES depth from type string
+    ///
+    /// Parses strings like "KesSigningKey_ed25519_kes_2^6" to extract depth=6
+    fn extract_depth_from_type(type_str: &str) -> Result<u32> {
+        // Look for pattern "2^N" in the type string
+        if let Some(idx) = type_str.find("2^") {
+            let depth_str = &type_str[idx + 2..];
+            // Extract digits
+            let depth_str: String = depth_str
+                .chars()
+                .take_while(|c| c.is_ascii_digit())
+                .collect();
+            depth_str.parse::<u32>().map_err(|_| {
+                CryptoError::InvalidSignature(format!(
+                    "Failed to parse depth from type: {}",
+                    type_str
+                ))
+            })
+        } else {
+            // Default to depth 6 for mainnet
+            Ok(6)
+        }
+    }
+
+    /// Parse CBOR-encoded key data
+    ///
+    /// Cardano CLI stores keys as CBOR byte strings (major type 2)
+    /// Format: 0x5820 (byte string of length 32) + 32 bytes of key data
+    fn parse_cbor_key(cbor_bytes: &[u8]) -> Result<Vec<u8>> {
+        // Check minimum length
+        if cbor_bytes.len() < 34 {
+            return Err(CryptoError::InvalidSignature(
+                "CBOR data too short for KES key".to_string(),
+            ));
+        }
+
+        // CBOR byte string tag for 32 bytes: 0x5820
+        if cbor_bytes[0] == 0x58 && cbor_bytes[1] == 0x20 {
+            // Extract the 32-byte key
+            Ok(cbor_bytes[2..34].to_vec())
+        } else if cbor_bytes[0] == 0x58 {
+            // Variable length byte string
+            let len = cbor_bytes[1] as usize;
+            if cbor_bytes.len() < 2 + len {
+                return Err(CryptoError::InvalidSignature(
+                    "CBOR length mismatch".to_string(),
+                ));
+            }
+            Ok(cbor_bytes[2..2 + len].to_vec())
+        } else {
+            Err(CryptoError::InvalidSignature(
+                "Invalid CBOR format for KES key".to_string(),
+            ))
+        }
     }
 
     /// Convert to raw bytes (current key only)
@@ -509,5 +751,147 @@ mod tests {
         let public_key2 = KesPublicKey::from_bytes(&bytes).unwrap();
 
         assert_eq!(public_key.vkey, public_key2.vkey);
+    }
+
+    #[test]
+    fn test_text_envelope_parsing() {
+        // Test parsing of TextEnvelope JSON format
+        let json = r#"{
+            "type": "KesSigningKey_ed25519_kes_2^6",
+            "description": "KES Signing Key",
+            "cborHex": "5820abcdef0123456789abcdef0123456789abcdef0123456789abcdef01234567"
+        }"#;
+
+        let envelope: TextEnvelope = serde_json::from_str(json).unwrap();
+        assert_eq!(envelope.type_, "KesSigningKey_ed25519_kes_2^6");
+        assert_eq!(envelope.description, "KES Signing Key");
+        assert!(envelope.cbor_hex.starts_with("5820"));
+    }
+
+    #[test]
+    fn test_extract_depth_from_type() {
+        assert_eq!(
+            KesSecretKey::extract_depth_from_type("KesSigningKey_ed25519_kes_2^6").unwrap(),
+            6
+        );
+        assert_eq!(
+            KesSecretKey::extract_depth_from_type("KesSigningKey_ed25519_kes_2^7").unwrap(),
+            7
+        );
+        assert_eq!(
+            KesSecretKey::extract_depth_from_type("KesVerificationKey_ed25519_kes_2^6").unwrap(),
+            6
+        );
+        // Default to 6 if no depth found
+        assert_eq!(
+            KesSecretKey::extract_depth_from_type("KesSigningKey").unwrap(),
+            6
+        );
+    }
+
+    #[test]
+    fn test_parse_cbor_key() {
+        // CBOR byte string: 0x5820 (tag for 32 bytes) + 32 bytes of data
+        let mut cbor = vec![0x58, 0x20];
+        cbor.extend_from_slice(&[0xab; 32]); // 32 bytes of 0xab
+
+        let key_bytes = KesSecretKey::parse_cbor_key(&cbor).unwrap();
+        assert_eq!(key_bytes.len(), 32);
+        assert_eq!(key_bytes[0], 0xab);
+    }
+
+    #[test]
+    fn test_parse_cbor_key_invalid() {
+        // Too short
+        let cbor = vec![0x58, 0x20];
+        assert!(KesSecretKey::parse_cbor_key(&cbor).is_err());
+
+        // Invalid tag
+        let cbor = vec![0x00; 34];
+        assert!(KesSecretKey::parse_cbor_key(&cbor).is_err());
+    }
+
+    #[test]
+    fn test_kes_from_file_roundtrip() {
+        use std::io::Write;
+
+        // Create a test key
+        let key = KesSecretKey::generate(6);
+        let key_bytes = key.to_bytes();
+
+        // Create CBOR hex (0x5820 + 32 bytes)
+        let mut cbor = vec![0x58, 0x20];
+        cbor.extend_from_slice(&key_bytes);
+        let cbor_hex = hex::encode(cbor);
+
+        // Create TextEnvelope JSON
+        let json = format!(
+            r#"{{
+                "type": "KesSigningKey_ed25519_kes_2^6",
+                "description": "Test KES Signing Key",
+                "cborHex": "{}"
+            }}"#,
+            cbor_hex
+        );
+
+        // Write to temporary file
+        let temp_dir = std::env::temp_dir();
+        let temp_path = temp_dir.join("test_kes.skey");
+        let mut file = std::fs::File::create(&temp_path).unwrap();
+        file.write_all(json.as_bytes()).unwrap();
+        drop(file);
+
+        // Load from file
+        let loaded_key = KesSecretKey::from_file(&temp_path, 0).unwrap();
+
+        // Verify properties match
+        assert_eq!(loaded_key.current_period(), 0);
+        assert_eq!(loaded_key.max_period(), 62);
+        assert_eq!(loaded_key.depth, 6);
+
+        // Cleanup
+        std::fs::remove_file(&temp_path).ok();
+    }
+
+    #[test]
+    fn test_kes_public_key_from_file_roundtrip() {
+        use std::io::Write;
+
+        // Create a test public key
+        let key = KesSecretKey::generate(6);
+        let public_key = key.to_public();
+        let vkey_bytes = public_key.to_bytes();
+
+        // Create CBOR hex (0x5820 + 32 bytes)
+        let mut cbor = vec![0x58, 0x20];
+        cbor.extend_from_slice(&vkey_bytes);
+        let cbor_hex = hex::encode(cbor);
+
+        // Create TextEnvelope JSON
+        let json = format!(
+            r#"{{
+                "type": "KesVerificationKey_ed25519_kes_2^6",
+                "description": "Test KES Verification Key",
+                "cborHex": "{}"
+            }}"#,
+            cbor_hex
+        );
+
+        // Write to temporary file
+        let temp_dir = std::env::temp_dir();
+        let temp_path = temp_dir.join("test_kes.vkey");
+        let mut file = std::fs::File::create(&temp_path).unwrap();
+        file.write_all(json.as_bytes()).unwrap();
+        drop(file);
+
+        // Load from file
+        let loaded_vkey = KesPublicKey::from_file(&temp_path).unwrap();
+
+        // Verify properties match
+        assert_eq!(loaded_vkey.to_bytes(), public_key.to_bytes());
+        assert_eq!(loaded_vkey.max_period(), 62);
+
+        // Cleanup
+        std::fs::remove_file(&temp_path).ok();
     }
 }

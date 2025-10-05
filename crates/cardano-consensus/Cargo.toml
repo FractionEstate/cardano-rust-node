@@ -22,6 +22,7 @@ minicbor.workspace = true
 # Internal dependencies
 cardano-crypto = { path = "../cardano-crypto" }
 cardano-ledger = { path = "../cardano-ledger" }
+cardano-storage = { path = "../cardano-storage" }
 
 # Error handling and logging
 thiserror.workspace = true

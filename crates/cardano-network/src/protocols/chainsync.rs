@@ -47,16 +47,19 @@ impl Point {
     pub fn genesis() -> Self {
         Self {
             slot: SlotNo(0),
-            hash: Blake2b256Hash::from_bytes(&[0u8; 32]).unwrap(),
+            hash: Blake2b256Hash::from_bytes(&[0u8; 32])
+                .expect("Genesis point creation should not fail"),
         }
     }
 
     /// Create a new point with given slot and hash bytes
-    pub fn new(slot: u64, hash_bytes: &[u8; 32]) -> Self {
-        Self {
-            slot: SlotNo(slot),
-            hash: Blake2b256Hash::from_bytes(hash_bytes).unwrap(),
-        }
+    pub fn new(slot: u64, hash_bytes: &[u8; 32]) -> Result<Self, String> {
+        Blake2b256Hash::from_bytes(hash_bytes)
+            .map(|hash| Self {
+                slot: SlotNo(slot),
+                hash,
+            })
+            .map_err(|e| format!("Invalid point hash bytes: {}", e))
     }
 
     /// Create point from block header
@@ -80,12 +83,14 @@ pub struct Tip {
 
 impl Tip {
     /// Create a new tip
-    pub fn new(slot: u64, height: u64, hash_bytes: &[u8; 32]) -> Self {
-        Self {
-            slot: SlotNo(slot),
-            height,
-            hash: Blake2b256Hash::from_bytes(hash_bytes).unwrap(),
-        }
+    pub fn new(slot: u64, height: u64, hash_bytes: &[u8; 32]) -> Result<Self, String> {
+        Blake2b256Hash::from_bytes(hash_bytes)
+            .map(|hash| Self {
+                slot: SlotNo(slot),
+                height,
+                hash,
+            })
+            .map_err(|e| format!("Invalid tip hash bytes: {}", e))
     }
 
     /// Create tip from block header
@@ -655,7 +660,7 @@ impl ChainSyncServer {
         let tip = if let Some(header) = chain.back() {
             Tip::from_header(header, chain.len() as u64)
         } else {
-            Tip::new(0, 0, &[0u8; 32])
+            Tip::new(0, 0, &[0u8; 32]).expect("Genesis tip creation should not fail")
         };
 
         let server = Self {

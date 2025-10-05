@@ -26,6 +26,7 @@ pub enum LedgerError {
     InvalidOutput(String),
     InvalidCertificate(String),
     InsufficientFunds(String),
+    TransactionTooLarge(String),
     ValueOverflow(String),
     ValueUnderflow(String),
     ValidationError(String),
@@ -45,6 +46,7 @@ impl fmt::Display for LedgerError {
             LedgerError::InvalidOutput(msg) => write!(f, "Invalid output: {}", msg),
             LedgerError::InvalidCertificate(msg) => write!(f, "Invalid certificate: {}", msg),
             LedgerError::InsufficientFunds(msg) => write!(f, "Insufficient funds: {}", msg),
+            LedgerError::TransactionTooLarge(msg) => write!(f, "Transaction too large: {}", msg),
             LedgerError::ValueOverflow(msg) => write!(f, "Value overflow: {}", msg),
             LedgerError::ValueUnderflow(msg) => write!(f, "Value underflow: {}", msg),
             LedgerError::ValidationError(msg) => write!(f, "Validation error: {}", msg),
@@ -68,3 +70,18 @@ pub mod shelley;
 
 /// Allegra era implementation
 pub mod allegra;
+
+/// Mary era implementation (multi-asset support)
+pub mod mary;
+
+/// Alonzo era implementation (Plutus V1 smart contracts)
+pub mod alonzo;
+
+/// Babbage era implementation (Plutus V2, reference inputs)
+pub mod babbage;
+
+/// Conway era implementation (on-chain governance)
+pub mod conway;
+
+/// Fee optimization and UTxO selection
+pub mod fee_optimization;

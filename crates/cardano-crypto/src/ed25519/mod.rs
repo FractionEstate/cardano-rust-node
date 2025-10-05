@@ -213,6 +213,35 @@ impl Ord for Ed25519Signature {
     }
 }
 
+// Serde support for Ed25519Signature
+impl serde::Serialize for Ed25519Signature {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let bytes = self.to_bytes();
+        serializer.serialize_bytes(&bytes)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Ed25519Signature {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let bytes: Vec<u8> = serde::Deserialize::deserialize(deserializer)?;
+        if bytes.len() != 64 {
+            return Err(serde::de::Error::custom(format!(
+                "Invalid signature length: expected 64, got {}",
+                bytes.len()
+            )));
+        }
+        let mut sig_bytes = [0u8; 64];
+        sig_bytes.copy_from_slice(&bytes);
+        Ok(Self::from_bytes(sig_bytes))
+    }
+}
+
 impl PartialEq for Ed25519PublicKey {
     fn eq(&self, other: &Self) -> bool {
         let self_bytes = Ed25519::raw_serialize_verification_key(&self.0);

@@ -356,7 +356,17 @@ impl HandshakeProtocol {
             HandshakeMessage::ProposeVersions { versions } => {
                 // Find best compatible version
                 if let Some((best_version, peer_data)) = self.select_best_version(&versions)? {
-                    let our_data = self.supported_versions.get(&best_version).unwrap().clone();
+                    // Get our version data safely
+                    let our_data = self
+                        .supported_versions
+                        .get(&best_version)
+                        .ok_or_else(|| {
+                            HandshakeError::ProtocolViolation(format!(
+                                "Best version {} not found in supported versions (internal error)",
+                                best_version
+                            ))
+                        })?
+                        .clone();
 
                     // Send AcceptVersion
                     let accept_msg = HandshakeMessage::AcceptVersion {

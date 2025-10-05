@@ -59,6 +59,7 @@ impl ChunkHeader {
 }
 
 /// A chunk file with memory-mapped I/O
+#[derive(Debug)]
 pub struct ChunkFile {
     /// Path to the chunk file
     path: PathBuf,
@@ -221,6 +222,273 @@ impl ChunkFile {
     }
 }
 
+/// ChunkReader - High-level abstraction for reading blocks from chunks
+///
+/// Provides a clean API for sequential and random access to blocks within a chunk.
+/// Uses memory-mapped I/O for zero-copy reads.
+///
+/// # Example
+///
+/// ```no_run
+/// # use cardano_storage::cardanodb::immutable::chunk::ChunkReader;
+/// # use cardano_storage::cardanodb::types::{ChunkNo, BlockLocation};
+/// # fn example() -> anyhow::Result<()> {
+/// let reader = ChunkReader::open("chunk_00000000.dat", ChunkNo(0))?;
+///
+/// // Random access by location
+/// let location = BlockLocation::new(1024, 512);
+/// let block_data = reader.read_block(&location)?;
+///
+/// // Streaming access
+/// for block in reader.iter_blocks(&[location])? {
+///     println!("Block: {} bytes", block?.len());
+/// }
+/// # Ok(())
+/// # }
+/// ```
+#[derive(Debug)]
+pub struct ChunkReader {
+    chunk: ChunkFile,
+}
+
+impl ChunkReader {
+    /// Open a chunk file for reading
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to the chunk file
+    /// * `chunk_no` - Expected chunk number (validated against file)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - File does not exist
+    /// - File is corrupted or has invalid header
+    /// - Chunk number mismatch
+    pub fn open<P: AsRef<Path>>(path: P, chunk_no: ChunkNo) -> Result<Self> {
+        let chunk = ChunkFile::open(path)?;
+
+        anyhow::ensure!(
+            chunk.chunk_no() == chunk_no,
+            "Chunk number mismatch: expected {}, got {}",
+            chunk_no.to_u64(),
+            chunk.chunk_no().to_u64()
+        );
+
+        Ok(Self { chunk })
+    }
+
+    /// Read a single block by location (zero-copy)
+    ///
+    /// # Arguments
+    ///
+    /// * `location` - Block location (offset + size)
+    ///
+    /// # Returns
+    ///
+    /// Reference to the block data (zero-copy via mmap)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the location is out of bounds
+    pub fn read_block(&self, location: &BlockLocation) -> Result<&[u8]> {
+        self.chunk.read_block(location)
+    }
+
+    /// Read multiple blocks sequentially
+    ///
+    /// More efficient than calling read_block() multiple times as it
+    /// optimizes for sequential access patterns.
+    ///
+    /// # Arguments
+    ///
+    /// * `locations` - Slice of block locations to read
+    ///
+    /// # Returns
+    ///
+    /// Iterator over block data references
+    pub fn read_blocks<'a>(
+        &'a self,
+        locations: &'a [BlockLocation],
+    ) -> Result<impl Iterator<Item = Result<&'a [u8]>> + 'a> {
+        Ok(locations.iter().map(move |loc| self.read_block(loc)))
+    }
+
+    /// Iterate over blocks sequentially
+    ///
+    /// Provides a streaming interface for processing blocks one at a time.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use cardano_storage::cardanodb::immutable::chunk::ChunkReader;
+    /// # use cardano_storage::cardanodb::types::{ChunkNo, BlockLocation};
+    /// # fn example(reader: &ChunkReader, locations: &[BlockLocation]) -> anyhow::Result<()> {
+    /// for block in reader.iter_blocks(locations)? {
+    ///     let data = block?;
+    ///     // Process block data
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn iter_blocks<'a>(
+        &'a self,
+        locations: &'a [BlockLocation],
+    ) -> Result<impl Iterator<Item = Result<&'a [u8]>> + 'a> {
+        self.read_blocks(locations)
+    }
+
+    /// Get chunk number
+    pub fn chunk_no(&self) -> ChunkNo {
+        self.chunk.chunk_no()
+    }
+
+    /// Get chunk file size
+    pub fn size(&self) -> u64 {
+        self.chunk.size()
+    }
+}
+
+/// ChunkWriter - High-level abstraction for writing blocks to chunks
+///
+/// Provides a clean API for sequential block writing with automatic buffering
+/// and offset tracking.
+///
+/// # Example
+///
+/// ```no_run
+/// # use cardano_storage::cardanodb::immutable::chunk::ChunkWriter;
+/// # use cardano_storage::cardanodb::types::ChunkNo;
+/// # fn example() -> anyhow::Result<()> {
+/// let mut writer = ChunkWriter::create("chunk_00000001.dat", ChunkNo(1))?;
+///
+/// // Write blocks sequentially
+/// let loc1 = writer.append_block(b"First block")?;
+/// let loc2 = writer.append_block(b"Second block")?;
+///
+/// // Flush and finalize
+/// let reader = writer.finalize()?;
+/// # Ok(())
+/// # }
+/// ```
+pub struct ChunkWriter {
+    chunk: ChunkFile,
+    blocks_written: u32,
+}
+
+impl ChunkWriter {
+    /// Create a new chunk file for writing
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path where chunk file will be created
+    /// * `chunk_no` - Chunk number
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file cannot be created
+    pub fn create<P: AsRef<Path>>(path: P, chunk_no: ChunkNo) -> Result<Self> {
+        let chunk = ChunkFile::create(path, chunk_no)?;
+        Ok(Self {
+            chunk,
+            blocks_written: 0,
+        })
+    }
+
+    /// Append a block to the chunk
+    ///
+    /// Blocks are written sequentially. Returns the location where the block
+    /// was written.
+    ///
+    /// # Arguments
+    ///
+    /// * `block_data` - Block data to write
+    ///
+    /// # Returns
+    ///
+    /// Location of the written block (offset + size)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Block data is empty
+    /// - Block data exceeds maximum size (16 MB)
+    /// - Write fails
+    pub fn append_block(&mut self, block_data: &[u8]) -> Result<BlockLocation> {
+        anyhow::ensure!(!block_data.is_empty(), "Block data cannot be empty");
+        anyhow::ensure!(
+            block_data.len() <= 16 * 1024 * 1024,
+            "Block data too large: {} bytes (max 16 MB)",
+            block_data.len()
+        );
+
+        let location = self.chunk.write_block(block_data)?;
+        self.blocks_written += 1;
+
+        Ok(location)
+    }
+
+    /// Append multiple blocks in batch
+    ///
+    /// More efficient than calling append_block() multiple times as it
+    /// optimizes for sequential writes.
+    ///
+    /// # Arguments
+    ///
+    /// * `blocks` - Slice of block data to write
+    ///
+    /// # Returns
+    ///
+    /// Vector of locations for each written block
+    pub fn append_blocks(&mut self, blocks: &[&[u8]]) -> Result<Vec<BlockLocation>> {
+        let mut locations = Vec::with_capacity(blocks.len());
+        for block in blocks {
+            let location = self.append_block(block)?;
+            locations.push(location);
+        }
+        Ok(locations)
+    }
+
+    /// Flush pending writes to disk
+    ///
+    /// Ensures all buffered data is written to the filesystem.
+    pub fn flush(&mut self) -> Result<()> {
+        self.chunk.flush()
+    }
+
+    /// Get number of blocks written so far
+    pub fn blocks_written(&self) -> u32 {
+        self.blocks_written
+    }
+
+    /// Get chunk number
+    pub fn chunk_no(&self) -> ChunkNo {
+        self.chunk.chunk_no()
+    }
+
+    /// Get current chunk size
+    pub fn size(&self) -> u64 {
+        self.chunk.size()
+    }
+
+    /// Finalize the chunk and convert to reader
+    ///
+    /// Flushes all pending writes, closes the write handle, and reopens
+    /// the file as a memory-mapped reader.
+    ///
+    /// # Returns
+    ///
+    /// A ChunkReader for reading the finalized chunk
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if flush or remapping fails
+    pub fn finalize(self) -> Result<ChunkReader> {
+        let chunk = self.chunk.finalize()?;
+        Ok(ChunkReader { chunk })
+    }
+}
+
 // TODO: Implement chunk reader/writer in next phase
 
 #[cfg(test)]
@@ -338,5 +606,254 @@ mod tests {
         // Try to read beyond file bounds
         let invalid_location = BlockLocation::new(1000, 100);
         assert!(chunk.read_block(&invalid_location).is_err());
+    }
+
+    // ChunkReader tests
+    #[test]
+    fn chunk_reader_open_and_read() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("chunk_reader_test.dat");
+
+        // Create chunk with test data
+        let mut writer = ChunkWriter::create(&path, ChunkNo(5)).unwrap();
+        let block_data = b"Test block for reader";
+        let location = writer.append_block(block_data).unwrap();
+        let _reader = writer.finalize().unwrap();
+
+        // Open with ChunkReader
+        let reader = ChunkReader::open(&path, ChunkNo(5)).unwrap();
+        assert_eq!(reader.chunk_no(), ChunkNo(5));
+
+        // Read block
+        let read_data = reader.read_block(&location).unwrap();
+        assert_eq!(read_data, block_data);
+    }
+
+    #[test]
+    fn chunk_reader_multiple_blocks() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("chunk_reader_multi.dat");
+
+        let blocks = vec![
+            b"Block one".to_vec(),
+            b"Block two with more data".to_vec(),
+            b"Block three".to_vec(),
+        ];
+
+        // Write blocks
+        let mut writer = ChunkWriter::create(&path, ChunkNo(6)).unwrap();
+        let mut locations = Vec::new();
+        for block in &blocks {
+            let loc = writer.append_block(block).unwrap();
+            locations.push(loc);
+        }
+        let _reader = writer.finalize().unwrap();
+
+        // Read back with ChunkReader
+        let reader = ChunkReader::open(&path, ChunkNo(6)).unwrap();
+
+        // Read all blocks
+        for (i, result) in reader.iter_blocks(&locations).unwrap().enumerate() {
+            let data = result.unwrap();
+            assert_eq!(data, blocks[i].as_slice());
+        }
+    }
+
+    #[test]
+    fn chunk_reader_chunk_number_validation() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("chunk_validation.dat");
+
+        // Create chunk with number 7
+        let mut writer = ChunkWriter::create(&path, ChunkNo(7)).unwrap();
+        writer.append_block(b"test").unwrap();
+        writer.finalize().unwrap();
+
+        // Try to open with wrong chunk number
+        let result = ChunkReader::open(&path, ChunkNo(99));
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Chunk number mismatch"));
+    }
+
+    // ChunkWriter tests
+    #[test]
+    fn chunk_writer_create_and_append() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("chunk_writer_test.dat");
+
+        let mut writer = ChunkWriter::create(&path, ChunkNo(10)).unwrap();
+        assert_eq!(writer.blocks_written(), 0);
+        assert_eq!(writer.chunk_no(), ChunkNo(10));
+
+        let block1 = b"First block";
+        let loc1 = writer.append_block(block1).unwrap();
+        assert_eq!(writer.blocks_written(), 1);
+        assert_eq!(loc1.offset, ChunkFile::HEADER_SIZE);
+        assert_eq!(loc1.size, block1.len() as u32);
+
+        let block2 = b"Second block";
+        let loc2 = writer.append_block(block2).unwrap();
+        assert_eq!(writer.blocks_written(), 2);
+        assert_eq!(loc2.offset, ChunkFile::HEADER_SIZE + block1.len() as u64);
+    }
+
+    #[test]
+    fn chunk_writer_append_blocks_batch() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("chunk_writer_batch.dat");
+
+        let blocks: Vec<&[u8]> = vec![b"Block 1", b"Block 2", b"Block 3", b"Block 4"];
+
+        let mut writer = ChunkWriter::create(&path, ChunkNo(11)).unwrap();
+        let locations = writer.append_blocks(&blocks).unwrap();
+
+        assert_eq!(locations.len(), 4);
+        assert_eq!(writer.blocks_written(), 4);
+
+        // Verify locations are sequential
+        let mut expected_offset = ChunkFile::HEADER_SIZE;
+        for (i, loc) in locations.iter().enumerate() {
+            assert_eq!(loc.offset, expected_offset);
+            assert_eq!(loc.size, blocks[i].len() as u32);
+            expected_offset += blocks[i].len() as u64;
+        }
+    }
+
+    #[test]
+    fn chunk_writer_empty_block_fails() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("chunk_writer_empty.dat");
+
+        let mut writer = ChunkWriter::create(&path, ChunkNo(12)).unwrap();
+        let result = writer.append_block(&[]);
+
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Block data cannot be empty"));
+    }
+
+    #[test]
+    fn chunk_writer_large_block_fails() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("chunk_writer_large.dat");
+
+        let mut writer = ChunkWriter::create(&path, ChunkNo(13)).unwrap();
+        let large_block = vec![0u8; 17 * 1024 * 1024]; // 17 MB > 16 MB limit
+        let result = writer.append_block(&large_block);
+
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Block data too large"));
+    }
+
+    #[test]
+    fn chunk_writer_finalize_to_reader() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("chunk_writer_finalize.dat");
+
+        let blocks = vec![b"Block A", b"Block B", b"Block C"];
+
+        // Write blocks
+        let mut writer = ChunkWriter::create(&path, ChunkNo(14)).unwrap();
+        let locations = writer
+            .append_blocks(&blocks.iter().map(|b| b.as_slice()).collect::<Vec<_>>())
+            .unwrap();
+
+        // Finalize to reader
+        let reader = writer.finalize().unwrap();
+        assert_eq!(reader.chunk_no(), ChunkNo(14));
+
+        // Read back all blocks
+        for (i, loc) in locations.iter().enumerate() {
+            let data = reader.read_block(loc).unwrap();
+            assert_eq!(data, blocks[i]);
+        }
+    }
+
+    #[test]
+    fn chunk_reader_writer_roundtrip() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("chunk_roundtrip.dat");
+
+        // Write phase
+        let test_blocks = vec![
+            b"First block with some data".to_vec(),
+            b"Second".to_vec(),
+            b"Third block is longer than the others".to_vec(),
+            b"Fourth".to_vec(),
+        ];
+
+        let mut writer = ChunkWriter::create(&path, ChunkNo(15)).unwrap();
+        let mut locations = Vec::new();
+        for block in &test_blocks {
+            let loc = writer.append_block(block).unwrap();
+            locations.push(loc);
+        }
+        writer.flush().unwrap();
+        let reader = writer.finalize().unwrap();
+
+        // Read phase
+        assert_eq!(reader.chunk_no(), ChunkNo(15));
+        for (i, loc) in locations.iter().enumerate() {
+            let data = reader.read_block(loc).unwrap();
+            assert_eq!(data, test_blocks[i].as_slice());
+        }
+
+        // Streaming read
+        let streamed_blocks: Vec<_> = reader
+            .iter_blocks(&locations)
+            .unwrap()
+            .map(|r| r.unwrap().to_vec())
+            .collect();
+
+        assert_eq!(streamed_blocks.len(), test_blocks.len());
+        for (i, block) in streamed_blocks.iter().enumerate() {
+            assert_eq!(block, &test_blocks[i]);
+        }
+    }
+
+    #[test]
+    fn chunk_writer_flush() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("chunk_flush.dat");
+
+        let mut writer = ChunkWriter::create(&path, ChunkNo(16)).unwrap();
+        writer.append_block(b"Test block").unwrap();
+
+        // Flush should succeed
+        assert!(writer.flush().is_ok());
+
+        // Should still be able to append more
+        writer.append_block(b"Another block").unwrap();
+        assert_eq!(writer.blocks_written(), 2);
+    }
+
+    #[test]
+    fn chunk_reader_read_blocks_sequential() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("chunk_sequential.dat");
+
+        let blocks: Vec<&[u8]> = vec![b"A", b"BB", b"CCC", b"DDDD"];
+
+        // Write
+        let mut writer = ChunkWriter::create(&path, ChunkNo(17)).unwrap();
+        let locations = writer.append_blocks(&blocks).unwrap();
+        let reader = writer.finalize().unwrap();
+
+        // Sequential read with read_blocks
+        let results: Vec<_> = reader.read_blocks(&locations).unwrap().collect();
+        let data_blocks: Vec<_> = results.into_iter().map(|r| r.unwrap()).collect();
+
+        assert_eq!(data_blocks.len(), 4);
+        for (i, data) in data_blocks.iter().enumerate() {
+            assert_eq!(*data, blocks[i]);
+        }
     }
 }

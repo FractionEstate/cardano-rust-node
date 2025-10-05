@@ -403,7 +403,7 @@ mod tests {
             block_number,
             prev_hash: Blake2b256Hash::from_bytes(&[0u8; 32]).unwrap(),
             issuer_vkey: Ed25519KeyHash::from_bytes([1u8; 20]),
-            vrf_proof: VrfProof::from_bytes(&[2u8; 80]).unwrap(),
+            vrf_proof: VrfProof::from_bytes(&[2u8; 128]).unwrap(), // Updated to 128 bytes for PraosBatchCompatVRF
             vrf_output: VrfOutput::from_bytes(&[3u8; 64]).unwrap(),
             block_body_hash: Blake2b256Hash::from_bytes(&[4u8; 32]).unwrap(),
             block_size: 1000,
@@ -418,7 +418,7 @@ mod tests {
     }
 
     fn create_test_forged_block(slot: u64, block_number: u64) -> ForgedBlock {
-        let vrf_proof = VrfProof::from_bytes(&[2u8; 80]).unwrap();
+        let vrf_proof = VrfProof::from_bytes(&[2u8; 128]).unwrap(); // Updated to 128 bytes
         let vrf_output = VrfOutput::from_bytes(&[3u8; 64]).unwrap();
 
         ForgedBlock {

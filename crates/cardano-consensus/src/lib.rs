@@ -14,8 +14,10 @@
 pub mod block_broadcaster;
 pub mod block_forging;
 pub mod block_production;
+pub mod block_production_integration;
 pub mod block_production_service;
 pub mod chain_selection;
+pub mod epoch_transition;
 pub mod leadership;
 pub mod ledger_state;
 pub mod metrics;
@@ -33,12 +35,16 @@ pub use block_production::{
     OperationalCertificate as BlockProductionOperationalCertificate, ProducedBlock,
     ProductionScheduler, SimplifiedLedgerState, Transaction, TxInput, TxOutput, VrfKey,
 };
+pub use block_production_integration::{AutoRefreshIntegrator, BlockProductionIntegrator};
 pub use block_production_service::{
     BlockProductionConfig, BlockProductionEvent, BlockProductionService, BlockProductionStats,
 };
 pub use chain_selection::{
     BlockSummary, ChainCandidate, ChainOrdering, ChainSelectionConfig, ChainSelector, ChainTip,
     SelectionChainQuality, VrfTiebreakerFlavor,
+};
+pub use epoch_transition::{
+    EpochRewards, EpochTransitionHandler, PoolRewardDistribution, StakeSnapshot,
 };
 pub use leadership::{
     min_stake_for_expected_blocks, vrf_output_to_probability, LeadershipCalculator,
@@ -90,6 +96,8 @@ pub enum ConsensusError {
     InvalidScript(String),
     InvalidSignature(String),
     InvalidStake(String),
+    StorageError(String),
+    MissingStakeSnapshot(String),
 }
 
 impl fmt::Display for ConsensusError {
@@ -131,6 +139,10 @@ impl fmt::Display for ConsensusError {
             ConsensusError::InvalidScript(msg) => write!(f, "Invalid script: {}", msg),
             ConsensusError::InvalidSignature(msg) => write!(f, "Invalid signature: {}", msg),
             ConsensusError::InvalidStake(msg) => write!(f, "Invalid stake: {}", msg),
+            ConsensusError::StorageError(msg) => write!(f, "Storage error: {}", msg),
+            ConsensusError::MissingStakeSnapshot(msg) => {
+                write!(f, "Missing stake snapshot: {}", msg)
+            }
         }
     }
 }

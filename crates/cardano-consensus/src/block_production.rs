@@ -67,6 +67,17 @@ impl KesKey {
         self.secret_key.is_expired()
     }
 
+    /// Get number of periods remaining until expiration
+    pub fn periods_remaining(&self) -> u64 {
+        self.max_period
+            .saturating_sub(self.secret_key.current_period())
+    }
+
+    /// Check if key is approaching expiration (within threshold periods)
+    pub fn is_approaching_expiration(&self, threshold_periods: u64) -> bool {
+        self.periods_remaining() <= threshold_periods
+    }
+
     /// Evolve KES key to new period
     pub fn evolve(&mut self, target_period: u64) -> Result<()> {
         if target_period > self.max_period {
@@ -1039,5 +1050,29 @@ mod tests {
             }
             Err(e) => panic!("Unexpected error: {:?}", e),
         }
+    }
+
+    #[test]
+    fn test_kes_periods_remaining() {
+        let kes_key = KesKey::new(6); // depth=6 gives max_period=62
+
+        // At period 0, should have 62 periods remaining
+        assert_eq!(kes_key.periods_remaining(), 62);
+        assert!(!kes_key.is_approaching_expiration(10));
+    }
+
+    #[test]
+    fn test_kes_approaching_expiration() {
+        let mut kes_key = KesKey::new(3); // depth=3 gives max_period=6
+
+        // Evolve to period 5 (one period before expiration)
+        kes_key.evolve(5).unwrap();
+
+        // Should be approaching expiration with threshold 10
+        assert_eq!(kes_key.periods_remaining(), 1);
+        assert!(kes_key.is_approaching_expiration(10));
+        assert!(kes_key.is_approaching_expiration(5));
+        assert!(kes_key.is_approaching_expiration(2));
+        assert!(!kes_key.is_approaching_expiration(0));
     }
 }

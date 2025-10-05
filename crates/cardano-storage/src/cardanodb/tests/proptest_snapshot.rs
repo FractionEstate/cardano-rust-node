@@ -27,10 +27,12 @@ fn epoch_no_strategy() -> impl Strategy<Value = EpochNo> {
 // Strategy for generating valid LedgerState
 fn ledger_state_strategy() -> impl Strategy<Value = LedgerState> {
     (slot_no_strategy(), block_no_strategy(), epoch_no_strategy()).prop_map(
-        |(slot, block_no, epoch)| LedgerState {
-            slot,
-            block_no,
-            epoch,
+        |(slot, block_no, epoch)| {
+            let mut state = LedgerState::genesis();
+            state.slot = slot;
+            state.block_no = block_no;
+            state.epoch = epoch;
+            state
         },
     )
 }
@@ -60,11 +62,10 @@ proptest! {
         block_no in any::<u64>(),
         epoch in any::<u64>()
     ) {
-        let state = LedgerState {
-            slot: SlotNo(slot),
-            block_no: BlockNo(block_no),
-            epoch: EpochNo(epoch),
-        };
+        let mut state = LedgerState::genesis();
+        state.slot = SlotNo(slot);
+        state.block_no = BlockNo(block_no);
+        state.epoch = EpochNo(epoch);
 
         let json = serde_json::to_vec(&state).unwrap();
         let decoded: LedgerState = serde_json::from_slice(&json).unwrap();
@@ -142,11 +143,10 @@ proptest! {
         block_no in prop_oneof![Just(0u64), Just(u64::MAX), any::<u64>()],
         epoch in prop_oneof![Just(0u64), Just(u64::MAX), any::<u64>()]
     ) {
-        let state = LedgerState {
-            slot: SlotNo(slot),
-            block_no: BlockNo(block_no),
-            epoch: EpochNo(epoch),
-        };
+        let mut state = LedgerState::genesis();
+        state.slot = SlotNo(slot);
+        state.block_no = BlockNo(block_no);
+        state.epoch = EpochNo(epoch);
 
         // Should serialize and deserialize even with extreme values
         let json = serde_json::to_vec(&state).unwrap();

@@ -10,6 +10,9 @@ members = [
     "crates/cardano-node",
     "crates/cardano-testnet",
 ]
+exclude = [
+    "crates/cardano-network/fuzz",
+]
 resolver = "2"
 
 [workspace.package]

@@ -15,8 +15,8 @@ use zeroize::Zeroize;
 pub const VRF_SEED_LENGTH: usize = 32;
 pub const VRF_PRIVATE_KEY_LENGTH: usize = 64;
 pub const VRF_PUBLIC_KEY_LENGTH: usize = 32;
-pub const VRF_PROOF_LENGTH: usize = 80;
-pub const VRF_BATCH_PROOF_LENGTH: usize = 128;
+pub const VRF_PROOF_LENGTH: usize = 128; // Updated to Draft-13 batch-compatible (was 80 for Draft-03)
+pub const VRF_BATCH_PROOF_LENGTH: usize = 128; // Now matches VRF_PROOF_LENGTH
 pub const VRF_OUTPUT_LENGTH: usize = 64;
 
 static PUBLIC_KEY_BYTES: Lazy<usize> = Lazy::new(backend::vrf_public_key_bytes);
@@ -32,7 +32,7 @@ pub struct VrfOutput {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VrfProof {
-    inner: [u8; VRF_PROOF_LENGTH],
+    inner: [u8; 128], // Fixed size for batch-compatible proofs
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

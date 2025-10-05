@@ -154,6 +154,10 @@ pub struct OuroborosState {
     pub stake_distribution: StakeDistribution,
     pub registered_pools: HashMap<PoolId, StakePool>,
     pub protocol_params: ProtocolParameters,
+    /// Epoch nonce for randomness
+    pub epoch_nonce: Blake2b256Hash,
+    /// Cached leader schedule for current epoch
+    pub leader_schedule: HashMap<SlotNo, PoolId>,
 }
 
 /// Slot leadership calculation engine
@@ -382,6 +386,8 @@ impl OuroborosState {
             },
             registered_pools: HashMap::new(),
             protocol_params,
+            epoch_nonce: Blake2b256Hash::hash(b"genesis"),
+            leader_schedule: HashMap::new(),
         }
     }
 
@@ -409,13 +415,145 @@ impl OuroborosState {
     }
 
     /// Handle epoch boundary transitions
-    fn handle_epoch_transition(&mut self, _old_epoch: EpochNo, _new_epoch: EpochNo) -> Result<()> {
-        // Update stake distribution snapshot
-        // Update protocol parameters if needed
-        // Calculate new epoch nonce
-        // Reset leader schedule
+    fn handle_epoch_transition(&mut self, old_epoch: EpochNo, new_epoch: EpochNo) -> Result<()> {
+        eprintln!(
+            "[INFO] Processing epoch transition: {} -> {}",
+            old_epoch.0, new_epoch.0
+        );
 
-        // TODO: Implement full epoch transition logic
+        // 1. Update epoch nonce (mix with VRF values from previous epoch)
+        self.evolve_epoch_nonce(new_epoch)?;
+
+        // 2. Take stake distribution snapshot (for epoch + 2)
+        self.snapshot_stake_distribution(new_epoch)?;
+
+        // 3. Calculate active stake for new epoch
+        self.calculate_active_stake(new_epoch)?;
+
+        // 4. Update KES periods
+        self.update_kes_periods(new_epoch)?;
+
+        // 5. Calculate and distribute epoch rewards
+        self.calculate_epoch_rewards(old_epoch)?;
+
+        // 6. Reset leader schedule for new epoch
+        self.leader_schedule.clear();
+
+        eprintln!("[INFO] Epoch transition complete: epoch {}", new_epoch.0);
+        Ok(())
+    }
+
+    /// Evolve epoch nonce using VRF outputs from previous epoch
+    fn evolve_epoch_nonce(&mut self, new_epoch: EpochNo) -> Result<()> {
+        // Get VRF outputs from last 6k/f slots of previous epoch
+        // In a real implementation, collect these from blocks
+        // For now, use a deterministic evolution based on epoch number
+
+        let epoch_bytes = new_epoch.0.to_le_bytes();
+        let mut nonce_bytes = [0u8; 32];
+
+        // XOR current nonce with epoch-derived randomness
+        for (i, byte) in self.epoch_nonce.as_bytes().iter().enumerate() {
+            nonce_bytes[i] = byte ^ epoch_bytes[i % epoch_bytes.len()];
+        }
+
+        self.epoch_nonce = Blake2b256Hash::hash(&nonce_bytes);
+
+        eprintln!(
+            "[DEBUG] Evolved epoch nonce for epoch {}: {:?}",
+            new_epoch.0, self.epoch_nonce
+        );
+
+        Ok(())
+    }
+
+    /// Snapshot stake distribution for future epoch
+    fn snapshot_stake_distribution(&mut self, current_epoch: EpochNo) -> Result<()> {
+        // Cardano takes stake snapshot 2 epochs ahead
+        // Snapshot taken at boundary of epoch N is used for epoch N+2
+
+        let snapshot_epoch = EpochNo(current_epoch.0 + 2);
+
+        eprintln!(
+            "[DEBUG] Taking stake snapshot at epoch {} for epoch {}",
+            current_epoch.0, snapshot_epoch.0
+        );
+
+        // Store snapshot (in production, this would persist to LedgerDB)
+        // For now, we just note that the current distribution is valid
+
+        Ok(())
+    }
+
+    /// Calculate active stake for the new epoch
+    fn calculate_active_stake(&mut self, new_epoch: EpochNo) -> Result<()> {
+        // Active stake is calculated from snapshot taken 2 epochs ago
+        let snapshot_epoch = if new_epoch.0 >= 2 {
+            EpochNo(new_epoch.0 - 2)
+        } else {
+            EpochNo(0)
+        };
+
+        eprintln!(
+            "[DEBUG] Calculating active stake for epoch {} from snapshot at epoch {}",
+            new_epoch.0, snapshot_epoch.0
+        );
+
+        // In production, retrieve snapshot from LedgerDB
+        // For now, use current stake distribution
+        let total_stake: u64 = self.stake_distribution.pools.values().copied().sum();
+        self.stake_distribution.total_stake = total_stake;
+
+        eprintln!(
+            "[INFO] Total active stake for epoch {}: {}",
+            new_epoch.0, self.stake_distribution.total_stake
+        );
+
+        Ok(())
+    }
+
+    /// Update KES periods for epoch transition
+    fn update_kes_periods(&mut self, new_epoch: EpochNo) -> Result<()> {
+        // KES periods track key evolution
+        // In Cardano, KES period = slot / kes_period_length
+
+        let first_slot = new_epoch.first_slot(&self.protocol_params);
+        eprintln!(
+            "[DEBUG] Updating KES periods for epoch {} (first slot: {})",
+            new_epoch.0, first_slot.0
+        );
+
+        // KES evolution is handled in the key management module
+        // This just notes the transition
+
+        Ok(())
+    }
+
+    /// Calculate and distribute epoch rewards
+    fn calculate_epoch_rewards(&mut self, completed_epoch: EpochNo) -> Result<()> {
+        eprintln!(
+            "[INFO] Calculating rewards for completed epoch {}",
+            completed_epoch.0
+        );
+
+        // Reward calculation formula (simplified):
+        // 1. Total ada in circulation
+        // 2. Reserve amount
+        // 3. Monetary expansion rate
+        // 4. Active stake ratio
+
+        // In production, this would:
+        // 1. Calculate total reward pot
+        // 2. Distribute to stake pools based on performance
+        // 3. Distribute to delegators based on stake
+        // 4. Update reserves and treasury
+
+        // For now, just log that rewards would be calculated
+        eprintln!(
+            "[DEBUG] Reward calculation for epoch {} completed (stub)",
+            completed_epoch.0
+        );
+
         Ok(())
     }
 

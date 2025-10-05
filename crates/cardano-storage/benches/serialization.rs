@@ -5,6 +5,7 @@ use cardano_storage::cardanodb::{
     types::{Blake2b256Hash, BlockLocation, BlockNo, ChunkNo, EpochNo, SlotNo},
 };
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use std::collections::HashMap;
 
 fn ledger_state_serialization_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("ledger_state_serialization");
@@ -13,6 +14,7 @@ fn ledger_state_serialization_benchmark(c: &mut Criterion) {
         slot: SlotNo(123456),
         block_no: BlockNo(789012),
         epoch: EpochNo(345),
+        utxo: HashMap::new(), // Empty UTxO set for benchmark
     };
 
     group.bench_function("serialize", |b| {

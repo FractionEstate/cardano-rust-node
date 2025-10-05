@@ -9,9 +9,12 @@
 //! - Extended UTXO model (EUTxO)
 //! - Script execution cost accounting
 
+use crate::mary::{
+    Address, Certificate, Coin, Ed25519KeyHash, MaryValue, MultiAsset, PolicyId,
+    RewardAddress, Slot, ValidityInterval,
+};
 use crate::{LedgerError, Result};
-use crate::mary::{MaryValue, MultiAsset, PolicyId, AssetName, Coin, Slot, Address, RewardAddress, Certificate, ValidityInterval, Ed25519KeyHash};
-use cardano_crypto::{Blake2b256Hash, Ed25519Signature};
+use cardano_crypto::Blake2b256Hash;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -28,9 +31,9 @@ pub struct AlonzoTransaction {
     pub validity_interval: ValidityInterval,
     pub mint: Option<MultiAsset>,
     pub script_data_hash: Option<Blake2b256Hash>, // New: hash of redeemers and datums
-    pub collateral: Vec<TransactionInput>, // New: collateral for script failures
-    pub required_signers: Vec<Ed25519KeyHash>, // New: required signatures for scripts
-    pub network_id: Option<NetworkId>, // New: network identification
+    pub collateral: Vec<TransactionInput>,        // New: collateral for script failures
+    pub required_signers: Vec<Ed25519KeyHash>,    // New: required signatures for scripts
+    pub network_id: Option<NetworkId>,            // New: network identification
     pub witness_set: AlonzoWitnessSet,
 }
 
@@ -39,7 +42,7 @@ pub struct AlonzoTransaction {
 pub struct AlonzoTransactionOutput {
     pub address: Address,
     pub value: MaryValue,
-    pub datum: Option<Datum>, // New: full datum (not just hash)
+    pub datum: Option<Datum>,          // New: full datum (not just hash)
     pub script_ref: Option<ScriptRef>, // Added later in Babbage but defined here
 }
 
@@ -67,20 +70,20 @@ pub struct PlutusScript {
 }
 
 /// Plutus script version
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PlutusVersion {
     V1, // Alonzo era
     V2, // Babbage era (defined here for forward compatibility)
 }
 
 /// Plutus data structure (simplified representation)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PlutusData {
-    Constr(u64, Vec<PlutusData>), // Constructor with tag and fields
+    Constr(u64, Vec<PlutusData>),       // Constructor with tag and fields
     Map(Vec<(PlutusData, PlutusData)>), // Key-value map
-    List(Vec<PlutusData>), // List of data
-    Integer(i64), // Big integer (simplified as i64)
-    Bytes(Vec<u8>), // Byte string
+    List(Vec<PlutusData>),              // List of data
+    Integer(i64),                       // Big integer (simplified as i64)
+    Bytes(Vec<u8>),                     // Byte string
 }
 
 /// Script redeemer providing context for script execution
@@ -104,7 +107,7 @@ pub enum RedeemerTag {
 /// Execution units for script cost accounting
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExUnits {
-    pub mem: u64,  // Memory usage
+    pub mem: u64,   // Memory usage
     pub steps: u64, // CPU steps
 }
 
@@ -122,13 +125,13 @@ pub struct AlonzoWitnessSet {
     pub native_scripts: Vec<NativeScript>,
     pub bootstrap_witnesses: Vec<BootstrapWitness>,
     pub plutus_v1_scripts: Vec<PlutusScript>, // New: Plutus V1 scripts
-    pub plutus_data: Vec<PlutusData>, // New: datum and redeemer data
-    pub redeemers: Vec<Redeemer>, // New: script redeemers
+    pub plutus_data: Vec<PlutusData>,         // New: datum and redeemer data
+    pub redeemers: Vec<Redeemer>,             // New: script redeemers
 }
 
 // Re-exported types from Mary era
 pub use crate::mary::{
-    NativeScript, VKeyWitness, BootstrapWitness, TransactionInput, AuxiliaryData
+    AuxiliaryData, BootstrapWitness, NativeScript, TransactionInput, VKeyWitness,
 };
 
 /// Script purpose for validation context
@@ -235,9 +238,13 @@ impl ExUnits {
 
     /// Add another ExUnits to this one
     pub fn add(&mut self, other: &ExUnits) -> Result<()> {
-        self.mem = self.mem.checked_add(other.mem)
+        self.mem = self
+            .mem
+            .checked_add(other.mem)
             .ok_or_else(|| LedgerError::ScriptError("Memory unit overflow".to_string()))?;
-        self.steps = self.steps.checked_add(other.steps)
+        self.steps = self
+            .steps
+            .checked_add(other.steps)
             .ok_or_else(|| LedgerError::ScriptError("Step unit overflow".to_string()))?;
         Ok(())
     }
@@ -275,14 +282,17 @@ impl AlonzoLedger {
     fn validate_structure(tx: &AlonzoTransaction) -> Result<()> {
         if tx.inputs.is_empty() {
             return Err(LedgerError::InvalidTransaction(
-                "Transaction must have at least one input".to_string()
+                "Transaction must have at least one input".to_string(),
             ));
         }
 
         // Collateral can be empty if no scripts are used
-        if !tx.collateral.is_empty() && tx.witness_set.plutus_v1_scripts.is_empty() && tx.witness_set.redeemers.is_empty() {
+        if !tx.collateral.is_empty()
+            && tx.witness_set.plutus_v1_scripts.is_empty()
+            && tx.witness_set.redeemers.is_empty()
+        {
             return Err(LedgerError::InvalidTransaction(
-                "Collateral provided but no scripts present".to_string()
+                "Collateral provided but no scripts present".to_string(),
             ));
         }
 
@@ -290,17 +300,18 @@ impl AlonzoLedger {
     }
 
     fn validate_script_data_hash(tx: &AlonzoTransaction) -> Result<()> {
-        let has_script_data = !tx.witness_set.plutus_data.is_empty() || !tx.witness_set.redeemers.is_empty();
+        let has_script_data =
+            !tx.witness_set.plutus_data.is_empty() || !tx.witness_set.redeemers.is_empty();
 
         match (has_script_data, &tx.script_data_hash) {
             (true, None) => {
                 return Err(LedgerError::InvalidTransaction(
-                    "Script data present but hash missing".to_string()
+                    "Script data present but hash missing".to_string(),
                 ));
             }
             (false, Some(_)) => {
                 return Err(LedgerError::InvalidTransaction(
-                    "Script data hash present but no script data".to_string()
+                    "Script data hash present but no script data".to_string(),
                 ));
             }
             _ => {} // Valid combinations
@@ -318,7 +329,7 @@ impl AlonzoLedger {
         // This would be validated against the UTxO set in practice
         if tx.collateral.len() > 3 {
             return Err(LedgerError::InvalidTransaction(
-                "Too many collateral inputs (max 3)".to_string()
+                "Too many collateral inputs (max 3)".to_string(),
             ));
         }
 
@@ -336,7 +347,7 @@ impl AlonzoLedger {
         let max_tx_ex_units = ExUnits::new(14_000_000, 10_000_000_000); // Example limits
         if !total_ex_units.within_budget(&max_tx_ex_units) {
             return Err(LedgerError::ScriptError(
-                "Transaction exceeds execution unit limits".to_string()
+                "Transaction exceeds execution unit limits".to_string(),
             ));
         }
 
@@ -361,21 +372,24 @@ impl AlonzoLedger {
             inputs: vec![], // Would resolve from UTxO set
             outputs: tx.outputs.clone(),
             fee: MaryValue::new_ada_only(tx.fee),
-            mint: tx.mint.as_ref()
+            mint: tx
+                .mint
+                .as_ref()
                 .map(|ma| MaryValue::new_with_assets(0, ma.clone()))
                 .unwrap_or_else(|| MaryValue::new_ada_only(0)),
             dcert: tx.certificates.clone(),
-            wdrl: tx.withdrawals.iter().map(|(addr, coin)| (addr.clone(), *coin)).collect(),
+            wdrl: tx
+                .withdrawals
+                .iter()
+                .map(|(addr, coin)| (addr.clone(), *coin))
+                .collect(),
             valid_range: tx.validity_interval.clone(),
             signatories: tx.required_signers.clone(),
             data: HashMap::new(), // Would be populated from witness set
             id: Blake2b256Hash::hash(&format!("{:?}", tx).as_bytes()), // Simplified
         };
 
-        ScriptContext {
-            tx_info,
-            purpose,
-        }
+        ScriptContext { tx_info, purpose }
     }
 
     /// Calculate minimum ADA for Alonzo output (includes datum cost)
@@ -408,10 +422,10 @@ mod tests {
 
     #[test]
     fn test_plutus_data_creation() {
-        let data = PlutusData::constr(0, vec![
-            PlutusData::integer(42),
-            PlutusData::bytes(vec![1, 2, 3, 4]),
-        ]);
+        let data = PlutusData::constr(
+            0,
+            vec![PlutusData::integer(42), PlutusData::bytes(vec![1, 2, 3, 4])],
+        );
 
         match data {
             PlutusData::Constr(tag, fields) => {
@@ -466,7 +480,9 @@ mod tests {
     fn test_min_ada_calculation_with_datum() {
         // Output without datum
         let simple_output = AlonzoTransactionOutput {
-            address: Address { bytes: vec![1, 2, 3] },
+            address: Address {
+                bytes: vec![1, 2, 3],
+            },
             value: MaryValue::new_ada_only(1_000_000),
             datum: None,
             script_ref: None,
@@ -477,7 +493,9 @@ mod tests {
 
         // Output with datum hash
         let datum_hash_output = AlonzoTransactionOutput {
-            address: Address { bytes: vec![1, 2, 3] },
+            address: Address {
+                bytes: vec![1, 2, 3],
+            },
             value: MaryValue::new_ada_only(1_000_000),
             datum: Some(Datum::DatumHash(Blake2b256Hash::hash(b"test"))),
             script_ref: None,
@@ -485,17 +503,22 @@ mod tests {
 
         let min_ada_hash = AlonzoLedger::min_ada_for_output(&datum_hash_output);
         assert!(min_ada_hash > min_ada_simple);
+        assert_eq!(min_ada_hash, 1_100_000); // Base + 100k for hash
 
-        // Output with inline datum
-        let inline_output = AlonzoTransactionOutput {
-            address: Address { bytes: vec![1, 2, 3] },
+        // Output with small inline datum (should cost less than hash due to small size)
+        let small_inline = AlonzoTransactionOutput {
+            address: Address {
+                bytes: vec![1, 2, 3],
+            },
             value: MaryValue::new_ada_only(1_000_000),
             datum: Some(Datum::InlineDatum(PlutusData::integer(42))),
             script_ref: None,
         };
 
-        let min_ada_inline = AlonzoLedger::min_ada_for_output(&inline_output);
-        assert!(min_ada_inline > min_ada_hash);
+        let min_ada_small_inline = AlonzoLedger::min_ada_for_output(&small_inline);
+        // Small inline datum costs less than fixed hash cost
+        assert!(min_ada_small_inline > min_ada_simple);
+        assert!(min_ada_small_inline < min_ada_hash);
     }
 
     #[test]

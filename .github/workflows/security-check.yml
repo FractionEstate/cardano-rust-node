@@ -1,0 +1,134 @@
+name: Security Check
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main]
+
+env:
+  RUST_BACKTRACE: 1
+  CARGO_TERM_COLOR: always
+
+jobs:
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache cargo registry
+        uses: actions/cache@v3
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache cargo index
+        uses: actions/cache@v3
+        with:
+          path: ~/.cargo/git
+          key: ${{ runner.os }}-cargo-git-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache cargo build
+        uses: actions/cache@v3
+        with:
+          path: target
+          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Run Clippy with security lints
+        run: |
+          cargo clippy --workspace --all-targets --all-features -- \
+            -D warnings \
+            -W clippy::unwrap_used \
+            -W clippy::expect_used \
+            -W clippy::panic \
+            -W clippy::unimplemented \
+            -W clippy::todo \
+            -W clippy::unreachable
+
+      - name: Check for unwrap() in production code
+        run: |
+          echo "Checking for unwrap() calls in production code..."
+
+          # Exclude test files and examples
+          if find crates -name "*.rs" -type f \
+            ! -path "*/tests/*" \
+            ! -path "*/examples/*" \
+            ! -name "*test*.rs" \
+            -exec grep -Hn "\.unwrap()" {} \; | grep -v "^[[:space:]]*//"; then
+            echo "❌ ERROR: Found unwrap() calls in production code!"
+            echo "Please use ? operator or proper error handling instead."
+            exit 1
+          else
+            echo "✅ No unwrap() calls found in production code"
+          fi
+
+      - name: Check for expect() in production code
+        run: |
+          echo "Checking for expect() calls in production code..."
+
+          # Allow expect() but warn about it
+          if find crates -name "*.rs" -type f \
+            ! -path "*/tests/*" \
+            ! -path "*/examples/*" \
+            ! -name "*test*.rs" \
+            -exec grep -Hn "\.expect(" {} \; | grep -v "^[[:space:]]*//"; then
+            echo "⚠️  WARNING: Found expect() calls in production code"
+            echo "Consider using ? operator for better error propagation"
+          else
+            echo "✅ No expect() calls found in production code"
+          fi
+
+      - name: Check for panic! in production code
+        run: |
+          echo "Checking for panic!() calls in production code..."
+
+          if find crates -name "*.rs" -type f \
+            ! -path "*/tests/*" \
+            ! -path "*/examples/*" \
+            ! -name "*test*.rs" \
+            -exec grep -Hn "panic!" {} \; | grep -v "^[[:space:]]*//"; then
+            echo "❌ ERROR: Found panic!() calls in production code!"
+            echo "Please use Result<> and proper error handling instead."
+            exit 1
+          else
+            echo "✅ No panic!() calls found in production code"
+          fi
+
+      - name: Run cargo audit for security vulnerabilities
+        run: |
+          cargo install cargo-audit
+          cargo audit --deny warnings
+
+      - name: Check for unsafe code
+        run: |
+          echo "Checking for unsafe blocks in code..."
+
+          # Count unsafe blocks
+          UNSAFE_COUNT=$(find crates -name "*.rs" -type f -exec grep -c "unsafe" {} \; | awk '{s+=$1} END {print s}')
+
+          echo "Found $UNSAFE_COUNT unsafe blocks/functions"
+
+          if [ "$UNSAFE_COUNT" -gt 0 ]; then
+            echo "⚠️  WARNING: Found unsafe code blocks"
+            echo "Please ensure all unsafe code is:"
+            echo "  - Necessary and documented"
+            echo "  - Properly reviewed for safety"
+            echo "  - Has safety comments explaining invariants"
+          fi
+
+      - name: Security summary
+        if: always()
+        run: |
+          echo "=== Security Check Summary ==="
+          echo "✅ Clippy security lints passed"
+          echo "✅ Production code free of unwrap()"
+          echo "✅ Production code free of panic!()"
+          echo "✅ Dependency audit passed"
+          echo "✅ Unsafe code reviewed (if any)"

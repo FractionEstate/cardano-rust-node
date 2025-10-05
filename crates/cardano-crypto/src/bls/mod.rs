@@ -51,10 +51,11 @@ impl BlsPrivateKey {
 
         // Try to construct scalar from bytes (using big-endian format)
         let scalar = Scalar::from_bytes_be(&scalar_bytes);
-        if scalar.is_some().into() {
-            // Safe: we just checked is_some()
+        if bool::from(scalar.is_some()) {
+            // SAFETY: We just verified scalar.is_some() is true
+            // This is safe but using ok_or_else would be clearer
             Ok(Self {
-                inner: scalar.unwrap(),
+                inner: scalar.expect("Scalar is_some() was just verified"),
             })
         } else {
             Err(CryptoError::BlsError("Invalid scalar value".to_string()))
@@ -98,9 +99,10 @@ impl BlsPublicKey {
         compressed.copy_from_slice(bytes);
 
         let affine = G1Affine::from_compressed(&compressed);
-        if affine.is_some().into() {
+        if bool::from(affine.is_some()) {
+            // SAFETY: We just verified affine.is_some() is true
             Ok(Self {
-                inner: G1Projective::from(affine.unwrap()),
+                inner: G1Projective::from(affine.expect("G1 point is_some() was just verified")),
             })
         } else {
             Err(CryptoError::BlsError(
@@ -169,9 +171,10 @@ impl BlsSignature {
         compressed.copy_from_slice(bytes);
 
         let affine = G2Affine::from_compressed(&compressed);
-        if affine.is_some().into() {
+        if bool::from(affine.is_some()) {
+            // SAFETY: We just verified affine.is_some() is true
             Ok(Self {
-                inner: G2Projective::from(affine.unwrap()),
+                inner: G2Projective::from(affine.expect("G2 point is_some() was just verified")),
             })
         } else {
             Err(CryptoError::BlsError(

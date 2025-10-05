@@ -48,6 +48,7 @@ blake2.workspace = true
 # Serialization
 serde.workspace = true
 serde_json.workspace = true
+minicbor.workspace = true
 
 # Hex encoding/decoding
 hex.workspace = true

@@ -9,15 +9,17 @@
 //! - Treasury management and governance-controlled parameter updates
 //! - Info actions for governance information dissemination
 
+use crate::babbage::BabbageTransaction;
+use crate::mary::{Certificate, Coin, Ed25519KeyHash, RewardAddress, Slot};
 use crate::{LedgerError, Result};
-use crate::mary::{Coin, Slot, Address, RewardAddress, Certificate, ValidityInterval, Ed25519KeyHash};
-use crate::babbage::{
-    BabbageTransaction, BabbageTransactionOutput, OutputDatum, ScriptReference,
-    BabbageWitnessSet, BabbageRedeemer
-};
-use cardano_crypto::{Blake2b256Hash, Ed25519Signature, VrfProof};
+use cardano_crypto::Blake2b256Hash;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+#[cfg(test)]
+use crate::babbage::BabbageWitnessSet;
+#[cfg(test)]
+use crate::mary::ValidityInterval;
 
 /// Conway Era Transaction with governance support
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -114,7 +116,7 @@ pub struct HardForkInfo {
 pub struct CommitteeUpdate {
     pub members_to_remove: Vec<Ed25519KeyHash>, // Cold keys to remove
     pub members_to_add: HashMap<Ed25519KeyHash, Slot>, // Cold key -> expiry slot
-    pub threshold: Option<Rational>, // New threshold (numerator/denominator)
+    pub threshold: Option<Rational>,            // New threshold (numerator/denominator)
 }
 
 /// Rational number for thresholds
@@ -225,10 +227,7 @@ pub enum ConwayCertificate {
     },
 
     /// DRep unregistration
-    UnregDRep {
-        drep_id: DRepId,
-        refund: Coin,
-    },
+    UnregDRep { drep_id: DRepId, refund: Coin },
 
     /// Update DRep information
     UpdateDRep {
@@ -356,10 +355,13 @@ impl Rational {
     pub fn new(numerator: u64, denominator: u64) -> Result<Self> {
         if denominator == 0 {
             return Err(LedgerError::InvalidTransaction(
-                "Denominator cannot be zero".to_string()
+                "Denominator cannot be zero".to_string(),
             ));
         }
-        Ok(Self { numerator, denominator })
+        Ok(Self {
+            numerator,
+            denominator,
+        })
     }
 
     pub fn as_percentage(&self) -> f64 {
@@ -407,7 +409,7 @@ impl ConwayLedger {
     /// Validate a Conway era transaction
     pub fn validate_transaction(
         tx: &ConwayTransaction,
-        governance_state: &GovernanceState
+        governance_state: &GovernanceState,
     ) -> Result<()> {
         // 1. Validate underlying Babbage transaction
         // Note: Would use BabbageLedger::validate_transaction(&tx.babbage_tx)
@@ -422,25 +424,31 @@ impl ConwayLedger {
 
     fn validate_voting_procedures(
         tx: &ConwayTransaction,
-        governance_state: &GovernanceState
+        governance_state: &GovernanceState,
     ) -> Result<()> {
         for vote_proc in &tx.voting_procedures {
             // Check that governance action exists and is active
-            if !governance_state.active_actions.contains_key(&vote_proc.governance_action_id) {
-                return Err(LedgerError::GovernanceError(
-                    format!("Governance action {:?} does not exist", vote_proc.governance_action_id)
-                ));
+            if !governance_state
+                .active_actions
+                .contains_key(&vote_proc.governance_action_id)
+            {
+                return Err(LedgerError::GovernanceError(format!(
+                    "Governance action {:?} does not exist",
+                    vote_proc.governance_action_id
+                )));
             }
 
             // Validate voter authorization
             Self::validate_voter_authorization(&vote_proc.voter, governance_state)?;
 
             // Check for duplicate votes (one vote per voter per action)
-            if let Some(existing_votes) = governance_state.votes.get(&vote_proc.governance_action_id) {
+            if let Some(existing_votes) =
+                governance_state.votes.get(&vote_proc.governance_action_id)
+            {
                 for existing_vote in existing_votes {
                     if Self::same_voter(&vote_proc.voter, &existing_vote.voter) {
                         return Err(LedgerError::GovernanceError(
-                            "Voter has already voted on this action".to_string()
+                            "Voter has already voted on this action".to_string(),
                         ));
                     }
                 }
@@ -452,17 +460,17 @@ impl ConwayLedger {
 
     fn validate_voter_authorization(
         voter: &Voter,
-        governance_state: &GovernanceState
+        governance_state: &GovernanceState,
     ) -> Result<()> {
         match voter {
             Voter::ConstitutionalCommittee(cold_key) => {
                 if !governance_state.committee_members.contains_key(cold_key) {
                     return Err(LedgerError::GovernanceError(
-                        "Not a valid Constitutional Committee member".to_string()
+                        "Not a valid Constitutional Committee member".to_string(),
                     ));
                 }
                 // Check if not expired
-                let expiry = governance_state.committee_members[cold_key];
+                let _expiry = governance_state.committee_members[cold_key];
                 // Would check against current slot
             }
             Voter::DRep(drep_id) => {
@@ -471,16 +479,16 @@ impl ConwayLedger {
                     DRepId::KeyHash(_) | DRepId::ScriptHash(_) => {
                         if !governance_state.dreps.contains_key(drep_id) {
                             return Err(LedgerError::GovernanceError(
-                                "DRep is not registered".to_string()
+                                "DRep is not registered".to_string(),
                             ));
                         }
                         // Check if DRep is active (voted or updated within activity period)
-                        let drep_info = &governance_state.dreps[drep_id];
+                        let _drep_info = &governance_state.dreps[drep_id];
                         // Would check drep_info.last_activity against current slot
                     }
                 }
             }
-            Voter::StakePool(pool_id) => {
+            Voter::StakePool(_pool_id) => {
                 // Would validate that pool_id is a registered stake pool
                 // This requires access to pool registration certificates
             }
@@ -500,16 +508,22 @@ impl ConwayLedger {
 
     fn validate_proposal_procedures(
         tx: &ConwayTransaction,
-        governance_state: &GovernanceState
+        governance_state: &GovernanceState,
     ) -> Result<()> {
         for proposal in &tx.proposal_procedures {
             // Validate deposit amount meets minimum
-            if proposal.deposit < governance_state.protocol_parameters.governance_action_deposit {
-                return Err(LedgerError::GovernanceError(
-                    format!("Governance action deposit {} is below minimum {}",
-                        proposal.deposit,
-                        governance_state.protocol_parameters.governance_action_deposit)
-                ));
+            if proposal.deposit
+                < governance_state
+                    .protocol_parameters
+                    .governance_action_deposit
+            {
+                return Err(LedgerError::GovernanceError(format!(
+                    "Governance action deposit {} is below minimum {}",
+                    proposal.deposit,
+                    governance_state
+                        .protocol_parameters
+                        .governance_action_deposit
+                )));
             }
 
             // Validate governance action structure
@@ -524,46 +538,46 @@ impl ConwayLedger {
 
     fn validate_governance_action(
         action: &GovernanceAction,
-        _governance_state: &GovernanceState
+        _governance_state: &GovernanceState,
     ) -> Result<()> {
         match action.action_type {
             GovernanceActionType::ParameterChange => {
                 if action.parameter_changes.is_none() {
                     return Err(LedgerError::GovernanceError(
-                        "Parameter change action must include parameter changes".to_string()
+                        "Parameter change action must include parameter changes".to_string(),
                     ));
                 }
             }
             GovernanceActionType::HardForkInitiation => {
                 if action.hard_fork_info.is_none() {
                     return Err(LedgerError::GovernanceError(
-                        "Hard fork action must include version info".to_string()
+                        "Hard fork action must include version info".to_string(),
                     ));
                 }
             }
             GovernanceActionType::TreasuryWithdrawals => {
                 if action.treasury_withdrawals.is_none() {
                     return Err(LedgerError::GovernanceError(
-                        "Treasury withdrawal must specify withdrawals".to_string()
+                        "Treasury withdrawal must specify withdrawals".to_string(),
                     ));
                 }
                 // Validate withdrawal amounts don't exceed treasury
                 if let Some(withdrawals) = &action.treasury_withdrawals {
-                    let total_withdrawal: Coin = withdrawals.values().sum();
+                    let _total_withdrawal: Coin = withdrawals.values().sum();
                     // Would check against governance_state.treasury
                 }
             }
             GovernanceActionType::UpdateCommittee => {
                 if action.committee_update.is_none() {
                     return Err(LedgerError::GovernanceError(
-                        "Committee update must specify changes".to_string()
+                        "Committee update must specify changes".to_string(),
                     ));
                 }
             }
             GovernanceActionType::NewConstitution => {
                 if action.constitution_update.is_none() {
                     return Err(LedgerError::GovernanceError(
-                        "Constitution update must specify new constitution hash".to_string()
+                        "Constitution update must specify new constitution hash".to_string(),
                     ));
                 }
             }
@@ -580,12 +594,12 @@ impl ConwayLedger {
 
     fn validate_treasury_operations(
         tx: &ConwayTransaction,
-        governance_state: &GovernanceState
+        governance_state: &GovernanceState,
     ) -> Result<()> {
         if let Some(donation) = tx.treasury_donation {
             if donation == 0 {
                 return Err(LedgerError::InvalidTransaction(
-                    "Treasury donation must be positive".to_string()
+                    "Treasury donation must be positive".to_string(),
                 ));
             }
         }
@@ -593,10 +607,10 @@ impl ConwayLedger {
         // Validate current treasury value if provided
         if let Some(claimed_treasury) = tx.current_treasury_value {
             if claimed_treasury != governance_state.treasury {
-                return Err(LedgerError::GovernanceError(
-                    format!("Incorrect treasury value: claimed {}, actual {}",
-                        claimed_treasury, governance_state.treasury)
-                ));
+                return Err(LedgerError::GovernanceError(format!(
+                    "Incorrect treasury value: claimed {}, actual {}",
+                    claimed_treasury, governance_state.treasury
+                )));
             }
         }
 
@@ -611,7 +625,7 @@ impl ConwayLedger {
     ) -> bool {
         let thresholds = Self::get_thresholds_for_action(
             &action.action_type,
-            &governance_state.protocol_parameters.voting_thresholds
+            &governance_state.protocol_parameters.voting_thresholds,
         );
 
         // Calculate votes by voter type
@@ -658,21 +672,27 @@ impl ConwayLedger {
             }
         }
 
-        if !thresholds.drep_threshold.meets_threshold(drep_yes_stake, drep_total_stake) {
+        if !thresholds
+            .drep_threshold
+            .meets_threshold(drep_yes_stake, drep_total_stake)
+        {
             requirements_met = false;
         }
 
-        if !thresholds.spo_threshold.meets_threshold(spo_yes_stake, spo_total_stake) {
+        if !thresholds
+            .spo_threshold
+            .meets_threshold(spo_yes_stake, spo_total_stake)
+        {
             requirements_met = false;
         }
 
         requirements_met
     }
 
-    fn get_thresholds_for_action(
+    fn get_thresholds_for_action<'a>(
         action_type: &GovernanceActionType,
-        voting_thresholds: &VotingThresholds,
-    ) -> &ThresholdGroup {
+        voting_thresholds: &'a VotingThresholds,
+    ) -> &'a ThresholdGroup {
         match action_type {
             GovernanceActionType::NoConfidence => &voting_thresholds.motion_no_confidence,
             GovernanceActionType::UpdateCommittee => &voting_thresholds.committee_normal,
@@ -691,20 +711,30 @@ impl ConwayLedger {
         match drep_id {
             DRepId::Abstain | DRepId::NoConfidence => {
                 // Calculate total stake delegated to this special DRep
-                governance_state.delegations
+                governance_state
+                    .delegations
                     .iter()
                     .filter_map(|(stake_cred, target)| {
                         match target {
                             DelegationTarget::DRep(delegated_drep) => {
                                 if delegated_drep == drep_id {
-                                    Some(Self::get_stake_for_credential(stake_cred, governance_state))
+                                    Some(Self::get_stake_for_credential(
+                                        stake_cred,
+                                        governance_state,
+                                    ))
                                 } else {
                                     None
                                 }
                             }
-                            DelegationTarget::PoolAndDRep { drep_id: delegated_drep, .. } => {
+                            DelegationTarget::PoolAndDRep {
+                                drep_id: delegated_drep,
+                                ..
+                            } => {
                                 if delegated_drep == drep_id {
-                                    Some(Self::get_stake_for_credential(stake_cred, governance_state))
+                                    Some(Self::get_stake_for_credential(
+                                        stake_cred,
+                                        governance_state,
+                                    ))
                                 } else {
                                     None
                                 }
@@ -714,12 +744,11 @@ impl ConwayLedger {
                     })
                     .sum()
             }
-            _ => {
-                governance_state.dreps
-                    .get(drep_id)
-                    .map(|info| info.voting_power)
-                    .unwrap_or(0)
-            }
+            _ => governance_state
+                .dreps
+                .get(drep_id)
+                .map(|info| info.voting_power)
+                .unwrap_or(0),
         }
     }
 
@@ -729,7 +758,10 @@ impl ConwayLedger {
         0 // Simplified
     }
 
-    fn get_stake_for_credential(_stake_cred: &Ed25519KeyHash, _governance_state: &GovernanceState) -> Coin {
+    fn get_stake_for_credential(
+        _stake_cred: &Ed25519KeyHash,
+        _governance_state: &GovernanceState,
+    ) -> Coin {
         // Would look up actual stake amount for this credential
         1_000_000 // Simplified - 1 ADA per credential
     }
@@ -752,12 +784,12 @@ impl Default for VotingThresholds {
             committee_no_confidence: ThresholdGroup {
                 committee_threshold: None,
                 drep_threshold: Rational::new(60, 100).unwrap(), // 60%
-                spo_threshold: Rational::new(60, 100).unwrap(), // 60%
+                spo_threshold: Rational::new(60, 100).unwrap(),  // 60%
             },
             update_constitution: ThresholdGroup {
                 committee_threshold: Some(Rational::new(75, 100).unwrap()), // 75%
-                drep_threshold: Rational::new(75, 100).unwrap(), // 75%
-                spo_threshold: Rational::new(75, 100).unwrap(), // 75%
+                drep_threshold: Rational::new(75, 100).unwrap(),            // 75%
+                spo_threshold: Rational::new(75, 100).unwrap(),             // 75%
             },
             hard_fork_initiation: ThresholdGroup {
                 committee_threshold: Some(Rational::new(60, 100).unwrap()),
@@ -853,7 +885,10 @@ mod tests {
             guardrails_policy: None,
         };
 
-        assert_eq!(parameter_change.action_type, GovernanceActionType::ParameterChange);
+        assert_eq!(
+            parameter_change.action_type,
+            GovernanceActionType::ParameterChange
+        );
         assert!(parameter_change.parameter_changes.is_some());
     }
 
@@ -890,8 +925,8 @@ mod tests {
             },
         };
 
-        let conway_tx = ConwayTransaction::from_babbage(babbage_tx)
-            .with_treasury_donation(1_000_000);
+        let conway_tx =
+            ConwayTransaction::from_babbage(babbage_tx).with_treasury_donation(1_000_000);
 
         assert_eq!(conway_tx.treasury_donation, Some(1_000_000));
         assert!(conway_tx.voting_procedures.is_empty());
@@ -904,11 +939,17 @@ mod tests {
 
         // Constitution changes require 75% thresholds
         assert_eq!(thresholds.update_constitution.drep_threshold.numerator, 75);
-        assert_eq!(thresholds.update_constitution.drep_threshold.denominator, 100);
+        assert_eq!(
+            thresholds.update_constitution.drep_threshold.denominator,
+            100
+        );
 
         // No confidence is 51%
         assert_eq!(thresholds.motion_no_confidence.drep_threshold.numerator, 51);
-        assert_eq!(thresholds.motion_no_confidence.drep_threshold.denominator, 100);
+        assert_eq!(
+            thresholds.motion_no_confidence.drep_threshold.denominator,
+            100
+        );
     }
 }
 

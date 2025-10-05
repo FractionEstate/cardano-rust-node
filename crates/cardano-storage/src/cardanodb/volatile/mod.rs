@@ -145,6 +145,12 @@ impl VolatileDB {
         }
     }
 
+    /// Get all blocks (for migration processing)
+    pub async fn get_all_blocks(&self) -> Vec<VolatileBlock> {
+        let blocks = self.blocks.read().await;
+        blocks.iter().cloned().collect()
+    }
+
     /// Remove a block (after moving to ImmutableDB)
     pub async fn remove_block(&self, hash: &Blake2b256Hash) -> Result<()> {
         let mut hash_index = self.hash_index.write().await;
@@ -164,6 +170,24 @@ impl VolatileDB {
     /// Get the current number of blocks in VolatileDB
     pub async fn block_count(&self) -> usize {
         self.blocks.read().await.len()
+    }
+
+    /// Get the tip of the volatile chain (most recent block)
+    pub async fn get_tip(&self) -> Option<crate::cardanodb::types::ChainTip> {
+        let blocks = self.blocks.read().await;
+
+        if blocks.is_empty() {
+            return None;
+        }
+
+        // Get the most recent block (last in ring buffer: len - 1)
+        blocks
+            .get(blocks.len() - 1)
+            .map(|block| crate::cardanodb::types::ChainTip {
+                block_hash: block.hash,
+                block_no: block.block_no,
+                slot_no: block.slot_no,
+            })
     }
 }
 

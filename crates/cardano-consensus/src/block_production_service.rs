@@ -36,6 +36,14 @@ pub enum BlockProductionEvent {
     ForgingFailed { slot: u64, error: String },
     /// KES key evolved
     KesEvolved { from_period: u64, to_period: u64 },
+    /// KES key approaching expiration
+    KesApproachingExpiration {
+        current_period: u64,
+        max_period: u64,
+        remaining_periods: u64,
+    },
+    /// KES key expired
+    KesExpired { period: u64 },
 }
 
 /// Configuration for block production service
@@ -63,6 +71,10 @@ pub struct BlockProductionService {
     forger: Arc<RwLock<BlockForger>>,
     stats: Arc<RwLock<BlockProductionStats>>,
     event_tx: broadcast::Sender<BlockProductionEvent>,
+    /// Optional callback to get current chain tip (prev block hash)
+    get_chain_tip: Option<Arc<dyn Fn() -> Option<Blake2b256Hash> + Send + Sync>>,
+    /// Optional callback to get current ledger state
+    get_ledger_state: Option<Arc<dyn Fn() -> Option<SimplifiedLedgerState> + Send + Sync>>,
 }
 
 /// Statistics for block production
@@ -86,7 +98,25 @@ impl BlockProductionService {
             forger: Arc::new(RwLock::new(forger)),
             stats: Arc::new(RwLock::new(BlockProductionStats::default())),
             event_tx,
+            get_chain_tip: None,
+            get_ledger_state: None,
         }
+    }
+
+    /// Set the chain tip provider (callback to get prev block hash)
+    pub fn set_chain_tip_provider<F>(&mut self, provider: F)
+    where
+        F: Fn() -> Option<Blake2b256Hash> + Send + Sync + 'static,
+    {
+        self.get_chain_tip = Some(Arc::new(provider));
+    }
+
+    /// Set the ledger state provider (callback to get current ledger state)
+    pub fn set_ledger_state_provider<F>(&mut self, provider: F)
+    where
+        F: Fn() -> Option<SimplifiedLedgerState> + Send + Sync + 'static,
+    {
+        self.get_ledger_state = Some(Arc::new(provider));
     }
 
     /// Subscribe to block production events
@@ -186,6 +216,11 @@ impl BlockProductionService {
 
         debug!("Checking slot {} for leadership", slot.0);
 
+        // Check KES status periodically (every 100 slots)
+        if slot.0 % 100 == 0 {
+            self.check_kes_status().await;
+        }
+
         // Note: KES evolution is handled automatically inside try_forge_block
 
         // Build forging context
@@ -268,12 +303,75 @@ impl BlockProductionService {
     ) -> ForgingContext {
         let config = self.config.read().await;
 
+        // Get prev block hash from chain tip provider, or use mock data
+        let prev_block_hash = if let Some(ref provider) = self.get_chain_tip {
+            provider().unwrap_or_else(|| {
+                eprintln!("[WARN] Chain tip provider returned None, using mock data");
+                Blake2b256Hash::hash(b"prev_block")
+            })
+        } else {
+            eprintln!("[WARN] No chain tip provider set, using mock data");
+            Blake2b256Hash::hash(b"prev_block")
+        };
+
+        // Get ledger state from provider, or use mock data
+        let ledger_state = if let Some(ref provider) = self.get_ledger_state {
+            provider().unwrap_or_else(|| {
+                eprintln!("[WARN] Ledger state provider returned None, using mock data");
+                SimplifiedLedgerState::new()
+            })
+        } else {
+            eprintln!("[WARN] No ledger state provider set, using mock data");
+            SimplifiedLedgerState::new()
+        };
+
         ForgingContext {
             current_slot: slot,
             epoch_nonce: config.epoch_nonce.clone(),
-            prev_block_hash: Blake2b256Hash::hash(b"prev_block"), // TODO: Get from chain tip
+            prev_block_hash,
             mempool: mempool.to_vec(),
-            ledger_state: SimplifiedLedgerState::new(), // TODO: Get actual ledger state
+            ledger_state,
+        }
+    }
+
+    /// Check KES key status and emit warnings/errors if needed
+    async fn check_kes_status(&self) {
+        let forger = self.forger.read().await;
+
+        if forger.is_kes_expired() {
+            let period = forger.current_kes_period();
+            warn!(
+                "❌ KES key EXPIRED at period {}! Block production will fail!",
+                period
+            );
+            self.emit_event(BlockProductionEvent::KesExpired { period });
+        } else {
+            let remaining = forger.kes_periods_remaining();
+
+            // Warn if approaching expiration (within 10 periods)
+            if forger.is_kes_approaching_expiration(10) {
+                let current = forger.current_kes_period();
+                let max = forger.kes_max_period();
+
+                warn!(
+                    "⚠️  KES key approaching expiration! Current: {}, Max: {}, Remaining: {}",
+                    current, max, remaining
+                );
+
+                self.emit_event(BlockProductionEvent::KesApproachingExpiration {
+                    current_period: current,
+                    max_period: max,
+                    remaining_periods: remaining,
+                });
+            } else if remaining % 10 == 0 && remaining <= 50 {
+                // Log periodic status when getting low
+                info!(
+                    "KES status: period {}/{}, {} periods remaining",
+                    forger.current_kes_period(),
+                    forger.kes_max_period(),
+                    remaining
+                );
+            }
         }
     }
 

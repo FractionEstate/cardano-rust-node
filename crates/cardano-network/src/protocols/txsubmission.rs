@@ -39,8 +39,10 @@ pub struct TxId(pub Blake2b256Hash);
 
 impl TxId {
     /// Create a new transaction ID from hash bytes
-    pub fn new(bytes: &[u8; 32]) -> Self {
-        Self(Blake2b256Hash::from_bytes(bytes).unwrap())
+    pub fn new(bytes: &[u8; 32]) -> Result<Self, String> {
+        Blake2b256Hash::from_bytes(bytes)
+            .map(Self)
+            .map_err(|e| format!("Invalid transaction ID bytes: {}", e))
     }
 
     /// Create a random transaction ID for testing
@@ -51,7 +53,8 @@ impl TxId {
         for (i, byte) in bytes.iter_mut().enumerate().take(31).skip(1) {
             *byte = seed.wrapping_add(i as u8);
         }
-        Self::new(&bytes)
+        // This should never fail since we're using valid 32-byte array
+        Self::new(&bytes).expect("Random TxId creation should not fail")
     }
 
     /// Get the underlying hash
@@ -647,7 +650,7 @@ mod tests {
 
     #[test]
     fn test_tx_id_creation() {
-        let tx_id = TxId::new(&[1u8; 32]);
+        let tx_id = TxId::new(&[1u8; 32]).unwrap();
         assert_eq!(tx_id.hash().as_bytes()[0], 1);
 
         let random_tx_id = TxId::random(42);

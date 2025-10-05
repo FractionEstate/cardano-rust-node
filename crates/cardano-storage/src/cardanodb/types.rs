@@ -110,6 +110,17 @@ pub struct ImmutableTip {
     pub block_no: BlockNo,
 }
 
+/// Current tip of the chain (most recent block)
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChainTip {
+    /// Hash of the tip block
+    pub block_hash: Blake2b256Hash,
+    /// Block number of the tip
+    pub block_no: BlockNo,
+    /// Slot number of the tip block
+    pub slot_no: SlotNo,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

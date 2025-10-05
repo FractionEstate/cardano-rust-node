@@ -4,11 +4,13 @@
 
 #[cfg(feature = "legacy")]
 pub mod lmdb;
+pub mod memory;
 #[cfg(feature = "legacy")]
 pub mod rocksdb;
 
 #[cfg(feature = "legacy")]
 pub use lmdb::{LmdbBackend, LmdbConfig};
+pub use memory::MemoryBackend;
 #[cfg(feature = "legacy")]
 pub use rocksdb::{RocksDbBackend, RocksDbConfig};
 

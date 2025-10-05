@@ -118,6 +118,9 @@ use anyhow::{Context, Result};
 use chunk::ChunkFile;
 use hashbrown::HashMap;
 use index::{PrimaryIndex, SecondaryIndex};
+
+// Re-export chunk abstractions for external use
+pub use chunk::{ChunkReader, ChunkWriter};
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::Arc;

@@ -1,0 +1,48 @@
+[package]
+name = "cardano-network-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[workspace]
+# Empty workspace table to exclude this from parent workspace
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+bytes = "1.10"
+tokio-util = { version = "0.7", features = ["codec"] }
+
+[dependencies.cardano-network]
+path = ".."
+
+[[bin]]
+name = "fuzz_handshake"
+path = "fuzz_targets/fuzz_handshake.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_chainsync"
+path = "fuzz_targets/fuzz_chainsync.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_blockfetch"
+path = "fuzz_targets/fuzz_blockfetch.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_txsubmission"
+path = "fuzz_targets/fuzz_txsubmission.rs"
+test = false
+doc = false
+bench = false
+

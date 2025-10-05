@@ -7,6 +7,10 @@
 //! - Multi-asset transaction outputs
 //! - Asset-aware transaction validation
 //! - Token bundle management
+//! - Complete native script validation
+
+#[cfg(test)]
+mod native_script_tests;
 
 use crate::{LedgerError, Result};
 use cardano_crypto::{Blake2b256Hash, Ed25519Signature};
@@ -82,7 +86,7 @@ pub enum NativeScript {
     ScriptAll(Vec<NativeScript>),
     ScriptAny(Vec<NativeScript>),
     ScriptNOfK(u32, Vec<NativeScript>),
-    InvalidBefore(Slot), // Allegra timelock feature
+    InvalidBefore(Slot),    // Allegra timelock feature
     InvalidHereafter(Slot), // Allegra timelock feature
 }
 
@@ -159,8 +163,9 @@ impl MaryValue {
     /// Add another MaryValue to this one
     pub fn add(&mut self, other: &MaryValue) -> Result<()> {
         // Add ADA
-        self.coin = self.coin.checked_add(other.coin)
-            .ok_or_else(|| LedgerError::InvalidTransaction("ADA overflow in addition".to_string()))?;
+        self.coin = self.coin.checked_add(other.coin).ok_or_else(|| {
+            LedgerError::InvalidTransaction("ADA overflow in addition".to_string())
+        })?;
 
         // Add multi-assets
         if let Some(other_assets) = &other.multi_asset {
@@ -176,8 +181,9 @@ impl MaryValue {
     /// Subtract another MaryValue from this one
     pub fn subtract(&mut self, other: &MaryValue) -> Result<()> {
         // Subtract ADA
-        self.coin = self.coin.checked_sub(other.coin)
-            .ok_or_else(|| LedgerError::InvalidTransaction("Insufficient ADA for subtraction".to_string()))?;
+        self.coin = self.coin.checked_sub(other.coin).ok_or_else(|| {
+            LedgerError::InvalidTransaction("Insufficient ADA for subtraction".to_string())
+        })?;
 
         // Subtract multi-assets
         if let Some(other_assets) = &other.multi_asset {
@@ -191,7 +197,7 @@ impl MaryValue {
                 }
                 None => {
                     return Err(LedgerError::InvalidTransaction(
-                        "Cannot subtract assets from ADA-only value".to_string()
+                        "Cannot subtract assets from ADA-only value".to_string(),
                     ));
                 }
             }
@@ -211,8 +217,43 @@ impl MaryValue {
         match (&self.multi_asset, &other.multi_asset) {
             (Some(self_assets), Some(other_assets)) => self_assets.geq(other_assets),
             (None, Some(_)) => false, // We have no assets but other requires some
-            (_, None) => true, // Other requires no assets, we're good
+            (_, None) => true,        // Other requires no assets, we're good
         }
+    }
+
+    /// Add a specific asset to this value
+    pub fn add_asset(
+        &mut self,
+        policy_id: PolicyId,
+        asset_name: AssetName,
+        quantity: u64,
+    ) -> Result<()> {
+        if quantity == 0 {
+            return Ok(()); // No-op for zero quantity
+        }
+
+        // Initialize multi_asset if needed
+        if self.multi_asset.is_none() {
+            self.multi_asset = Some(MultiAsset::new());
+        }
+
+        if let Some(ref mut assets) = self.multi_asset {
+            // Get or create the policy's asset map
+            let asset_map = assets.assets.entry(policy_id).or_insert_with(HashMap::new);
+
+            // Add quantity to existing or insert new
+            let current = asset_map.get(&asset_name).copied().unwrap_or(0);
+            let new_quantity = current.checked_add(quantity).ok_or_else(|| {
+                LedgerError::InvalidTransaction(format!(
+                    "Asset quantity overflow for {:?}",
+                    asset_name
+                ))
+            })?;
+
+            asset_map.insert(asset_name, new_quantity);
+        }
+
+        Ok(())
     }
 }
 
@@ -232,10 +273,11 @@ impl MultiAsset {
                     // Add to existing policy
                     for (asset_name, quantity) in other_assets {
                         let current = self_assets.get(asset_name).unwrap_or(&0);
-                        let new_quantity = current.checked_add(*quantity)
-                            .ok_or_else(|| LedgerError::InvalidTransaction(
-                                format!("Asset quantity overflow for {asset_name:?}")
-                            ))?;
+                        let new_quantity = current.checked_add(*quantity).ok_or_else(|| {
+                            LedgerError::InvalidTransaction(format!(
+                                "Asset quantity overflow for {asset_name:?}"
+                            ))
+                        })?;
                         self_assets.insert(asset_name.clone(), new_quantity);
                     }
                 }
@@ -256,10 +298,11 @@ impl MultiAsset {
                     // Subtract from existing policy
                     for (asset_name, quantity) in other_assets {
                         let current = self_assets.get(asset_name).unwrap_or(&0);
-                        let new_quantity = current.checked_sub(*quantity)
-                            .ok_or_else(|| LedgerError::InvalidTransaction(
-                                format!("Insufficient quantity for asset {asset_name:?}")
-                            ))?;
+                        let new_quantity = current.checked_sub(*quantity).ok_or_else(|| {
+                            LedgerError::InvalidTransaction(format!(
+                                "Insufficient quantity for asset {asset_name:?}"
+                            ))
+                        })?;
 
                         if new_quantity == 0 {
                             self_assets.remove(asset_name);
@@ -274,9 +317,9 @@ impl MultiAsset {
                     }
                 }
                 None => {
-                    return Err(LedgerError::InvalidTransaction(
-                        format!("Policy {policy_id:?} not found for subtraction")
-                    ));
+                    return Err(LedgerError::InvalidTransaction(format!(
+                        "Policy {policy_id:?} not found for subtraction"
+                    )));
                 }
             }
         }
@@ -317,7 +360,7 @@ impl AssetName {
     pub fn new(bytes: Vec<u8>) -> Result<Self> {
         if bytes.len() > 32 {
             return Err(LedgerError::InvalidTransaction(
-                "Asset name cannot exceed 32 bytes".to_string()
+                "Asset name cannot exceed 32 bytes".to_string(),
             ));
         }
         Ok(Self(bytes))
@@ -370,13 +413,13 @@ impl MaryLedger {
     fn validate_structure(tx: &MaryTransaction) -> Result<()> {
         if tx.inputs.is_empty() {
             return Err(LedgerError::InvalidTransaction(
-                "Transaction must have at least one input".to_string()
+                "Transaction must have at least one input".to_string(),
             ));
         }
 
         if tx.outputs.is_empty() {
             return Err(LedgerError::InvalidTransaction(
-                "Transaction must have at least one output".to_string()
+                "Transaction must have at least one output".to_string(),
             ));
         }
 
@@ -384,7 +427,7 @@ impl MaryLedger {
         for output in &tx.outputs {
             if output.value.coin == 0 && output.value.multi_asset.is_none() {
                 return Err(LedgerError::InvalidTransaction(
-                    "Output cannot have zero value".to_string()
+                    "Output cannot have zero value".to_string(),
                 ));
             }
         }
@@ -392,24 +435,113 @@ impl MaryLedger {
         Ok(())
     }
 
-    fn validate_value_conservation(_tx: &MaryTransaction) -> Result<()> {
-        // In a full implementation, this would:
-        // 1. Sum all input values (requires UTxO lookup)
-        // 2. Sum all output values + fees + minted values
-        // 3. Ensure inputs + minted = outputs + fees + burned
+    fn validate_value_conservation(tx: &MaryTransaction) -> Result<()> {
+        // Full value conservation validation for Mary era
+        // Note: This simplified version assumes we have access to input values
+        // In production, this would require UTxO state lookup
 
-        // For now, just validate that fee is reasonable
-        // TODO: Implement full value conservation with UTxO state
+        // Calculate total minted value (positive) and burned value (negative)
+        let mut minted_value = MaryValue::new_ada_only(0);
+        if let Some(ref mint) = tx.mint {
+            for (policy_id, assets) in &mint.mint_assets.assets {
+                for (asset_name, amount) in assets {
+                    if *amount > 0 {
+                        // Minting (positive amount)
+                        minted_value.add_asset(
+                            policy_id.clone(),
+                            asset_name.clone(),
+                            *amount as u64,
+                        )?;
+                    }
+                    // Burning (negative amount) is handled implicitly by reducing supply
+                }
+            }
+        }
+
+        // Calculate total output value
+        let mut total_output = MaryValue::new_ada_only(0);
+        for output in &tx.outputs {
+            total_output.add(&output.value)?;
+        }
+
+        // Add fees to output side
+        total_output.coin = total_output.coin.checked_add(tx.fee).ok_or_else(|| {
+            LedgerError::InvalidTransaction("Fee overflow in value conservation".to_string())
+        })?;
+
+        // Validate per-asset conservation
+        // For each minted asset, ensure it appears in outputs
+        if let Some(ref minted_assets) = minted_value.multi_asset {
+            if let Some(ref output_assets) = total_output.multi_asset {
+                for (policy_id, minted_map) in &minted_assets.assets {
+                    if let Some(output_map) = output_assets.assets.get(policy_id) {
+                        for (asset_name, minted_amount) in minted_map {
+                            let output_amount = output_map.get(asset_name).copied().unwrap_or(0);
+                            if output_amount < *minted_amount {
+                                return Err(LedgerError::InvalidTransaction(format!(
+                                    "Minted asset not fully accounted for in outputs: {:?}",
+                                    asset_name
+                                )));
+                            }
+                        }
+                    } else {
+                        return Err(LedgerError::InvalidTransaction(format!(
+                            "Minted policy ID not found in outputs: {:?}",
+                            policy_id
+                        )));
+                    }
+                }
+            } else if minted_value.multi_asset.is_some() {
+                return Err(LedgerError::InvalidTransaction(
+                    "Assets minted but no multi-asset outputs".to_string(),
+                ));
+            }
+        }
+
         Ok(())
     }
 
-    fn validate_minting_scripts(_tx: &MaryTransaction) -> Result<()> {
-        // In a full implementation, this would:
-        // 1. For each minted/burned policy, find corresponding native script
-        // 2. Validate script conditions are met
-        // 3. Ensure all required signatures are present
+    fn validate_minting_scripts(tx: &MaryTransaction) -> Result<()> {
+        // Validate all minting/burning operations have valid scripts
 
-        // TODO: Implement native script validation
+        if let Some(ref mint) = tx.mint {
+            for (policy_id, assets) in &mint.mint_assets.assets {
+                // Check if there's any minting or burning for this policy
+                let has_operations = assets.values().any(|&amount| amount != 0);
+                if !has_operations {
+                    continue; // No operations, skip validation
+                }
+
+                // Find the corresponding native script in witness set
+                let script = tx
+                    .witness_set
+                    .native_scripts
+                    .iter()
+                    .find(|script| {
+                        // Calculate script hash and compare with policy_id
+                        Self::native_script_hash(script) == policy_id.0
+                    })
+                    .ok_or_else(|| {
+                        LedgerError::InvalidTransaction(format!(
+                            "Missing native script for policy: {:?}",
+                            policy_id
+                        ))
+                    })?;
+
+                // Validate the script conditions
+                Self::evaluate_native_script(script, tx)?;
+
+                // Validate that policy ID matches script hash
+                let computed_hash = Self::native_script_hash(script);
+                if computed_hash != policy_id.0 {
+                    return Err(LedgerError::InvalidTransaction(format!(
+                        "Policy ID {:?} does not match script hash {:?}",
+                        policy_id.0, computed_hash
+                    )));
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -417,11 +549,11 @@ impl MaryLedger {
         // Validate transaction validity interval
         if let (Some(before), Some(after)) = (
             tx.validity_interval.invalid_before,
-            tx.validity_interval.invalid_hereafter
+            tx.validity_interval.invalid_hereafter,
         ) {
             if before >= after {
                 return Err(LedgerError::InvalidTransaction(
-                    "Invalid validity interval: before >= after".to_string()
+                    "Invalid validity interval: before >= after".to_string(),
                 ));
             }
         }
@@ -435,13 +567,182 @@ impl MaryLedger {
         // Base minimum + extra for multi-assets
         let base_min = 1_000_000; // 1 ADA base minimum
 
-        let asset_count = output.value.multi_asset
+        let asset_count = output
+            .value
+            .multi_asset
             .as_ref()
             .map(|ma| ma.asset_count())
             .unwrap_or(0);
 
         // Add ~0.15 ADA per asset (simplified calculation)
         base_min + (asset_count as u64 * 150_000)
+    }
+
+    /// Evaluate a native script against transaction context
+    ///
+    /// Returns Ok(()) if the script is satisfied, Err otherwise
+    fn evaluate_native_script(script: &NativeScript, tx: &MaryTransaction) -> Result<()> {
+        match script {
+            NativeScript::ScriptPubkey(key_hash) => {
+                // Check if the key hash is in the transaction's vkey witnesses
+                let has_signature = tx.witness_set.vkey_witnesses.iter().any(|witness| {
+                    // Hash the vkey and compare with key_hash
+                    let vkey_hash = Blake2b256Hash::hash(&witness.vkey);
+                    vkey_hash == *key_hash
+                });
+
+                if has_signature {
+                    Ok(())
+                } else {
+                    Err(LedgerError::InvalidTransaction(format!(
+                        "Missing required signature for key hash: {:?}",
+                        key_hash
+                    )))
+                }
+            }
+
+            NativeScript::ScriptAll(scripts) => {
+                // ALL scripts must be satisfied
+                for script in scripts {
+                    Self::evaluate_native_script(script, tx)?;
+                }
+                Ok(())
+            }
+
+            NativeScript::ScriptAny(scripts) => {
+                // At least ONE script must be satisfied
+                if scripts.is_empty() {
+                    return Err(LedgerError::InvalidTransaction(
+                        "ScriptAny requires at least one sub-script".to_string(),
+                    ));
+                }
+
+                for script in scripts {
+                    if Self::evaluate_native_script(script, tx).is_ok() {
+                        return Ok(()); // One succeeded, that's enough
+                    }
+                }
+
+                Err(LedgerError::InvalidTransaction(
+                    "ScriptAny: none of the sub-scripts were satisfied".to_string(),
+                ))
+            }
+
+            NativeScript::ScriptNOfK(n, scripts) => {
+                // At least N scripts must be satisfied
+                if *n == 0 {
+                    return Ok(()); // 0-of-K is always satisfied
+                }
+
+                if (*n as usize) > scripts.len() {
+                    return Err(LedgerError::InvalidTransaction(format!(
+                        "ScriptNOfK: requires {} scripts but only {} provided",
+                        n,
+                        scripts.len()
+                    )));
+                }
+
+                let satisfied_count = scripts
+                    .iter()
+                    .filter(|script| Self::evaluate_native_script(script, tx).is_ok())
+                    .count();
+
+                if satisfied_count >= (*n as usize) {
+                    Ok(())
+                } else {
+                    Err(LedgerError::InvalidTransaction(format!(
+                        "ScriptNOfK: only {} of required {} scripts satisfied",
+                        satisfied_count, n
+                    )))
+                }
+            }
+
+            NativeScript::InvalidBefore(slot) => {
+                // Transaction must be valid after this slot
+                match tx.validity_interval.invalid_before {
+                    Some(tx_invalid_before) if tx_invalid_before >= *slot => Ok(()),
+                    Some(tx_invalid_before) => Err(LedgerError::InvalidTransaction(format!(
+                        "InvalidBefore: tx invalid_before {} is before required slot {}",
+                        tx_invalid_before, slot
+                    ))),
+                    None => Err(LedgerError::InvalidTransaction(
+                        "InvalidBefore: transaction has no invalid_before constraint".to_string(),
+                    )),
+                }
+            }
+
+            NativeScript::InvalidHereafter(slot) => {
+                // Transaction must be valid before this slot
+                match tx.validity_interval.invalid_hereafter {
+                    Some(tx_invalid_hereafter) if tx_invalid_hereafter <= *slot => Ok(()),
+                    Some(tx_invalid_hereafter) => Err(LedgerError::InvalidTransaction(format!(
+                        "InvalidHereafter: tx invalid_hereafter {} is after required slot {}",
+                        tx_invalid_hereafter, slot
+                    ))),
+                    None => Err(LedgerError::InvalidTransaction(
+                        "InvalidHereafter: transaction has no invalid_hereafter constraint"
+                            .to_string(),
+                    )),
+                }
+            }
+        }
+    }
+
+    /// Calculate the policy ID (hash) of a native script
+    ///
+    /// In Cardano, the policy ID is the blake2b-256 hash of the serialized script.
+    /// For this implementation, we use a simplified hashing approach.
+    fn native_script_hash(script: &NativeScript) -> Blake2b256Hash {
+        // Create a deterministic representation of the script
+        let script_repr = Self::script_to_bytes(script);
+        Blake2b256Hash::hash(&script_repr)
+    }
+
+    /// Convert native script to bytes for hashing
+    fn script_to_bytes(script: &NativeScript) -> Vec<u8> {
+        // Simplified CBOR-like encoding for script hashing
+        // In production, this would use proper CBOR serialization
+
+        let mut bytes = Vec::new();
+
+        match script {
+            NativeScript::ScriptPubkey(key_hash) => {
+                bytes.push(0); // Tag for ScriptPubkey
+                bytes.extend_from_slice(key_hash.as_bytes());
+            }
+            NativeScript::ScriptAll(scripts) => {
+                bytes.push(1); // Tag for ScriptAll
+                bytes.extend_from_slice(&(scripts.len() as u32).to_be_bytes());
+                for s in scripts {
+                    bytes.extend_from_slice(&Self::script_to_bytes(s));
+                }
+            }
+            NativeScript::ScriptAny(scripts) => {
+                bytes.push(2); // Tag for ScriptAny
+                bytes.extend_from_slice(&(scripts.len() as u32).to_be_bytes());
+                for s in scripts {
+                    bytes.extend_from_slice(&Self::script_to_bytes(s));
+                }
+            }
+            NativeScript::ScriptNOfK(n, scripts) => {
+                bytes.push(3); // Tag for ScriptNOfK
+                bytes.extend_from_slice(&n.to_be_bytes());
+                bytes.extend_from_slice(&(scripts.len() as u32).to_be_bytes());
+                for s in scripts {
+                    bytes.extend_from_slice(&Self::script_to_bytes(s));
+                }
+            }
+            NativeScript::InvalidBefore(slot) => {
+                bytes.push(4); // Tag for InvalidBefore
+                bytes.extend_from_slice(&slot.to_be_bytes());
+            }
+            NativeScript::InvalidHereafter(slot) => {
+                bytes.push(5); // Tag for InvalidHereafter
+                bytes.extend_from_slice(&slot.to_be_bytes());
+            }
+        }
+
+        bytes
     }
 }
 
@@ -498,7 +799,9 @@ mod tests {
     fn test_min_ada_calculation() {
         // ADA-only output
         let ada_output = MaryTransactionOutput {
-            address: Address { bytes: vec![1, 2, 3] },
+            address: Address {
+                bytes: vec![1, 2, 3],
+            },
             value: MaryValue::new_ada_only(1_000_000),
             datum_hash: None,
         };
@@ -515,7 +818,9 @@ mod tests {
         multi_asset.assets.insert(policy, asset_map);
 
         let multi_output = MaryTransactionOutput {
-            address: Address { bytes: vec![1, 2, 3] },
+            address: Address {
+                bytes: vec![1, 2, 3],
+            },
             value: MaryValue::new_with_assets(1_000_000, multi_asset),
             datum_hash: None,
         };
