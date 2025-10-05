@@ -1,496 +1,211 @@
-# Block Production Integration - Implementation Example
+# Block Production Runtime Wiring Guide (last reviewed: 2025-10-05)
 
-**Status**: Reference Implementation
-**Created**: October 2025
-**Module**: GAP-002 Runtime Wiring
+## Current state summary
 
----
+The consensus runner in `crates/cardano-node/src/run/mod.rs` still emits placeholder events and never instantiates `BlockProductionService`. At the same time, the consensus crate already exposes all building blocks required to forge blocks against real storage:
 
-## Overview
+- `block_production_service.rs` drives slot events, leadership checks, mempool intake, and emits `BlockProductionEvent`s.
+- `block_forging.rs` implements the Praos-based forging pipeline (KES rotation, VRF proofs, transaction selection).
+- `block_production_integration.rs` can wire a `ChainDatabase` + `LedgerDatabase` pair into the service and keep caches fresh.
+- `slot_notifier.rs` provides a slot clock compatible with the service.
 
-This document provides a complete, copy-paste-ready implementation example for wiring the `BlockProductionIntegrator` into the Cardano Node runtime.
+This guide shows how to assemble these pieces today so that the node runtime can be replaced with a concrete implementation.
 
-**Prerequisites**:
-- ✅ `BlockProductionIntegrator` module exists (`crates/cardano-consensus/src/block_production_integration.rs`)
-- ✅ ChainDB and LedgerDB implementations exist (`crates/cardano-storage/src/`)
-- ✅ Block production service exists (`crates/cardano-consensus/src/block_production_service.rs`)
+## Required building blocks
 
-**What This Shows**:
-- Complete consensus subsystem implementation
-- Storage initialization
-- Integrator wiring
-- Error handling
-- Graceful shutdown
+| Component | Location | Purpose |
+| --- | --- | --- |
+| `BlockProductionService`, `BlockProductionConfig` | `crates/cardano-consensus/src/block_production_service.rs` | Slot loop, event emission, and KES lifecycle management. |
+| `BlockForger`, `ForgingConfig` | `crates/cardano-consensus/src/block_forging.rs` | Slot leadership checks, block body/header construction, KES signing. |
+| `LeadershipCalculator`, `StakeDistribution` | `crates/cardano-consensus/src/leadership.rs` and `ouroboros.rs` | VRF threshold computation using current stake figures. |
+| `BlockProductionIntegrator`, `AutoRefreshIntegrator` | `crates/cardano-consensus/src/block_production_integration.rs` | Provides real chain tip and ledger state via ChainDB/LedgerDB callbacks. |
+| `ChainDatabaseImpl`, `LedgerDatabaseImpl` | `crates/cardano-storage/src/chaindb/mod.rs`, `crates/cardano-storage/src/ledgerdb/mod.rs` | Storage adapters that satisfy the integrator traits. |
+| `SlotNotifier`, `SlotNotifierConfig` | `crates/cardano-consensus/src/slot_notifier.rs` | Tokio-based slot clock that broadcasts `SlotEvent`s. |
 
----
+## Wiring example
 
-## Implementation: Consensus Subsystem with Real Storage
-
-### File: `crates/cardano-node/src/run/mod.rs`
-
-Add this implementation to replace the stub `run_consensus_subsystem`:
+The snippet below lives inside an async context (e.g. a Tokio task). It uses the in-memory storage backend for clarity; swap in the LMDB or RocksDB backends once the `legacy` feature is enabled.
 
 ```rust
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::{Duration, SystemTime};
+
+use anyhow::Result;
 use cardano_consensus::{
-    AutoRefreshIntegrator, BlockForger, BlockProductionConfig,
-    BlockProductionService, EpochNo, LeadershipCalculator, PoolId,
-    ProtocolParameters, StakeDistribution, VrfKey, KesKey,
+    AutoRefreshIntegrator,
+    BlockForger,
+    BlockProductionConfig,
+    BlockProductionOperationalCertificate,
+    BlockProductionService,
+    EpochNo,
+    ForgingConfig,
+    LeadershipCalculator,
+    PoolId,
+    ProtocolParameters,
+    SlotNotifier,
+    SlotNotifierConfig,
+    StakeDistribution,
+    VrfKey,
+    KesKey,
 };
+use cardano_consensus::block_production::Transaction;
+use cardano_crypto::{Blake2b256Hash, Ed25519KeyHash};
+use cardano_storage::backends::{MemoryBackend, StorageBackend};
 use cardano_storage::{ChainDatabaseImpl, LedgerDatabaseImpl};
-use std::time::Duration;
+use tokio::sync::{broadcast, mpsc};
 
-/// Consensus subsystem runner with real block production
-#[instrument(skip_all)]
-async fn run_consensus_subsystem(
-    config_manager: Arc<RwLock<ConfigurationManager>>,
-    event_tx: broadcast::Sender<NodeEvent>,
-    mut shutdown_rx: broadcast::Receiver<()>,
-) -> Result<()> {
-    info!("Consensus subsystem started");
+async fn run_block_production_example() -> Result<()> {
+    // 1. Storage backends --------------------------------------------------
+    let backend = Arc::new(MemoryBackend::new());
+    backend.init().await?;
 
-    // Read configuration
-    let block_producer_config = {
-        let cfg = config_manager.read().await;
-        cfg.get_config().block_producer.clone()
-    };
-
-    // Check if block production is enabled
-    if !block_producer_config.enabled {
-        info!("Block production disabled, consensus subsystem idle");
-        let _ = shutdown_rx.recv().await;
-        return Ok(());
-    }
-
-    info!("Block production enabled, initializing storage integration");
-
-    // Initialize storage backend
-    // NOTE: In production, load from configuration
-    use cardano_storage::backends::{LmdbBackend, LmdbConfig};
-
-    let storage_config = LmdbConfig {
-        path: std::path::PathBuf::from("/data/db"),
-        max_size_gb: 100,
-        max_dbs: 10,
-    };
-
-    let backend = Arc::new(LmdbBackend::new(&storage_config)?);
-
-    // Create ChainDB and LedgerDB
     let chaindb = Arc::new(ChainDatabaseImpl::new(backend.clone()));
-    let ledgerdb = Arc::new(LedgerDatabaseImpl::new(backend));
+    let ledgerdb = Arc::new(LedgerDatabaseImpl::new(backend.clone()));
 
-    info!("Storage initialized: ChainDB + LedgerDB ready");
+    // 2. Stake distribution + leadership calculator -----------------------
+    let pool_id = PoolId(Blake2b256Hash::hash(b"example_pool"));
+    let pool_stake = 1_000_000u64; // TODO: load from LedgerDB
+    let total_stake = pool_stake;   // TODO: load from LedgerDB
 
-    // Load block producer keys
-    // TODO: Implement actual key loading from files
-    // For now, using test keys (INSECURE - development only)
-    warn!("Using test keys - NOT FOR PRODUCTION USE");
-
-    let pool_id = PoolId(cardano_crypto::Blake2b256Hash::hash(b"test_pool"));
-    let vrf_key = VrfKey::for_pool(&pool_id);
-    let kes_key = KesKey::new(6); // depth=6 for mainnet
-
-    let operational_cert = cardano_consensus::BlockProductionOperationalCertificate {
-        hot_vkey: cardano_crypto::Ed25519KeyHash::from_test_data(b"hot_vkey"),
-        sequence_number: 0,
-        kes_period: 0,
-        sigma: cardano_crypto::Blake2b256Hash::hash(b"cold_signature"),
-    };
-
-    // Create stake distribution
-    // TODO: Load from LedgerDB
-    let pool_stake = 1_000_000_000_000; // 1M ADA
-    let total_stake = 10_000_000_000_000; // 10M ADA
+    let mut pools = HashMap::new();
+    pools.insert(pool_id.clone(), pool_stake);
 
     let stake_distribution = StakeDistribution {
+        pools,
         total_stake,
-        pools: vec![(pool_id.clone(), pool_stake)].into_iter().collect(),
     };
 
-    // Create leadership calculator
     let protocol_params = ProtocolParameters::testnet();
-    let epoch_nonce = cardano_crypto::Blake2b256Hash::hash(b"test_nonce");
-    let current_epoch = EpochNo(1);
+    let epoch_nonce = Blake2b256Hash::hash(b"epoch_nonce"); // TODO: derive from chain state
+    let current_epoch = EpochNo(0); // TODO: read from chain metadata
 
-    let leadership_calc = LeadershipCalculator::new(
-        stake_distribution,
-        protocol_params,
+    let leadership = LeadershipCalculator::new(
+        stake_distribution.clone(),
+        protocol_params.clone(),
         epoch_nonce,
         current_epoch,
     );
 
-    // Create block forger
+    // 3. Block forger ------------------------------------------------------
+    let vrf_key = VrfKey::for_pool(&pool_id);            // TODO: load VRF key from disk
+    let kes_key = KesKey::new(6);                        // TODO: load/rotate KES key
+    let operational_cert = BlockProductionOperationalCertificate {
+        hot_vkey: Ed25519KeyHash::from_test_data(b"hot_vkey"), // TODO: load real cert
+        sequence_number: 0,
+        kes_period: 0,
+        sigma: Blake2b256Hash::hash(b"cold_signature"),
+    };
+
     let forger = BlockForger::new(
-        pool_id,
+        pool_id.clone(),
         vrf_key,
         kes_key,
         operational_cert,
         pool_stake,
-        leadership_calc,
+        leadership,
     );
 
-    // Create block production config
+    // 4. Block production service -----------------------------------------
     let bp_config = BlockProductionConfig {
         pool_id: pool_id.clone(),
-        max_block_size: block_producer_config
-            .forging_behavior
-            .max_block_size_bytes
-            .unwrap_or(90112),
-        slot_duration_ms: 1000,
+        pool_stake,
+        total_stake,
+        active_slot_coeff: protocol_params.active_slot_coefficient,
+        epoch: current_epoch,
+        epoch_nonce,
+        forging_config: ForgingConfig::default(),
     };
 
-    // Create block production service
     let mut service = BlockProductionService::new(bp_config, forger);
 
-    // **GAP-002 INTEGRATION: Wire real storage to block production**
-    let integrator = Arc::new(AutoRefreshIntegrator::new(
-        chaindb,
-        ledgerdb,
-        Duration::from_secs(20), // Refresh cache every 20 seconds
-    ));
+    // 5. Storage integrator ------------------------------------------------
+    let refresh = AutoRefreshIntegrator::new(
+        chaindb.clone(),
+        ledgerdb.clone(),
+        Duration::from_secs(20),
+    );
 
-    integrator
+    refresh
         .integrator()
         .wire_to_service(&mut service)
-        .await
-        .context("Failed to wire storage integration to block production")?;
+        .await?;
 
-    info!("✅ Block production integration complete - using real ChainDB/LedgerDB");
-    info!("   Mock data eliminated, production-ready block forging enabled");
+    let refresh_handle = refresh.start_auto_refresh();
 
-    // Start auto-refresh task
-    let refresh_handle = integrator.start_auto_refresh();
-    info!("Cache auto-refresh started (20s interval)");
+    // 6. Slot clock + channels --------------------------------------------
+    let slot_notifier = Arc::new(SlotNotifier::new(SlotNotifierConfig {
+        genesis_time: SystemTime::now(), // TODO: load from configuration file
+        slot_length_secs: protocol_params.slot_length,
+        ..SlotNotifierConfig::default()
+    }));
 
-    // Create channels
-    let (_slot_tx, slot_rx) = tokio::sync::mpsc::channel(100);
-    let (_mempool_tx, mempool_rx) = tokio::sync::mpsc::channel(1000);
-    let (block_tx, mut block_rx) = tokio::sync::mpsc::channel(100);
+    let (mempool_tx, mempool_rx) = mpsc::channel::<Vec<Transaction>>(1_000);
+    let (block_tx, mut block_rx) = mpsc::channel(64);
+    let (_shutdown_tx, mut shutdown_rx) = broadcast::channel::<()>(1);
 
-    // Start block production service
-    let service_handle = tokio::spawn(async move {
-        service.run(slot_rx, mempool_rx, block_tx).await
-    });
+    let service = Arc::new(service);
 
-    // Listen for produced blocks
-    let event_tx_clone = event_tx.clone();
+    let notifier_handle = {
+        let notifier = slot_notifier.clone();
+        tokio::spawn(async move {
+            if let Err(err) = notifier.run().await {
+                tracing::error!(%err, "slot notifier stopped");
+            }
+        })
+    };
+
+    let service_handle = {
+        let runnable = service.clone();
+        let notifier = slot_notifier.clone();
+        tokio::spawn(async move {
+            if let Err(err) = runnable.run(notifier, mempool_rx, block_tx).await {
+                tracing::error!(%err, "block production service stopped");
+            }
+        })
+    };
+
+    // Optional: listen for forged blocks ----------------------------------
     let block_listener = tokio::spawn(async move {
         while let Some(block) = block_rx.recv().await {
-            info!(
-                "🎉 Block produced! Slot: {}, Txs: {}",
-                block.header.slot,
-                block.body.transactions.len()
-            );
-            let _ = event_tx_clone.send(NodeEvent::BlockReceived);
-            // TODO: Broadcast block to network
+            tracing::info!(slot = block.header.slot.0, "forged block ready");
+            // TODO: persist block, broadcast to peers, update ChainDB
         }
     });
 
-    // Wait for shutdown signal
-    let _ = shutdown_rx.recv().await;
+    // Example: push an empty mempool snapshot to unblock the loop ---------
+    mempool_tx.send(Vec::<Transaction>::new()).await?;
 
-    info!("Consensus subsystem shutting down");
+    // Wait for shutdown signal --------------------------------------------
+    shutdown_rx.recv().await.ok();
 
-    // Cancel tasks
-    service_handle.abort();
+    // Tear down ------------------------------------------------------------
     refresh_handle.abort();
+    notifier_handle.abort();
+    service_handle.abort();
     block_listener.abort();
 
-    info!("Consensus subsystem terminated");
     Ok(())
 }
 ```
 
----
+### Key points from the example
 
-## Key Points Explained
+1. **Storage** – `MemoryBackend` keeps the example self-contained. For production, enable the `legacy` feature and instantiate `LmdbBackend` or `RocksDbBackend`, or switch to the new CardanoDB backend once it exposes the same traits.
+2. **Stake data** – all stake figures are placeholders; the epoch transition handler should populate snapshots inside `LedgerDatabase`, which you can query here instead of constants.
+3. **Keys and certificates** – replace the `from_test_data` helpers with real pool credentials and hot/cold key material loaded from disk.
+4. **Slot clock** – the notifier uses `SystemTime::now()` for genesis. Load `systemStart` and slot length from the configuration JSON so slots align with network time.
+5. **Mempool** – the service consumes `Vec<Transaction>` batches. Wire this to the actual mempool subsystem once it is available; the example sends an empty batch to demonstrate the pathway.
 
-### 1. Storage Initialization
+## Production TODOs
 
-```rust
-let backend = Arc::new(LmdbBackend::new(&storage_config)?);
-let chaindb = Arc::new(ChainDatabaseImpl::new(backend.clone()));
-let ledgerdb = Arc::new(LedgerDatabaseImpl::new(backend));
-```
+- Implement persistence of forged blocks back into `ChainDatabase` and trigger network broadcast (see `crates/cardano-consensus/src/block_broadcaster.rs`).
+- Replace the shutdown channel with the node runtime's broadcast sender used in `NodeRuntime::shutdown`.
+- Feed new stake distribution snapshots from `EpochTransitionHandler` once it is integrated so the leadership calculator sees real data.
+- Extend the storage integrator to populate `SimplifiedLedgerState.utxo_set`; this removes reliance on the placeholder values returned today.
 
-**Why**:
-- Creates persistent storage backend (LMDB)
-- ChainDB stores blocks and chain metadata
-- LedgerDB stores UTxO set and ledger state
-- Both share the same backend for consistency
+## Observability checkpoints
 
-### 2. Integrator Creation
-
-```rust
-let integrator = Arc::new(AutoRefreshIntegrator::new(
-    chaindb,
-    ledgerdb,
-    Duration::from_secs(20),
-));
-```
-
-**Why**:
-- `AutoRefreshIntegrator` wraps `BlockProductionIntegrator`
-- Automatically refreshes cache every 20 seconds
-- Keeps block production in sync with chain state
-
-### 3. Wiring to Service
-
-```rust
-integrator
-    .integrator()
-    .wire_to_service(&mut service)
-    .await?;
-```
-
-**Why**:
-- Sets up callbacks in `BlockProductionService`
-- `set_chain_tip_provider()` → Returns real chain tip from ChainDB
-- `set_ledger_state_provider()` → Returns real ledger state from LedgerDB
-- **THIS IS THE CRITICAL LINE** that eliminates mock data
-
-### 4. Auto-Refresh Task
-
-```rust
-let refresh_handle = integrator.start_auto_refresh();
-```
-
-**Why**:
-- Spawns background task
-- Updates cache every 20 seconds
-- Reduces database queries (performance)
-- Returns handle for graceful shutdown
-
----
-
-## Verification
-
-### Expected Log Output
-
-```
-INFO cardano_node::run: Consensus subsystem started
-INFO cardano_node::run: Block production enabled, initializing storage integration
-INFO cardano_node::run: Storage initialized: ChainDB + LedgerDB ready
-WARN cardano_node::run: Using test keys - NOT FOR PRODUCTION USE
-INFO cardano_consensus::block_production_integration: Fetched chain tip from ChainDB: tip_hash=0x1234...
-INFO cardano_consensus::block_production_integration: Refreshed chain tip cache
-INFO cardano_node::run: ✅ Block production integration complete - using real ChainDB/LedgerDB
-INFO cardano_node::run: Cache auto-refresh started (20s interval)
-```
-
-### What Should **NOT** Appear
-
-```
-WARN No chain tip provider set, using mock data  ❌ Should NOT appear
-WARN No ledger state provider set, using mock data  ❌ Should NOT appear
-```
-
-If you see these warnings, the integration is not wired correctly.
-
----
-
-## Production Deployment Checklist
-
-Before deploying to production:
-
-### 1. Replace Test Keys
-
-```rust
-// ❌ REMOVE THIS:
-warn!("Using test keys - NOT FOR PRODUCTION USE");
-let vrf_key = VrfKey::for_pool(&pool_id);
-let kes_key = KesKey::new(6);
-
-// ✅ ADD THIS:
-let vrf_key = VrfKey::from_file(&block_producer_config.vrf_key.signing_key_file)?;
-let kes_key = KesKey::from_file(&block_producer_config.kes_key.signing_key_file)?;
-let operational_cert = load_operational_cert(&block_producer_config.operational_cert.cert_file)?;
-```
-
-### 2. Load Real Stake Distribution
-
-```rust
-// ❌ REMOVE THIS:
-let stake_distribution = StakeDistribution {
-    total_stake: 10_000_000_000_000,
-    pools: vec![(pool_id.clone(), 1_000_000_000_000)].into_iter().collect(),
-};
-
-// ✅ ADD THIS:
-let stake_distribution = ledgerdb.get_stake_distribution().await?;
-```
-
-### 3. Connect Slot Clock
-
-```rust
-// ❌ REMOVE THIS:
-let (_slot_tx, slot_rx) = tokio::sync::mpsc::channel(100);
-
-// ✅ ADD THIS:
-let slot_clock = SlotClock::new(genesis_config);
-let slot_rx = slot_clock.subscribe();
-tokio::spawn(slot_clock.run());
-```
-
-### 4. Connect Mempool
-
-```rust
-// ❌ REMOVE THIS:
-let (_mempool_tx, mempool_rx) = tokio::sync::mpsc::channel(1000);
-
-// ✅ ADD THIS:
-let mempool_rx = mempool_service.subscribe();
-```
-
-### 5. Connect Network Broadcaster
-
-```rust
-// ❌ REMOVE THIS:
-// TODO: Broadcast block to network
-
-// ✅ ADD THIS:
-network_broadcaster.broadcast_block(block).await?;
-```
-
----
-
-## Testing Strategy
-
-### Unit Tests (Already Complete)
-
-✅ `BlockProductionIntegrator` compiles and exports correctly
-
-### Integration Tests (Create These)
-
-**File**: `tests/consensus/test_block_production_integration.rs`
-
-```rust
-#[tokio::test]
-async fn test_integrator_with_real_storage() {
-    // Initialize in-memory storage
-    let backend = Arc::new(MemoryBackend::new());
-    let chaindb = Arc::new(ChainDatabaseImpl::new(backend.clone()));
-    let ledgerdb = Arc::new(LedgerDatabaseImpl::new(backend));
-
-    // Populate with test data
-    let metadata = ChainMetadata {
-        tip_hash: Blake2b256Hash::hash(b"test_tip"),
-        tip_height: 100,
-        genesis_hash: Blake2b256Hash::hash(b"genesis"),
-        current_epoch: 1,
-        current_slot: 1000,
-        network_magic: 1,
-    };
-    chaindb.store_chain_metadata(&metadata).await.unwrap();
-
-    // Create integrator
-    let integrator = BlockProductionIntegrator::new(chaindb, ledgerdb);
-
-    // Refresh cache
-    integrator.refresh_chain_tip().await.unwrap();
-
-    // Verify cache populated
-    // ... assertions ...
-}
-```
-
-### Manual Testing (On Testnet)
-
-1. Deploy to preview testnet
-2. Enable block production
-3. Monitor logs for 24 hours
-4. Verify:
-   - No mock data warnings
-   - Blocks reference correct chain tip
-   - Cache refresh working
-   - No panics or errors
-
----
-
-## Troubleshooting
-
-### Issue: "Storage backend not initialized"
-
-**Solution**: Ensure storage init happens before consensus subsystem starts
-
-### Issue: "Failed to wire integration"
-
-**Solution**: Check that `wire_to_service()` is called BEFORE `service.run()`
-
-### Issue: Cache not updating
-
-**Solution**: Verify `start_auto_refresh()` is called and handle is not dropped
-
-### Issue: High DB load
-
-**Solution**: Increase refresh interval from 20s to 30s or 60s
-
----
-
-## Performance Tuning
-
-### Refresh Interval Recommendations
-
-| Environment | Interval | Rationale |
-|-------------|----------|-----------|
-| Active Mainnet Forging | 10-15s | Stay in sync |
-| Passive Mainnet | 30-60s | Lower load |
-| Testnet | 20-30s | Balanced |
-| Development | 60s+ | Minimal load |
-
-### Memory Usage
-
-- Base: ~350 bytes per integrator
-- Negligible impact on production
-
-### CPU Usage
-
-- Cache hit: ~10ns (negligible)
-- Cache miss: ~1-5ms (periodic)
-- Target: >95% cache hit rate
-
----
-
-## Next Steps
-
-After implementing this integration:
-
-1. **Integration Tests** (1-2 days)
-   - Mock storage implementations
-   - Test all code paths
-   - Verify thread safety
-
-2. **Manual Testing** (1 week)
-   - Deploy to testnet
-   - Monitor for issues
-   - Verify block production
-
-3. **Production Deployment** (1-2 weeks)
-   - Replace test keys with real keys
-   - Load real stake distribution
-   - Connect slot clock and mempool
-   - Monitor in production
-
-4. **Optimization** (ongoing)
-   - Tune refresh intervals
-   - Load actual UTxO set
-   - Event-driven cache updates
-
----
-
-## References
-
-- [BlockProductionIntegrator Source](../../crates/cardano-consensus/src/block_production_integration.rs)
-- [Integration Guide](BLOCK_PRODUCTION_INTEGRATION_GUIDE.md)
-- [Completion Report](../reports/GAP-002_BLOCK_PRODUCTION_INTEGRATION_COMPLETE.md)
-- [HASKELL_COMPATIBILITY_GAPS.md](../architecture/HASKELL_COMPATIBILITY_GAPS.md)
-
----
-
-**Status**: Ready for Implementation
-**Complexity**: Medium (2-3 days with testing)
-**Risk**: Low (clean architecture, no breaking changes)
-
----
-
-**END OF IMPLEMENTATION EXAMPLE**
+- When the integrator is wired correctly, the `[WARN] No chain tip provider set` / `[WARN] No ledger state provider set` messages disappear from `BlockProductionService::build_forging_context`.
+- `BlockProductionService::subscribe()` can be used to monitor `BlockProductionEvent::BlockForged` events for dashboard metrics.
+- `AutoRefreshIntegrator` logs cache refreshes at `DEBUG` level; consider tying those into structured metrics once Prometheus exporters in `crates/cardano-consensus/src/metrics.rs` are enabled.
