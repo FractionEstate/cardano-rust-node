@@ -146,3 +146,7 @@ impl fmt::Display for ConsensusError {
         }
     }
 }
+
+// R2 Roadmap: Forging context integration tests
+#[cfg(test)]
+mod tests;
