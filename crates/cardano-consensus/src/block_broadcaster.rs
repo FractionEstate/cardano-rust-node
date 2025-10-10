@@ -368,7 +368,7 @@ mod tests {
     use crate::block_production::{BlockBody, OperationalCertificate};
     use crate::leadership::LeadershipProof;
     use crate::ouroboros::{PoolId, SlotNo};
-    use cardano_crypto::{Blake2b256Hash, Ed25519KeyHash, KesSignature, VrfOutput, VrfProof};
+    use cardano_crypto::{Blake2b256Hash, Ed25519KeyHash, KesSecretKey, VrfOutput, VrfProof};
 
     // Mock peer connection for testing
     struct MockPeer {
@@ -421,8 +421,15 @@ mod tests {
         let vrf_proof = VrfProof::from_bytes(&[2u8; 128]).unwrap(); // Updated to 128 bytes
         let vrf_output = VrfOutput::from_bytes(&[3u8; 64]).unwrap();
 
+        let header = create_test_header(slot, block_number);
+        let header_bytes = header.to_bytes_for_signing();
+        let kes_secret = KesSecretKey::generate().expect("KES key generation");
+        let kes_signature = kes_secret
+            .sign(kes_secret.current_period(), &header_bytes)
+            .expect("KES signing");
+
         ForgedBlock {
-            header: create_test_header(slot, block_number),
+            header,
             body: BlockBody {
                 transactions: vec![],
                 total_fee: 0,
@@ -434,7 +441,7 @@ mod tests {
                 vrf_output,
                 pool_id: PoolId(Blake2b256Hash::from_bytes(&[8u8; 32]).unwrap()),
             },
-            kes_signature: KesSignature::from_bytes(&[7u8; 448]).unwrap(),
+            kes_signature,
         }
     }
     #[tokio::test]

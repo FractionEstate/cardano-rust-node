@@ -24,7 +24,11 @@ fuzz_target!(|data: &[u8]| {
 
         if let Ok(point) = point_result {
             let block_no = u64::from_be_bytes(data[40..48].try_into().unwrap_or([0; 8]));
-            let _ = cardano_network::protocols::chainsync::Tip::new(point, block_no);
+            let _ = cardano_network::protocols::chainsync::Tip::new(
+                point.slot.0,
+                block_no,
+                point.hash.as_bytes(),
+            );
         }
     }
 });

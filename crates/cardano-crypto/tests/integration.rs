@@ -49,7 +49,8 @@ fn test_bls_signature_operations() {
 
     // Test serialization roundtrip
     let pk_bytes = public_key.to_bytes();
-    let restored_pk = BlsPublicKey::from_bytes(&pk_bytes).unwrap();
+    let restored_pk =
+        BlsPublicKey::from_bytes(&pk_bytes).expect("BLS public key deserialization should succeed");
     assert!(restored_pk.verify(message, &signature));
 }
 
@@ -62,7 +63,8 @@ fn test_bls_aggregation() {
         .map(|i| {
             let mut seed = [0u8; 32];
             seed[0] = i as u8;
-            BlsPrivateKey::from_bytes(&seed).unwrap()
+            BlsPrivateKey::from_bytes(&seed)
+                .expect("BLS private key restoration from seed should succeed")
         })
         .collect();
 
@@ -71,8 +73,10 @@ fn test_bls_aggregation() {
     let signatures: Vec<BlsSignature> = private_keys.iter().map(|pk| pk.sign(message)).collect();
 
     // Aggregate public keys and signatures
-    let agg_public_key = BlsPublicKey::aggregate(&public_keys).unwrap();
-    let agg_signature = BlsSignature::aggregate(&signatures).unwrap();
+    let agg_public_key =
+        BlsPublicKey::aggregate(&public_keys).expect("Aggregating public keys should succeed");
+    let agg_signature =
+        BlsSignature::aggregate(&signatures).expect("Aggregating signatures should succeed");
 
     // Verify aggregated signature (this would work with proper BLS implementation)
     // For now just test that aggregation doesn't fail
@@ -118,7 +122,8 @@ fn test_cardano_compatibility_vectors() {
 
         // Test serialization consistency
         let signature_hex = signature.to_hex();
-        let restored_signature = Ed25519Signature::from_hex(&signature_hex).unwrap();
+        let restored_signature = Ed25519Signature::from_hex(&signature_hex)
+            .expect("Ed25519 signature deserialization should succeed");
         assert!(public_key.verify(message, &restored_signature));
     }
 }
@@ -158,10 +163,7 @@ fn test_performance_requirements() {
         let _signature = private_key.sign(message);
     }
     let ed25519_duration = start.elapsed();
-    println!(
-        "Ed25519 signing: {} ops in {:?}",
-        iterations, ed25519_duration
-    );
+    println!("Ed25519 signing: {iterations} ops in {ed25519_duration:?}");
 
     // Ed25519 verification performance
     let public_key = private_key.public_key();
@@ -171,10 +173,7 @@ fn test_performance_requirements() {
         assert!(public_key.verify(message, &signature));
     }
     let verify_duration = start.elapsed();
-    println!(
-        "Ed25519 verification: {} ops in {:?}",
-        iterations, verify_duration
-    );
+    println!("Ed25519 verification: {iterations} ops in {verify_duration:?}");
 
     // Hash performance
     let data = vec![0u8; 1024]; // 1KB data
@@ -183,10 +182,7 @@ fn test_performance_requirements() {
         let _hash = Blake2b256Hash::hash(&data);
     }
     let hash_duration = start.elapsed();
-    println!(
-        "BLAKE2b-256 hashing: {} ops in {:?}",
-        iterations, hash_duration
-    );
+    println!("BLAKE2b-256 hashing: {iterations} ops in {hash_duration:?}");
 
     // Basic performance assertions (operations should be fast)
     // Note: Ed25519 signing is fast (~30ms for 100 ops)

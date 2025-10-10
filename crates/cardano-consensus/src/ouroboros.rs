@@ -606,6 +606,7 @@ impl OuroborosState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cardano_crypto::KesSecretKey;
 
     #[test]
     fn test_protocol_parameters() {
@@ -651,7 +652,7 @@ mod tests {
 
     #[test]
     fn test_kes_manager() {
-        let kes_manager = KesManager::new(129600, 62); // ~36 hours per period, ~90 days max
+        let kes_manager = KesManager::new(129600, KesSecretKey::MAX_PERIOD); // ~36 hours per period, ~192 days max
 
         assert_eq!(kes_manager.kes_period_for_slot(SlotNo(0)), 0);
         assert_eq!(kes_manager.kes_period_for_slot(SlotNo(129600)), 1);

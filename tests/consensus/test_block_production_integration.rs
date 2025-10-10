@@ -56,7 +56,7 @@ async fn populate_chaindb(chaindb: &ChainDatabaseImpl<MemoryBackend>) {
 fn create_test_service() -> BlockProductionService {
     let pool_id = PoolId(Blake2b256Hash::hash(b"test_pool"));
     let vrf_key = VrfKey::for_pool(&pool_id);
-    let kes_key = KesKey::new(6);
+    let kes_key = KesKey::new();
 
     let operational_cert = BlockProductionOperationalCertificate {
         hot_vkey: Ed25519KeyHash::from_test_data(b"hot_vkey"),

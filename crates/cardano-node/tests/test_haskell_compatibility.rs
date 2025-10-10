@@ -35,7 +35,9 @@ mod tests {
             assert!(topology.public_roots.is_some());
             assert!(topology.use_ledger_after_slot.is_some());
 
-            topology.validate().expect("Should validate mainnet topology");
+            topology
+                .validate()
+                .expect("Should validate mainnet topology");
 
             println!("✅ Successfully parsed official mainnet topology.json");
         }

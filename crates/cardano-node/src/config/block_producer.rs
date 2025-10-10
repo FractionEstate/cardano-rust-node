@@ -196,7 +196,7 @@ fn default_key_format() -> KeyFormat {
 }
 
 fn default_max_kes_evolutions() -> u64 {
-    62 // ~90 days for mainnet
+    128 // CompactSum7 KES supports 128 evolutions (~90 days for mainnet)
 }
 
 fn default_rotation_margin() -> u64 {
@@ -392,7 +392,7 @@ mod tests {
         let config = BlockProducerConfig::default();
         assert!(!config.enabled);
         assert_eq!(config.vrf_key.format, KeyFormat::CardanoCli);
-        assert_eq!(config.kes_key.max_kes_evolutions, 62);
+        assert_eq!(config.kes_key.max_kes_evolutions, 128);
     }
 
     #[test]
@@ -403,7 +403,7 @@ mod tests {
                 signing_key_file: PathBuf::from("test.skey"),
                 verification_key_file: None,
                 kes_period: 100,
-                max_kes_evolutions: 62,
+                max_kes_evolutions: 128,
                 start_kes_period: 50,
                 format: KeyFormat::CardanoCli,
                 auto_rotation: None,

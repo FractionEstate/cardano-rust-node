@@ -9,12 +9,15 @@
 //! - Collateral return outputs
 //! - Improved script validation context
 
-use crate::{LedgerError, Result};
-use crate::mary::{MaryValue, MultiAsset, Coin, Slot, Address, RewardAddress, Certificate, ValidityInterval, Ed25519KeyHash};
 use crate::alonzo::{
-    PlutusScript, PlutusVersion, PlutusData, NativeScript,
-    ExUnits, RedeemerTag, NetworkId, ScriptPurpose
+    ExUnits, NativeScript, NetworkId, PlutusData, PlutusScript, PlutusVersion, RedeemerTag,
+    ScriptPurpose,
 };
+use crate::mary::{
+    Address, Certificate, Coin, Ed25519KeyHash, MaryValue, MultiAsset, RewardAddress, Slot,
+    ValidityInterval,
+};
+use crate::{LedgerError, Result};
 use cardano_crypto::Blake2b256Hash;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -36,8 +39,8 @@ pub struct BabbageTransaction {
     pub required_signers: Vec<Ed25519KeyHash>,
     pub network_id: Option<NetworkId>,
     pub collateral_return: Option<BabbageTransactionOutput>, // New: collateral return
-    pub total_collateral: Option<Coin>, // New: total collateral amount
-    pub reference_inputs: Vec<TransactionInput>, // New: read-only inputs
+    pub total_collateral: Option<Coin>,                      // New: total collateral amount
+    pub reference_inputs: Vec<TransactionInput>,             // New: read-only inputs
     pub witness_set: BabbageWitnessSet,
 }
 
@@ -46,7 +49,7 @@ pub struct BabbageTransaction {
 pub struct BabbageTransactionOutput {
     pub address: Address,
     pub value: MaryValue,
-    pub datum: Option<OutputDatum>, // Enhanced datum support
+    pub datum: Option<OutputDatum>,          // Enhanced datum support
     pub script_ref: Option<ScriptReference>, // Enhanced script reference
 }
 
@@ -89,8 +92,8 @@ pub struct BabbageWitnessSet {
 }
 
 // Re-exported types
-pub use crate::mary::{TransactionInput, AuxiliaryData};
-pub use crate::alonzo::{VKeyWitness, BootstrapWitness};
+pub use crate::alonzo::{BootstrapWitness, VKeyWitness};
+pub use crate::mary::{AuxiliaryData, TransactionInput};
 
 /// Enhanced script context with reference inputs and improved datum access
 #[derive(Debug, Clone)]
@@ -210,9 +213,7 @@ impl ScriptReference {
                 // Native script hash calculation (simplified)
                 Blake2b256Hash::hash(&format!("{:?}", script).as_bytes())
             }
-            Self::PlutusV1Script(script) | Self::PlutusV2Script(script) => {
-                script.hash()
-            }
+            Self::PlutusV1Script(script) | Self::PlutusV2Script(script) => script.hash(),
         }
     }
 
@@ -261,13 +262,13 @@ impl BabbageLedger {
     fn validate_structure(tx: &BabbageTransaction) -> Result<()> {
         if tx.inputs.is_empty() {
             return Err(LedgerError::InvalidTransaction(
-                "Transaction must have at least one input".to_string()
+                "Transaction must have at least one input".to_string(),
             ));
         }
 
         if tx.outputs.is_empty() {
             return Err(LedgerError::InvalidTransaction(
-                "Transaction must have at least one output".to_string()
+                "Transaction must have at least one output".to_string(),
             ));
         }
 
@@ -276,7 +277,7 @@ impl BabbageLedger {
         for ref_input in &tx.reference_inputs {
             if tx.inputs.contains(ref_input) {
                 return Err(LedgerError::InvalidTransaction(
-                    "Input cannot be both regular and reference input".to_string()
+                    "Input cannot be both regular and reference input".to_string(),
                 ));
             }
         }
@@ -289,7 +290,7 @@ impl BabbageLedger {
         for ref_input in &tx.reference_inputs {
             if tx.inputs.contains(ref_input) {
                 return Err(LedgerError::InvalidTransaction(
-                    "Reference input cannot also be a regular input".to_string()
+                    "Reference input cannot also be a regular input".to_string(),
                 ));
             }
         }
@@ -300,7 +301,7 @@ impl BabbageLedger {
             let key = (&ref_input.transaction_id, ref_input.index);
             if !seen.insert(key) {
                 return Err(LedgerError::InvalidTransaction(
-                    "Duplicate reference input".to_string()
+                    "Duplicate reference input".to_string(),
                 ));
             }
         }
@@ -312,33 +313,33 @@ impl BabbageLedger {
         match (&tx.collateral_return, &tx.total_collateral) {
             (Some(_), None) => {
                 return Err(LedgerError::InvalidTransaction(
-                    "Collateral return specified but total collateral missing".to_string()
+                    "Collateral return specified but total collateral missing".to_string(),
                 ));
             }
             (None, Some(_)) => {
                 return Err(LedgerError::InvalidTransaction(
-                    "Total collateral specified but collateral return missing".to_string()
+                    "Total collateral specified but collateral return missing".to_string(),
                 ));
             }
             (Some(collateral_return), Some(total_collateral)) => {
                 // Validate collateral return value is less than total collateral
                 if collateral_return.value.coin >= *total_collateral {
                     return Err(LedgerError::InvalidTransaction(
-                        "Collateral return must be less than total collateral".to_string()
+                        "Collateral return must be less than total collateral".to_string(),
                     ));
                 }
 
                 // Collateral return must not have multi-assets (ADA only)
                 if collateral_return.value.multi_asset.is_some() {
                     return Err(LedgerError::InvalidTransaction(
-                        "Collateral return cannot contain multi-assets".to_string()
+                        "Collateral return cannot contain multi-assets".to_string(),
                     ));
                 }
 
                 // Collateral return must not have datum or script reference
                 if collateral_return.datum.is_some() || collateral_return.script_ref.is_some() {
                     return Err(LedgerError::InvalidTransaction(
-                        "Collateral return cannot have datum or script reference".to_string()
+                        "Collateral return cannot have datum or script reference".to_string(),
                     ));
                 }
             }
@@ -356,14 +357,14 @@ impl BabbageLedger {
                     ScriptReference::PlutusV1Script(script) => {
                         if !matches!(script.version, PlutusVersion::V1) {
                             return Err(LedgerError::ScriptError(
-                                "PlutusV1Script must have V1 version".to_string()
+                                "PlutusV1Script must have V1 version".to_string(),
                             ));
                         }
                     }
                     ScriptReference::PlutusV2Script(script) => {
                         if !matches!(script.version, PlutusVersion::V2) {
                             return Err(LedgerError::ScriptError(
-                                "PlutusV2Script must have V2 version".to_string()
+                                "PlutusV2Script must have V2 version".to_string(),
                             ));
                         }
                     }
@@ -399,26 +400,29 @@ impl BabbageLedger {
         _utxo_set: &HashMap<TransactionInput, BabbageTransactionOutput>, // Would use for resolving
     ) -> BabbageScriptContext {
         let tx_info = BabbageTxInfo {
-            inputs: vec![], // Would resolve from UTxO set
+            inputs: vec![],           // Would resolve from UTxO set
             reference_inputs: vec![], // Would resolve from UTxO set
             outputs: tx.outputs.clone(),
             fee: MaryValue::new_ada_only(tx.fee),
-            mint: tx.mint.as_ref()
+            mint: tx
+                .mint
+                .as_ref()
                 .map(|ma| MaryValue::new_with_assets(0, ma.clone()))
                 .unwrap_or_else(|| MaryValue::new_ada_only(0)),
             dcert: tx.certificates.clone(),
-            wdrl: tx.withdrawals.iter().map(|(addr, coin)| (addr.clone(), *coin)).collect(),
+            wdrl: tx
+                .withdrawals
+                .iter()
+                .map(|(addr, coin)| (addr.clone(), *coin))
+                .collect(),
             valid_range: tx.validity_interval.clone(),
             signatories: tx.required_signers.clone(),
             redeemers: HashMap::new(), // Would be populated from witness set
-            data: HashMap::new(), // Would extract from witness set and inline datums
+            data: HashMap::new(),      // Would extract from witness set and inline datums
             id: Blake2b256Hash::hash(&format!("{:?}", tx).as_bytes()), // Simplified
         };
 
-        BabbageScriptContext {
-            tx_info,
-            purpose,
-        }
+        BabbageScriptContext { tx_info, purpose }
     }
 
     /// Calculate minimum ADA for Babbage output (includes all features)
@@ -468,15 +472,24 @@ impl BabbageLedger {
             PlutusData::Integer(_) => 8, // Rough estimate
             PlutusData::Bytes(bytes) => bytes.len() as u64 + 4,
             PlutusData::List(items) => {
-                4 + items.iter().map(|item| Self::estimate_plutus_data_size(item)).sum::<u64>()
+                4 + items
+                    .iter()
+                    .map(|item| Self::estimate_plutus_data_size(item))
+                    .sum::<u64>()
             }
             PlutusData::Map(pairs) => {
-                4 + pairs.iter()
-                    .map(|(k, v)| Self::estimate_plutus_data_size(k) + Self::estimate_plutus_data_size(v))
+                4 + pairs
+                    .iter()
+                    .map(|(k, v)| {
+                        Self::estimate_plutus_data_size(k) + Self::estimate_plutus_data_size(v)
+                    })
                     .sum::<u64>()
             }
             PlutusData::Constr(_, fields) => {
-                8 + fields.iter().map(|field| Self::estimate_plutus_data_size(field)).sum::<u64>()
+                8 + fields
+                    .iter()
+                    .map(|field| Self::estimate_plutus_data_size(field))
+                    .sum::<u64>()
             }
         }
     }
@@ -488,7 +501,9 @@ mod tests {
 
     #[test]
     fn test_babbage_output_creation() {
-        let addr = Address { bytes: vec![1, 2, 3] };
+        let addr = Address {
+            bytes: vec![1, 2, 3],
+        };
         let output = BabbageTransactionOutput::new_ada_only(addr, 2_000_000);
 
         assert_eq!(output.value.coin, 2_000_000);
@@ -498,11 +513,13 @@ mod tests {
 
     #[test]
     fn test_inline_datum_support() {
-        let addr = Address { bytes: vec![1, 2, 3] };
+        let addr = Address {
+            bytes: vec![1, 2, 3],
+        };
         let datum = PlutusData::integer(42);
 
-        let output = BabbageTransactionOutput::new_ada_only(addr, 2_000_000)
-            .with_inline_datum(datum);
+        let output =
+            BabbageTransactionOutput::new_ada_only(addr, 2_000_000).with_inline_datum(datum);
 
         assert!(output.has_inline_datum());
         assert_eq!(output.inline_datum(), Some(&PlutusData::integer(42)));
@@ -510,12 +527,14 @@ mod tests {
 
     #[test]
     fn test_script_reference_support() {
-        let addr = Address { bytes: vec![1, 2, 3] };
+        let addr = Address {
+            bytes: vec![1, 2, 3],
+        };
         let script = PlutusScript::v2(vec![1, 2, 3, 4, 5]);
         let script_ref = ScriptReference::PlutusV2Script(script);
 
-        let output = BabbageTransactionOutput::new_ada_only(addr, 2_000_000)
-            .with_script_ref(script_ref);
+        let output =
+            BabbageTransactionOutput::new_ada_only(addr, 2_000_000).with_script_ref(script_ref);
 
         assert!(output.has_script());
 
@@ -554,7 +573,9 @@ mod tests {
 
     #[test]
     fn test_min_ada_calculation_babbage() {
-        let addr = Address { bytes: vec![1, 2, 3] };
+        let addr = Address {
+            bytes: vec![1, 2, 3],
+        };
 
         // Simple ADA-only output
         let simple_output = BabbageTransactionOutput::new_ada_only(addr.clone(), 1_000_000);
@@ -589,8 +610,10 @@ mod tests {
         let mut tx = BabbageTransaction {
             inputs: vec![input1.clone()],
             outputs: vec![BabbageTransactionOutput::new_ada_only(
-                Address { bytes: vec![1, 2, 3] },
-                1_000_000
+                Address {
+                    bytes: vec![1, 2, 3],
+                },
+                1_000_000,
             )],
             fee: 200_000,
             ttl: None,

@@ -234,7 +234,7 @@ fn hash_to_g2_rfc9380(message: &[u8]) -> G2Projective {
 
     // Generate two field elements for G2 (which is over Fp2)
     let hash1 = hasher.clone().finalize();
-    hasher.update(&hash1);
+    hasher.update(hash1.as_slice());
     let hash2 = hasher.finalize();
 
     // Convert hashes to scalars and construct G2 point
@@ -248,7 +248,5 @@ fn hash_to_g2_rfc9380(message: &[u8]) -> G2Projective {
 
     // Combine scalars to create G2 point
     // In full RFC 9380, this would use proper map_to_curve
-    let point = G2Projective::generator() * scalar1 + G2Projective::generator() * scalar2;
-
-    point
+    G2Projective::generator() * scalar1 + G2Projective::generator() * scalar2
 }

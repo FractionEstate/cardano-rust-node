@@ -10,8 +10,8 @@
 //! - Script execution cost accounting
 
 use crate::mary::{
-    Address, Certificate, Coin, Ed25519KeyHash, MaryValue, MultiAsset, PolicyId,
-    RewardAddress, Slot, ValidityInterval,
+    Address, Certificate, Coin, Ed25519KeyHash, MaryValue, MultiAsset, PolicyId, RewardAddress,
+    Slot, ValidityInterval,
 };
 use crate::{LedgerError, Result};
 use cardano_crypto::Blake2b256Hash;

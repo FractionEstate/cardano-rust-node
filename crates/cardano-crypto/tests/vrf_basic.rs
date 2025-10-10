@@ -1,6 +1,4 @@
-use cardano_crypto::vrf::{
-    VrfPrivateKey, VRF_PRIVATE_KEY_LENGTH, VRF_PROOF_LENGTH,
-};
+use cardano_crypto::vrf::{VrfPrivateKey, VRF_PRIVATE_KEY_LENGTH, VRF_PROOF_LENGTH};
 
 #[test]
 fn vrf_prove_verify_roundtrip() {

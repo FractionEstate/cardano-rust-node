@@ -15,7 +15,7 @@ fn main() {
 
     let pool_id = PoolId(Blake2b256Hash::hash(b"demo_pool"));
     let vrf_key = VrfKey::new();
-    let kes_key = KesKey::new(6); // depth=6 for mainnet (64 periods)
+    let kes_key = KesKey::new();
 
     let operational_cert = BlockProductionOperationalCertificate {
         hot_vkey: Ed25519KeyHash::from_test_data(b"hot_key"),
@@ -66,7 +66,7 @@ fn main() {
     // Step 3: Demonstrate KES key evolution
     println!("3. Demonstrating KES key evolution (forward-secure signatures)...");
 
-    let mut demo_kes = KesKey::new(6);
+    let mut demo_kes = KesKey::new();
     println!("   Initial KES period: {}", demo_kes.current_period());
     println!("   Maximum KES period: {}", demo_kes.max_period);
 
@@ -132,7 +132,11 @@ fn main() {
     println!("   KES (Key Evolving Signature):");
     println!("     • Purpose: Sign blocks with forward security");
     println!("     • Property: Old keys become invalid after evolution");
-    println!("     • Periods: 0 to {} (depth=6)", kes_key.max_period);
+    println!(
+        "     • Periods: 0..={} ({} periods total)",
+        kes_key.max_period,
+        kes_key.max_period + 1
+    );
     println!("     • Evolution: Automatic advancement each KES period");
     println!();
     println!("   Operational Certificate:");

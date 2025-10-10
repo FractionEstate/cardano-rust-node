@@ -19,9 +19,11 @@ fn test_ed25519_basic_functionality() {
     let signature_bytes = signature.to_bytes();
 
     // Test deserialization
-    let restored_private = Ed25519PrivateKey::from_bytes(private_bytes).unwrap();
+    let restored_private = Ed25519PrivateKey::from_bytes(private_bytes)
+        .expect("Restoring private key from bytes should succeed");
     assert_eq!(restored_private.to_bytes(), private_bytes);
-    let restored_public = Ed25519PublicKey::from_bytes(public_bytes).unwrap();
+    let restored_public = Ed25519PublicKey::from_bytes(public_bytes)
+        .expect("Restoring public key from bytes should succeed");
     let restored_signature = Ed25519Signature::from_bytes(signature_bytes);
 
     // Verify restored objects work

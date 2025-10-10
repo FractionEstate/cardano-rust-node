@@ -10,6 +10,7 @@ use cardano_crypto::{
     VrfPublicKey, VRF_SEED_LENGTH,
 };
 use std::collections::HashMap;
+use std::fmt;
 
 /// Block producer - coordinates VRF leadership and KES signing
 ///
@@ -33,7 +34,6 @@ pub struct VrfKey {
 /// KES key wrapper
 ///
 /// Note: Does not derive Clone for security - KES keys should not be duplicated
-#[derive(Debug)]
 pub struct KesKey {
     /// The actual KES secret key from cardano-crypto
     pub secret_key: KesSecretKey,
@@ -41,10 +41,22 @@ pub struct KesKey {
     pub max_period: u64,
 }
 
+impl fmt::Debug for KesKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("KesKey")
+            .field("max_period", &self.max_period)
+            .field("current_period", &self.current_period())
+            .field("is_expired", &self.is_expired())
+            .finish()
+    }
+}
+
 impl KesKey {
-    /// Create a new KES key with specified depth
-    pub fn new(depth: u32) -> Self {
-        let secret_key = KesSecretKey::generate(depth);
+    /// Create a new KES key using the standard CompactSum7 configuration
+    pub fn new() -> Self {
+        let secret_key = KesSecretKey::generate()
+            .expect("operating system RNG should provide entropy for KES keys");
+
         let max_period = secret_key.max_period();
         Self {
             secret_key,
@@ -91,12 +103,11 @@ impl KesKey {
                 "Cannot evolve to past period".to_string(),
             ));
         }
-
-        // Evolve the secret key - take ownership, evolve, and replace
-        let old_key = std::mem::replace(&mut self.secret_key, KesSecretKey::generate(6)); // Temporary
-        self.secret_key = old_key.evolve_to(target_period).map_err(|e| {
-            ConsensusError::InvalidKesEvolution(format!("KES evolution failed: {}", e))
-        })?;
+        self.secret_key
+            .evolve_in_place(target_period)
+            .map_err(|e| {
+                ConsensusError::InvalidKesEvolution(format!("KES evolution failed: {e}"))
+            })?;
 
         Ok(())
     }
@@ -291,7 +302,7 @@ impl VrfKey {
 impl BlockProducer {
     pub fn new(pool_id: PoolId, stake: u64) -> Self {
         let vrf_key = VrfKey::for_pool(&pool_id);
-        let kes_key = KesKey::new(6); // depth=6 for mainnet (64 periods)
+        let kes_key = KesKey::new();
 
         let operational_cert = OperationalCertificate {
             hot_vkey: Ed25519KeyHash::from_test_data(b"hot_vkey"),
@@ -658,8 +669,7 @@ impl Default for ProductionScheduler {
 mod tests {
     use super::*;
     use cardano_crypto::{
-        Blake2b256Hash, Ed25519KeyHash, VRF_OUTPUT_LENGTH, VRF_PRIVATE_KEY_LENGTH,
-        VRF_PROOF_LENGTH, VRF_PUBLIC_KEY_LENGTH,
+        Blake2b256Hash, VRF_OUTPUT_LENGTH, VRF_PROOF_LENGTH, VRF_PUBLIC_KEY_LENGTH,
     };
 
     fn create_test_producer() -> BlockProducer {
@@ -692,8 +702,9 @@ mod tests {
     #[test]
     fn test_vrf_key_creation() {
         let vrf_key = VrfKey::new();
+        let kes_key = KesKey::new();
         assert_eq!(vrf_key.public_key.to_bytes().len(), VRF_PUBLIC_KEY_LENGTH);
-        assert_eq!(vrf_key.private_key.to_bytes().len(), VRF_PRIVATE_KEY_LENGTH);
+        assert_eq!(kes_key.max_period, KesSecretKey::MAX_PERIOD);
     }
 
     #[test]
@@ -711,16 +722,10 @@ mod tests {
 
     #[test]
     fn test_kes_key_creation() {
-        let kes_key = KesKey::new(6); // depth=6
-        assert_eq!(kes_key.current_period(), 0);
-        assert_eq!(kes_key.max_period, 62); // 2^6 - 2
-    }
+        let mut kes_key = KesKey::new();
+        assert_eq!(kes_key.max_period, KesSecretKey::MAX_PERIOD);
 
-    #[test]
-    fn test_kes_key_evolution() {
-        let mut kes_key = KesKey::new(6);
-
-        // Key should need evolution for future periods
+        // Key should need evolution for future periods while at period 0
         assert!(kes_key.needs_evolution(1));
         assert!(!kes_key.needs_evolution(0));
 
@@ -736,18 +741,30 @@ mod tests {
             backwards_result.unwrap_err(),
             ConsensusError::InvalidKesEvolution(_)
         ));
+
+        // Evolve to max period and verify expiration handling
+        let max_period = KesSecretKey::MAX_PERIOD;
+        let _ = kes_key.evolve(max_period);
+
+        // Should fail to evolve beyond max period
+        let expired_result = kes_key.evolve(max_period + 1);
+        assert!(expired_result.is_err());
     }
 
     #[test]
     fn test_kes_key_expiration() {
-        // Use depth=6 (64 periods), start at period 62 (near max)
-        let mut kes_key = KesKey::new(6); // depth=6 means max_period = 62
+        let mut kes_key = KesKey::new();
 
-        // Evolve to period 62 first
-        let _ = kes_key.evolve(62);
+        // Evolve to the last valid period first
+        let max_period = KesSecretKey::MAX_PERIOD;
+        let near_expiry = max_period - 1;
+        let _ = kes_key.evolve(near_expiry);
 
-        // Should fail to evolve beyond max period (62)
-        let expired_result = kes_key.evolve(63);
+        // Final valid evolution to max period should succeed
+        let _ = kes_key.evolve(max_period).expect("evolve to max period");
+
+        // Should fail to evolve beyond max period
+        let expired_result = kes_key.evolve(max_period + 1);
         assert!(expired_result.is_err());
         assert!(matches!(
             expired_result.unwrap_err(),
@@ -923,7 +940,7 @@ mod tests {
 
     #[test]
     fn test_kes_key_signing() {
-        let kes_key = KesKey::new(6); // depth=6 for mainnet
+        let kes_key = KesKey::new();
         let producer = create_test_producer();
 
         // Create header for slot in period 0 (with correct VRF sizes)
@@ -1054,19 +1071,20 @@ mod tests {
 
     #[test]
     fn test_kes_periods_remaining() {
-        let kes_key = KesKey::new(6); // depth=6 gives max_period=62
+        let kes_key = KesKey::new();
 
-        // At period 0, should have 62 periods remaining
-        assert_eq!(kes_key.periods_remaining(), 62);
+        // At period 0, should have MAX_PERIOD evolutions remaining
+        assert_eq!(kes_key.periods_remaining(), KesSecretKey::MAX_PERIOD);
         assert!(!kes_key.is_approaching_expiration(10));
     }
 
     #[test]
     fn test_kes_approaching_expiration() {
-        let mut kes_key = KesKey::new(3); // depth=3 gives max_period=6
+        let mut kes_key = KesKey::new();
+        let near_expiry = KesSecretKey::MAX_PERIOD - 1;
 
-        // Evolve to period 5 (one period before expiration)
-        kes_key.evolve(5).unwrap();
+        // Evolve to period just before expiration
+        kes_key.evolve(near_expiry).unwrap();
 
         // Should be approaching expiration with threshold 10
         assert_eq!(kes_key.periods_remaining(), 1);

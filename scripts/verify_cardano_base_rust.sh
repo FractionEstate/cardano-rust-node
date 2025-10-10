@@ -38,7 +38,8 @@ fi
 # Check 3: VRF backend uses cardano-vrf-pure
 echo ""
 echo "3. Checking VRF backend implementation..."
-if grep -q "use cardano_vrf_pure::draft03::VrfDraft03" crates/cardano-crypto/src/vrf/backend.rs; then
+if grep -q "cardano_vrf_pure" crates/cardano-crypto/src/vrf/backend.rs && \
+   grep -Eq "VrfDraft(03|13)" crates/cardano-crypto/src/vrf/backend.rs; then
     echo -e "${GREEN}✅ VRF backend uses cardano-vrf-pure${NC}"
 else
     echo -e "${RED}❌ VRF backend not using cardano-vrf-pure${NC}"

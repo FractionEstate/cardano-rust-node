@@ -26,6 +26,7 @@ allow = [
     "Unlicense",
     "Zlib",
     "Unicode-DFS-2016",
+    "Unicode-3.0",
     "BlueOak-1.0.0",
 ]
 confidence-threshold = 0.8

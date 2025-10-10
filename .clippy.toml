@@ -12,6 +12,9 @@ disallowed-methods = [
     "std::result::Result::unwrap",
 ]
 
+# Allow convenient unwrap usage in test code where panics are acceptable
+allow-unwrap-in-tests = true
+
 # === Code Quality ===
 
 # Maximum cognitive complexity for functions
@@ -23,15 +26,12 @@ too-many-lines-threshold = 150
 # === Performance ===
 
 # Warn on inefficient operations
-inline-always = true
-large-enum-variant-threshold = 200
+enum-variant-size-threshold = 200
 
 # === Documentation ===
 
-# Require documentation for public items
-missing-docs-in-private-items = false  # Only warn for public items
+# Require documentation for public items (defaults to public-only warnings)
 
 # === Network & Async ===
 
-# Ensure proper async/await usage
-future-not-send = "warn"
+# Ensure proper async/await usage handled via warns section above

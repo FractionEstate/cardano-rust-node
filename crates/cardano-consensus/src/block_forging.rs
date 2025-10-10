@@ -369,7 +369,7 @@ mod tests {
     fn test_block_forger_creation() {
         let pool_id = PoolId(Blake2b256Hash::hash(b"test_pool"));
         let vrf_key = VrfKey::new();
-        let kes_key = KesKey::new(6);
+        let kes_key = KesKey::new();
         let operational_cert = OperationalCertificate {
             hot_vkey: Ed25519KeyHash::from_test_data(b"hot_key"),
             sequence_number: 1,
@@ -413,7 +413,7 @@ mod tests {
     fn test_transaction_validation_no_inputs() {
         let pool_id = PoolId(Blake2b256Hash::hash(b"test_pool"));
         let vrf_key = VrfKey::new();
-        let kes_key = KesKey::new(6);
+        let kes_key = KesKey::new();
         let operational_cert = OperationalCertificate {
             hot_vkey: Ed25519KeyHash::from_test_data(b"hot_key"),
             sequence_number: 1,

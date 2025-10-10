@@ -7,7 +7,7 @@
 use crate::block_production::{BlockBody, ForgedBlock, Transaction, TxInput, TxOutput};
 use crate::ouroboros::{PoolId, SlotNo, StakeDistribution};
 use crate::{ConsensusError, Result};
-use cardano_crypto::{Blake2b256Hash, Ed25519KeyHash, VrfProof};
+use cardano_crypto::{Blake2b256Hash, Ed25519KeyHash, KesSignature, VrfProof};
 use std::collections::HashMap;
 use std::time::Instant;
 
@@ -530,16 +530,13 @@ impl ValidationPipeline {
         // For now, we do basic structure validation:
 
         // Verify signature has the expected structure
-        if block.kes_signature.signature.is_empty() {
-            return Err(ConsensusError::InvalidKesSignature(
-                "Empty KES signature".to_string(),
-            ));
-        }
-
-        if block.kes_signature.period_vkey.is_empty() {
-            return Err(ConsensusError::InvalidKesSignature(
-                "Empty KES period verification key".to_string(),
-            ));
+        let signature_bytes = block.kes_signature.signature_bytes();
+        if signature_bytes.len() != KesSignature::RAW_SIZE {
+            return Err(ConsensusError::InvalidKesSignature(format!(
+                "Invalid KES signature length: expected {} bytes, got {}",
+                KesSignature::RAW_SIZE,
+                signature_bytes.len()
+            )));
         }
 
         // TODO: Actual cryptographic verification would require:

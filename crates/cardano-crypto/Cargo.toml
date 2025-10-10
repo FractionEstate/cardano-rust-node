@@ -42,5 +42,6 @@ rand.workspace = true
 getrandom.workspace = true
 
 [dev-dependencies]
+tempfile = "3.10"
 proptest.workspace = true
 hex-literal.workspace = true

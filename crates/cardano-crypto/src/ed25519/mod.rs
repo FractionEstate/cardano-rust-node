@@ -160,7 +160,7 @@ impl Ed25519Signature {
     /// Create from hex string (must be 128 hex characters = 64 bytes)
     pub fn from_hex(hex_str: &str) -> Result<Self> {
         let bytes = hex::decode(hex_str)
-            .map_err(|e| CryptoError::InvalidSignature(format!("Invalid hex: {}", e)))?;
+            .map_err(|e| CryptoError::InvalidSignature(format!("Invalid hex: {e}")))?;
         if bytes.len() != 64 {
             return Err(CryptoError::InvalidSignature(
                 "Ed25519 signature hex must be 128 characters (64 bytes)".to_string(),

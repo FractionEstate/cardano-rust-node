@@ -109,6 +109,31 @@ tui-input = "0.10"
 # WebSocket
 tokio-tungstenite = "0.24"
 
+[workspace.lints.clippy]
+# Align lint configuration with cardano-base-rust expectations so dependent crates inheriting
+# workspace lints compile successfully.
+all = { level = "warn", priority = -1 }
+correctness = { level = "deny", priority = -1 }
+suspicious = { level = "warn", priority = -1 }
+perf = { level = "warn", priority = -1 }
+style = { level = "warn", priority = -1 }
+must_use_candidate = "warn"
+missing_errors_doc = "warn"
+missing_panics_doc = "warn"
+unwrap_used = "warn"
+expect_used = "allow"
+panic = "warn"
+todo = "warn"
+unimplemented = "deny"
+module_name_repetitions = "allow"
+similar_names = "allow"
+needless_borrows_for_generic_args = "allow"
+useless_conversion = "allow"
+
+[patch."https://github.com/FractionEstate/cardano-base-rust"]
+cardano-vrf-pure = { path = "external/cardano-base-rust/cardano-vrf-pure" }
+cardano-crypto-class = { path = "external/cardano-base-rust/cardano-crypto-class" }
+
 [profile.release]
 opt-level = 3
 lto = "fat"

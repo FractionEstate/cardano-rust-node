@@ -7,7 +7,7 @@
 //! ## KES Key Lifecycle
 //!
 //! ```text
-//! Period 0 ──> Period 1 ──> Period 2 ──> ... ──> Period 62 ──> Period 63 [EXPIRED]
+//! Period 0 ──> Period 1 ──> Period 2 ──> ... ──> Period 126 ──> Period 127 [EXPIRED]
 //!    │            │            │                      │            │
 //!    │            │            │                      │            └─> WARNING: Generate new key!
 //!    │            │            │                      └──────> WARNING: Approaching expiration
@@ -16,7 +16,7 @@
 //!    └──────────────────────────────────> Initial key
 //! ```
 //!
-//! For mainnet with depth=6, maximum period is 2^6 = 64 periods (0-63).
+//! With CompactSum7 KES there are 2^7 = 128 periods (0-127).
 //! Each period is approximately 36 hours (129,600 slots).
 
 use anyhow::{anyhow, Result};
@@ -47,7 +47,7 @@ impl Default for KesEvolutionConfig {
             slots_per_period: 129_600, // Mainnet default
             warning_threshold: 10,     // Warn 10 periods before expiration (~15 days)
             auto_evolve: true,
-            max_kes_period: 62, // For depth=6: 2^6-1 = 63 periods (0-62)
+            max_kes_period: 127, // CompactSum7 KES supports periods 0-127
         }
     }
 }
@@ -59,7 +59,7 @@ impl KesEvolutionConfig {
             slots_per_period: 129_600,
             warning_threshold: 10,
             auto_evolve: true,
-            max_kes_period: 62,
+            max_kes_period: 127,
         }
     }
 
@@ -69,7 +69,7 @@ impl KesEvolutionConfig {
             slots_per_period: 129_600,
             warning_threshold: 5,
             auto_evolve: true,
-            max_kes_period: 62,
+            max_kes_period: 127,
         }
     }
 
@@ -79,7 +79,7 @@ impl KesEvolutionConfig {
             slots_per_period: 129_600,
             warning_threshold: 5,
             auto_evolve: true,
-            max_kes_period: 62,
+            max_kes_period: 127,
         }
     }
 }
@@ -322,10 +322,11 @@ impl KesEvolutionTracker {
 mod tests {
     use super::*;
     use cardano_consensus::KesKey;
+    use cardano_crypto::KesSecretKey;
 
     #[tokio::test]
     async fn test_period_calculation() {
-        let kes_key = Arc::new(RwLock::new(KesKey::new(6)));
+        let kes_key = Arc::new(RwLock::new(KesKey::new()));
         let config = KesEvolutionConfig::mainnet();
         let tracker = KesEvolutionTracker::new(kes_key, config.clone());
 
@@ -343,12 +344,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_evolution_detection() {
-        let kes_key = Arc::new(RwLock::new(KesKey::new(6)));
+        let kes_key = Arc::new(RwLock::new(KesKey::new()));
         let config = KesEvolutionConfig {
             slots_per_period: 100,
             warning_threshold: 5,
             auto_evolve: true,
-            max_kes_period: 62,
+            max_kes_period: 127,
         };
         let tracker = KesEvolutionTracker::new(kes_key.clone(), config);
 
@@ -368,7 +369,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_expiration_warning() {
-        let kes_key = Arc::new(RwLock::new(KesKey::new(6)));
+        let kes_key = Arc::new(RwLock::new(KesKey::new()));
         let config = KesEvolutionConfig {
             slots_per_period: 100,
             warning_threshold: 5,
@@ -377,8 +378,12 @@ mod tests {
         };
         let tracker = KesEvolutionTracker::new(kes_key.clone(), config);
 
-        // Move to period 6 (remaining: 10 - 6 = 4 periods)
-        tracker.update_slot(600).await.unwrap();
+        // Move the KES key near expiration (remaining periods = 4)
+        {
+            let mut key = kes_key.write().await;
+            let target_period = KesSecretKey::MAX_PERIOD.saturating_sub(4);
+            key.evolve(target_period).expect("evolve near expiration");
+        }
 
         // Should be approaching expiration (4 < 5)
         assert!(tracker.is_approaching_expiration().await);
@@ -386,7 +391,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_status_message() {
-        let kes_key = Arc::new(RwLock::new(KesKey::new(6)));
+        let kes_key = Arc::new(RwLock::new(KesKey::new()));
         let config = KesEvolutionConfig::mainnet();
         let tracker = KesEvolutionTracker::new(kes_key, config);
 

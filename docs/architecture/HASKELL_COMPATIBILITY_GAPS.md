@@ -4,7 +4,6 @@
 
 This document catalogues the verified differences between this Rust node and the upstream Haskell implementation. Every statement below was checked against the current sources on 2025-10-05 so downstream work can rely on it without guesswork.
 
-
 ## Confirmed implementation snapshot
 
 - **Consensus building blocks**
@@ -17,7 +16,6 @@ This document catalogues the verified differences between this Rust node and the
   - `crates/cardano-storage/src/ledgerdb/mod.rs` exposes APIs for UTxOs, stake pools, delegations, rewards, snapshots, and protocol parameters with an in-memory `MemoryBackend` and optional LMDB/RocksDB backends (behind the `legacy` feature).
 - **Epoch transitions**
   - `crates/cardano-consensus/src/epoch_transition.rs` implements nonce evolution, stake snapshotting, reward calculation, and snapshot persistence hooks; it is wired against `LedgerDatabase` but not yet invoked by the runtime.
-
 
 ## Confirmed gaps
 
@@ -32,12 +30,11 @@ This document catalogues the verified differences between this Rust node and the
 
 ## Suggested next steps
 
-- Replace the consensus runtime stub with a real pipeline that creates `SlotNotifier`, `BlockProductionService`, and `AutoRefreshIntegrator`, then feeds forged blocks into the network broadcaster.
-- Extend `BlockProductionIntegrator` to populate `SimplifiedLedgerState` with real UTxO snapshots (consider a paginated fetch from `LedgerDatabase`) and refresh on new blocks instead of fixed intervals.
-- Implement pool iteration in `LedgerDatabase::list_active_pools` and block range queries in `ChainDatabaseImpl::get_blocks_range` so that epoch transitions and chain sync operate on real data.
-- Gradually convert the mocked integration tests into end-to-end tests that exercise the actual networking and storage stacks once the runtime pipeline exists.
-- Introduce a Plutus execution bridge (via bindings or a Rust interpreter) and move the current structural checks into preflight validation.
-
+- Replace the consensus runtime stub with a real pipeline that creates `SlotNotifier`, `BlockProductionService`, and `AutoRefreshIntegrator`, then feeds forged blocks into the network broadcaster ([Roadmap R1-R3](../development/ROADMAP.md#2-consensus-runtime-integration)).
+- Extend `BlockProductionIntegrator` to populate `SimplifiedLedgerState` with real UTxO snapshots (consider a paginated fetch from `LedgerDatabase`) and refresh on new blocks instead of fixed intervals ([Roadmap L1](../development/ROADMAP.md#3-ledger--plutus-execution)).
+- Implement pool iteration in `LedgerDatabase::list_active_pools` and block range queries in `ChainDatabaseImpl::get_blocks_range` so that epoch transitions and chain sync operate on real data ([Roadmap L2](../development/ROADMAP.md#3-ledger--plutus-execution)).
+- Gradually convert the mocked integration tests into end-to-end tests that exercise the actual networking and storage stacks once the runtime pipeline exists ([Roadmap N1-N2](../development/ROADMAP.md#4-network--storage-robustness)).
+- Introduce a Plutus execution bridge (via bindings or a Rust interpreter) and move the current structural checks into preflight validation ([Roadmap L3](../development/ROADMAP.md#3-ledger--plutus-execution)).
 
 ## Verification checklist
 

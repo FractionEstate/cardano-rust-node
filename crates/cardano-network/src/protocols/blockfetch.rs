@@ -45,7 +45,7 @@ impl Point {
     }
 
     /// Create a new point with given slot and hash bytes
-    pub fn new(slot: u64, hash_bytes: &[u8; 32]) -> Result<Self, String> {
+    pub fn new(slot: u64, hash_bytes: &[u8]) -> Result<Self, String> {
         Blake2b256Hash::from_bytes(hash_bytes)
             .map(|hash| Self {
                 slot: SlotNo(slot),
@@ -494,14 +494,14 @@ mod tests {
         let genesis = Point::genesis();
         assert_eq!(genesis.slot.0, 0);
 
-        let point = Point::new(42, &[1u8; 32]);
+        let point = Point::new(42, &[1u8; 32]).unwrap();
         assert_eq!(point.slot.0, 42);
     }
 
     #[test]
     fn test_chain_range_validation() {
-        let from = Point::new(10, &[1u8; 32]);
-        let to = Point::new(20, &[2u8; 32]);
+        let from = Point::new(10, &[1u8; 32]).unwrap();
+        let to = Point::new(20, &[2u8; 32]).unwrap();
 
         let range = ChainRange::new(from.clone(), to.clone()).unwrap();
         assert!(range.is_valid());
@@ -514,12 +514,12 @@ mod tests {
 
     #[test]
     fn test_chain_range_contains() {
-        let from = Point::new(10, &[1u8; 32]);
-        let to = Point::new(20, &[2u8; 32]);
+        let from = Point::new(10, &[1u8; 32]).unwrap();
+        let to = Point::new(20, &[2u8; 32]).unwrap();
         let range = ChainRange::new(from, to).unwrap();
 
-        let point_in_range = Point::new(15, &[3u8; 32]);
-        let point_out_of_range = Point::new(25, &[4u8; 32]);
+        let point_in_range = Point::new(15, &[3u8; 32]).unwrap();
+        let point_out_of_range = Point::new(25, &[4u8; 32]).unwrap();
 
         assert!(range.contains(&point_in_range));
         assert!(!range.contains(&point_out_of_range));
@@ -544,8 +544,8 @@ mod tests {
     async fn test_invalid_range_request() {
         let (_client, _receiver) = BlockFetchClient::new();
 
-        let from = Point::new(20, &[1u8; 32]);
-        let to = Point::new(10, &[2u8; 32]);
+        let from = Point::new(20, &[1u8; 32]).unwrap();
+        let to = Point::new(10, &[2u8; 32]).unwrap();
         let invalid_range = ChainRange::new(from, to).unwrap_err();
 
         match invalid_range {

@@ -53,7 +53,7 @@ impl Point {
     }
 
     /// Create a new point with given slot and hash bytes
-    pub fn new(slot: u64, hash_bytes: &[u8; 32]) -> Result<Self, String> {
+    pub fn new(slot: u64, hash_bytes: &[u8]) -> Result<Self, String> {
         Blake2b256Hash::from_bytes(hash_bytes)
             .map(|hash| Self {
                 slot: SlotNo(slot),
@@ -83,7 +83,7 @@ pub struct Tip {
 
 impl Tip {
     /// Create a new tip
-    pub fn new(slot: u64, height: u64, hash_bytes: &[u8; 32]) -> Result<Self, String> {
+    pub fn new(slot: u64, height: u64, hash_bytes: &[u8]) -> Result<Self, String> {
         Blake2b256Hash::from_bytes(hash_bytes)
             .map(|hash| Self {
                 slot: SlotNo(slot),
@@ -1097,14 +1097,14 @@ mod tests {
         assert_eq!(point.slot.0, 0);
 
         let hash_bytes = [1u8; 32];
-        let point2 = Point::new(42, &hash_bytes);
+        let point2 = Point::new(42, &hash_bytes).unwrap();
         assert_eq!(point2.slot.0, 42);
     }
 
     #[tokio::test]
     async fn test_tip_creation() {
         let hash_bytes = [1u8; 32];
-        let tip = Tip::new(100, 50, &hash_bytes);
+        let tip = Tip::new(100, 50, &hash_bytes).unwrap();
         assert_eq!(tip.slot.0, 100);
         assert_eq!(tip.height, 50);
 
@@ -1119,17 +1119,17 @@ mod tests {
 
         // Valid descending order
         let points = vec![
-            Point::new(100, &[1u8; 32]),
-            Point::new(50, &[2u8; 32]),
-            Point::new(10, &[3u8; 32]),
+            Point::new(100, &[1u8; 32]).unwrap(),
+            Point::new(50, &[2u8; 32]).unwrap(),
+            Point::new(10, &[3u8; 32]).unwrap(),
         ];
         assert!(client.validate_points_order(&points));
 
         // Invalid ascending order
         let points = vec![
-            Point::new(10, &[1u8; 32]),
-            Point::new(50, &[2u8; 32]),
-            Point::new(100, &[3u8; 32]),
+            Point::new(10, &[1u8; 32]).unwrap(),
+            Point::new(50, &[2u8; 32]).unwrap(),
+            Point::new(100, &[3u8; 32]).unwrap(),
         ];
         assert!(!client.validate_points_order(&points));
 
@@ -1142,7 +1142,7 @@ mod tests {
         let config = ChainSyncConfig::default();
 
         // Valid intersection request
-        let points = vec![Point::new(100, &[1u8; 32])];
+        let points = vec![Point::new(100, &[1u8; 32]).unwrap()];
         let message = ChainSyncMessage::FindIntersect { points };
         assert!(validate_message(&message, &config).is_ok());
 
