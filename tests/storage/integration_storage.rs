@@ -1,7 +1,7 @@
 //! Integration tests for T067: Storage Interface Compatibility Tests
 //!
 //! This test module validates storage interface compatibility across different backends.
-//! Tests ensure LMDB and RocksDB backends work correctly with Cardano-specific patterns.
+//! Tests ensure LMDB and CardanoDB backends work correctly with Cardano-specific patterns.
 
 use super::test_storage_interface::*;
 
@@ -11,8 +11,8 @@ async fn integration_test_storage_interface_lmdb_basic_operations() {
 }
 
 #[tokio::test]
-async fn integration_test_storage_interface_rocksdb_basic_operations() {
-    test_storage_interface_rocksdb_basic_operations().await;
+async fn integration_test_storage_interface_cardanodb_basic_operations() {
+    test_storage_interface_cardanodb_basic_operations().await;
 }
 
 #[tokio::test]
@@ -21,8 +21,8 @@ async fn integration_test_storage_interface_lmdb_concurrent_access() {
 }
 
 #[tokio::test]
-async fn integration_test_storage_interface_rocksdb_concurrent_access() {
-    test_storage_interface_rocksdb_concurrent_access().await;
+async fn integration_test_storage_interface_cardanodb_concurrent_access() {
+    test_storage_interface_cardanodb_concurrent_access().await;
 }
 
 #[tokio::test]
@@ -31,8 +31,8 @@ async fn integration_test_storage_interface_lmdb_batch_operations() {
 }
 
 #[tokio::test]
-async fn integration_test_storage_interface_rocksdb_batch_operations() {
-    test_storage_interface_rocksdb_batch_operations().await;
+async fn integration_test_storage_interface_cardanodb_batch_operations() {
+    test_storage_interface_cardanodb_batch_operations().await;
 }
 
 #[tokio::test]
@@ -41,8 +41,8 @@ async fn integration_test_storage_interface_lmdb_cardano_patterns() {
 }
 
 #[tokio::test]
-async fn integration_test_storage_interface_rocksdb_cardano_patterns() {
-    test_storage_interface_rocksdb_cardano_patterns().await;
+async fn integration_test_storage_interface_cardanodb_cardano_patterns() {
+    test_storage_interface_cardanodb_cardano_patterns().await;
 }
 
 #[tokio::test]
@@ -51,8 +51,8 @@ async fn integration_test_storage_interface_lmdb_error_handling() {
 }
 
 #[tokio::test]
-async fn integration_test_storage_interface_rocksdb_error_handling() {
-    test_storage_interface_rocksdb_error_handling().await;
+async fn integration_test_storage_interface_cardanodb_error_handling() {
+    test_storage_interface_cardanodb_error_handling().await;
 }
 
 #[tokio::test]

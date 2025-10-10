@@ -1,7 +1,7 @@
 //! Storage Interface Compatibility Integration Tests
 //!
 //! T067: Storage interface compatibility tests
-//! Validates storage backends work correctly across LMDB/RocksDB implementations.
+//! Validates storage backends work correctly across LMDB/CardanoDB implementations.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -15,7 +15,7 @@ pub struct MockLMDBBackend {
 }
 
 #[derive(Debug, Clone)]
-pub struct MockRocksDBBackend {
+pub struct MockCardanoDbBackend {
     data: Arc<Mutex<HashMap<Vec<u8>, Vec<u8>>>>,
     stats: Arc<Mutex<StorageStats>>,
 }
@@ -63,7 +63,7 @@ impl MockLMDBBackend {
     }
 }
 
-impl MockRocksDBBackend {
+impl MockCardanoDbBackend {
     pub fn new() -> Self {
         Self {
             data: Arc::new(Mutex::new(HashMap::new())),
@@ -122,8 +122,8 @@ async fn test_storage_interface_lmdb_basic_operations() {
 }
 
 #[tokio::test]
-async fn test_storage_interface_rocksdb_basic_operations() {
-    let backend = MockRocksDBBackend::new();
+async fn test_storage_interface_cardanodb_basic_operations() {
+    let backend = MockCardanoDbBackend::new();
 
     // Test put operation
     assert!(backend.put(b"key1", b"value1").is_ok());
@@ -141,7 +141,7 @@ async fn test_storage_interface_rocksdb_basic_operations() {
     let result = backend.get(b"key1").unwrap();
     assert_eq!(result, None);
 
-    println!("T067: RocksDB basic operations test passed");
+    println!("T067: CardanoDB basic operations test passed");
 }
 
 #[tokio::test]
@@ -218,20 +218,20 @@ async fn test_storage_interface_statistics() {
 async fn test_storage_interface_compatibility() {
     // Test that both backends behave identically
     let lmdb = MockLMDBBackend::new();
-    let rocksdb = MockRocksDBBackend::new();
+    let cardanodb = MockCardanoDbBackend::new();
 
     let test_key = b"compatibility_key";
     let test_value = b"compatibility_value";
 
     // Same operations on both backends
     lmdb.put(test_key, test_value).unwrap();
-    rocksdb.put(test_key, test_value).unwrap();
+    cardanodb.put(test_key, test_value).unwrap();
 
     // Both should return the same result
     let lmdb_result = lmdb.get(test_key).unwrap();
-    let rocksdb_result = rocksdb.get(test_key).unwrap();
+    let cardanodb_result = cardanodb.get(test_key).unwrap();
 
-    assert_eq!(lmdb_result, rocksdb_result);
+    assert_eq!(lmdb_result, cardanodb_result);
     assert_eq!(lmdb_result, Some(test_value.to_vec()));
 
     println!("T067: Storage interface compatibility test passed");

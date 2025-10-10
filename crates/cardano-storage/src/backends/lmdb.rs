@@ -421,6 +421,58 @@ impl StorageBackend for LmdbBackend {
 
         Ok(stats)
     }
+
+    async fn scan_prefix(
+        &self,
+        prefix: &[u8],
+        limit: Option<usize>,
+    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+        let env = Arc::clone(&self.env);
+        let db = Arc::clone(&self.db);
+        let prefix = prefix.to_vec();
+
+        let entries = task::spawn_blocking(move || -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+            let db_handle = tokio::runtime::Handle::current().block_on(db.read());
+
+            let txn = env.begin_ro_txn().map_err(|e| {
+                StorageError::DatabaseError(format!("Failed to begin scan transaction: {}", e))
+            })?;
+            let mut cursor = txn.open_ro_cursor(*db_handle).map_err(|e| {
+                StorageError::DatabaseError(format!("Failed to open scan cursor: {}", e))
+            })?;
+
+            let mut collected = Vec::new();
+            let mut iter = cursor.iter_from(&prefix);
+            while let Some(result) = iter.next() {
+                match result {
+                    Ok((key, value)) => {
+                        if !key.starts_with(&prefix) {
+                            break;
+                        }
+                        collected.push((key.to_vec(), value.to_vec()));
+                        if let Some(limit) = limit {
+                            if collected.len() >= limit {
+                                break;
+                            }
+                        }
+                    }
+                    Err(lmdb::Error::NotFound) => break,
+                    Err(e) => {
+                        return Err(StorageError::DatabaseError(format!(
+                            "Failed to iterate during scan: {}",
+                            e
+                        )));
+                    }
+                }
+            }
+
+            Ok(collected)
+        })
+        .await
+        .map_err(|e| StorageError::DatabaseError(format!("Task join error: {}", e)))??;
+
+        Ok(entries)
+    }
 }
 
 // Implement Drop to ensure clean shutdown

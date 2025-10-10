@@ -17,6 +17,7 @@ pub trait ChainDatabase: Send + Sync {
     async fn store_block(
         &self,
         block_hash: &Blake2b256Hash,
+        height: u64,
         block_data: &[u8],
         tx_data: &[(Blake2b256Hash, Vec<u8>)],
     ) -> Result<()>;
@@ -121,6 +122,26 @@ const BLOCK_PREFIX: &[u8] = b"block:";
 const TX_PREFIX: &[u8] = b"tx:";
 const METADATA_KEY: &[u8] = b"chain:metadata";
 const BLOCK_TXS_PREFIX: &[u8] = b"block_txs:";
+const BLOCK_HEIGHT_PREFIX: &[u8] = b"block_height:";
+const BLOCK_INDEX_PREFIX: &[u8] = b"block_index:";
+
+fn block_height_prefix(height: u64) -> Vec<u8> {
+    let mut prefix = BLOCK_HEIGHT_PREFIX.to_vec();
+    prefix.extend_from_slice(&height.to_be_bytes());
+    prefix
+}
+
+fn block_height_key(block_hash: &Blake2b256Hash, height: u64) -> Vec<u8> {
+    let mut key = block_height_prefix(height);
+    key.extend_from_slice(block_hash.as_ref());
+    key
+}
+
+fn block_index_key(block_hash: &Blake2b256Hash) -> Vec<u8> {
+    let mut key = BLOCK_INDEX_PREFIX.to_vec();
+    key.extend_from_slice(block_hash.as_ref());
+    key
+}
 
 fn block_key(block_hash: &Blake2b256Hash) -> Vec<u8> {
     let mut key = BLOCK_PREFIX.to_vec();
@@ -145,6 +166,7 @@ impl<B: StorageBackend> ChainDatabase for ChainDatabaseImpl<B> {
     async fn store_block(
         &self,
         block_hash: &Blake2b256Hash,
+        height: u64,
         block_data: &[u8],
         tx_data: &[(Blake2b256Hash, Vec<u8>)],
     ) -> Result<()> {
@@ -163,6 +185,15 @@ impl<B: StorageBackend> ChainDatabase for ChainDatabaseImpl<B> {
             self.store_block_transactions(block_hash, &tx_hashes)
                 .await?;
         }
+
+        // Index block by height for range scans
+        let height_bytes = height.to_be_bytes();
+        self.backend
+            .put(&block_index_key(block_hash), &height_bytes)
+            .await?;
+        self.backend
+            .put(&block_height_key(block_hash, height), block_hash.as_ref())
+            .await?;
 
         Ok(())
     }
@@ -201,12 +232,68 @@ impl<B: StorageBackend> ChainDatabase for ChainDatabaseImpl<B> {
 
     async fn get_blocks_range(
         &self,
-        _start_hash: &Blake2b256Hash,
-        _count: u32,
+        start_hash: &Blake2b256Hash,
+        count: u32,
     ) -> Result<Vec<Vec<u8>>> {
-        // TODO: Implement efficient range queries
-        // This would require additional indexing by height or chain order
-        Ok(Vec::new())
+        if count == 0 {
+            return Ok(Vec::new());
+        }
+
+        let index_key = block_index_key(start_hash);
+        let Some(height_bytes) = self.backend.get(&index_key).await? else {
+            return Err(StorageError::DatabaseError(format!(
+                "Block hash {} not indexed",
+                hex::encode(start_hash.as_ref())
+            )));
+        };
+
+        let height_array: [u8; 8] = height_bytes
+            .as_slice()
+            .try_into()
+            .map_err(|_| StorageError::SerializationError("Invalid height entry".to_string()))?;
+        let mut current_height = u64::from_be_bytes(height_array);
+        let mut current_hash = *start_hash;
+        let mut blocks = Vec::new();
+
+        for _ in 0..count {
+            match self.get_block(&current_hash).await? {
+                Some(block) => blocks.push(block),
+                None => break,
+            }
+
+            if blocks.len() == count as usize {
+                break;
+            }
+
+            let Some(next_height) = current_height.checked_add(1) else {
+                break;
+            };
+            let height_prefix = block_height_prefix(next_height);
+            let entries = self.backend.scan_prefix(&height_prefix, None).await?;
+
+            let mut next_hash = None;
+            for (_, value) in entries {
+                if value.len() != 32 {
+                    continue;
+                }
+                match Blake2b256Hash::from_bytes(&value) {
+                    Ok(candidate) => {
+                        next_hash = Some(candidate);
+                        break;
+                    }
+                    Err(_) => continue,
+                }
+            }
+
+            let Some(next_hash_value) = next_hash else {
+                break;
+            };
+
+            current_hash = next_hash_value;
+            current_height = next_height;
+        }
+
+        Ok(blocks)
     }
 
     async fn has_block(&self, block_hash: &Blake2b256Hash) -> Result<bool> {
@@ -290,7 +377,7 @@ mod tests {
 
         // Store block
         chaindb
-            .store_block(&block_hash, &block_data, &[(tx_hash, tx_data.clone())])
+            .store_block(&block_hash, 0, &block_data, &[(tx_hash, tx_data.clone())])
             .await
             .unwrap();
 
@@ -313,7 +400,7 @@ mod tests {
 
         // Store block with transaction
         chaindb
-            .store_block(&block_hash, &block_data, &[(tx_hash, tx_data.clone())])
+            .store_block(&block_hash, 0, &block_data, &[(tx_hash, tx_data.clone())])
             .await
             .unwrap();
 
@@ -363,6 +450,7 @@ mod tests {
         chaindb
             .store_block(
                 &block_hash,
+                0,
                 &block_data,
                 &[(tx1_hash, tx1_data), (tx2_hash, tx2_data)],
             )
@@ -377,5 +465,56 @@ mod tests {
         for tx_hash in &tx_hashes {
             assert!(chaindb.has_transaction(tx_hash).await.unwrap());
         }
+    }
+}
+
+#[cfg(test)]
+mod memory_backend_tests {
+    use super::*;
+    use crate::backends::MemoryBackend;
+
+    fn make_hash(seed: &[u8]) -> Blake2b256Hash {
+        Blake2b256Hash::hash(seed)
+    }
+
+    #[tokio::test]
+    async fn test_get_blocks_range_memory_backend() {
+        let backend = Arc::new(MemoryBackend::new());
+        let chaindb = ChainDatabaseImpl::new(backend);
+
+        let hash0 = make_hash(b"block0");
+        let hash1 = make_hash(b"block1");
+        let hash2 = make_hash(b"block2");
+
+        let empty_txs: Vec<(Blake2b256Hash, Vec<u8>)> = Vec::new();
+        chaindb
+            .store_block(&hash0, 0, b"block0".as_ref(), &empty_txs)
+            .await
+            .unwrap();
+        chaindb
+            .store_block(&hash1, 1, b"block1".as_ref(), &empty_txs)
+            .await
+            .unwrap();
+        chaindb
+            .store_block(&hash2, 2, b"block2".as_ref(), &empty_txs)
+            .await
+            .unwrap();
+
+        let range = chaindb.get_blocks_range(&hash1, 2).await.unwrap();
+        assert_eq!(range.len(), 2);
+        assert_eq!(range[0], b"block1".to_vec());
+        assert_eq!(range[1], b"block2".to_vec());
+    }
+
+    #[tokio::test]
+    async fn test_get_blocks_range_missing_start() {
+        let backend = Arc::new(MemoryBackend::new());
+        let chaindb = ChainDatabaseImpl::new(backend);
+
+        let result = chaindb
+            .get_blocks_range(&Blake2b256Hash::hash(b"missing"), 1)
+            .await;
+
+        assert!(matches!(result, Err(StorageError::DatabaseError(_))));
     }
 }

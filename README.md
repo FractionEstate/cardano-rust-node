@@ -24,7 +24,7 @@ The Cardano Rust node is a full proof-of-stake blockchain node engineered around
 | `crates/cardano-consensus` | Ouroboros consensus algorithms and block validation logic. |
 | `crates/cardano-ledger` | Ledger rules, UTxO accounting, certificates, and governance primitives. |
 | `crates/cardano-network` | Multiplexed network stack, handshake negotiation, and peer selection. |
-| `crates/cardano-storage` | Ledger database, LMDB/RocksDB backends, and snapshot handling. |
+| `crates/cardano-storage` | Ledger database, LMDB backend, and snapshot handling. |
 | `crates/cardano-crypto` | Cryptographic primitives, VRFs, and signature utilities. |
 | `crates/cardano-tracing` | Structured logging, telemetry sinks, and observability helpers. |
 | `crates/cardano-api` | Client-facing gRPC/REST adapters and wallet bridges. |

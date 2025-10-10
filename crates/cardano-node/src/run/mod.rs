@@ -7,16 +7,41 @@
 
 use anyhow::{anyhow, Context, Result};
 use blake2::{Blake2b512, Digest};
+use cardano_api::submit_api::{
+    mempool::{InMemoryMempool, MempoolManager},
+    validation::{
+        CardanoTransactionValidator, MockScriptValidator, MockUtxoProvider, TransactionValidator,
+    },
+    SubmitApiConfig, SubmitApiService,
+};
+use cardano_api::{MempoolBridge, MempoolBridgeConfig};
+use cardano_consensus::{
+    AutoRefreshIntegrator, BlockBroadcaster, BlockBroadcasterConfig, BlockForger,
+    BlockProductionConfig, BlockProductionEvent, BlockProductionOperationalCertificate,
+    BlockProductionService, BroadcastEvent, EpochNo, ForgedBlock, ForgingConfig, KesKey,
+    LeadershipCalculator, PoolId, ProtocolParameters, SlotNotifier, SlotNotifierConfig,
+    StakeDistribution, Transaction, VrfKey,
+};
+use cardano_crypto::{Blake2b256Hash, Ed25519KeyHash, KesSecretKey};
+use cardano_network::{ConnectionConfig, ConnectionManager, PeerId, PeerInfo};
+use cardano_storage::{
+    backends::{MemoryBackend, StorageBackend},
+    ChainDatabase, ChainDatabaseImpl, LedgerDatabaseImpl,
+};
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::{Duration as StdDuration, SystemTime};
 use tokio::signal;
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{broadcast, mpsc, RwLock};
 use tokio::time::{sleep, Duration};
 use tracing::{debug, error, info, instrument, warn};
 
-use cardano_network::{ConnectionConfig, ConnectionManager, PeerId, PeerInfo};
-
-use crate::config::ConfigurationManager;
+use crate::config::block_producer::{
+    BlockProducerConfig, KesKeyConfig, OperationalCertConfig, VrfKeyConfig,
+};
+use crate::config::{ConfigurationManager, NodeConfiguration};
+use crate::keys;
 
 /// Node runtime errors
 #[derive(Debug, thiserror::Error)]
@@ -107,6 +132,57 @@ pub struct SubsystemHandles {
     pub health_handle: Option<tokio::task::JoinHandle<Result<()>>>,
 }
 
+#[derive(Clone)]
+struct NodeSharedResources {
+    submit_api_service: Arc<SubmitApiService>,
+    mempool_bridge_config: MempoolBridgeConfig,
+}
+
+impl NodeSharedResources {
+    fn new() -> Self {
+        let submit_api_config = SubmitApiConfig::default();
+        let mempool: Arc<dyn MempoolManager> =
+            Arc::new(InMemoryMempool::new(submit_api_config.clone()));
+        let validator: Arc<dyn TransactionValidator> = Arc::new(CardanoTransactionValidator::new(
+            submit_api_config.clone(),
+            Box::new(MockUtxoProvider),
+            Box::new(MockScriptValidator),
+        ));
+
+        let submit_api_service = Arc::new(SubmitApiService::new(
+            submit_api_config,
+            validator,
+            Arc::clone(&mempool),
+        ));
+
+        Self {
+            submit_api_service,
+            mempool_bridge_config: MempoolBridgeConfig::default(),
+        }
+    }
+
+    fn submit_api(&self) -> Arc<SubmitApiService> {
+        Arc::clone(&self.submit_api_service)
+    }
+
+    fn mempool(&self) -> Arc<dyn MempoolManager> {
+        self.submit_api_service.mempool()
+    }
+
+    fn mempool_bridge_config(&self) -> MempoolBridgeConfig {
+        self.mempool_bridge_config.clone()
+    }
+}
+
+impl std::fmt::Debug for NodeSharedResources {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NodeSharedResources")
+            .field("submit_api_service", &"<SubmitApiService>")
+            .field("mempool_bridge_config", &self.mempool_bridge_config)
+            .finish()
+    }
+}
+
 /// Main node runtime structure
 ///
 /// This coordinates all the node subsystems and manages the main event loop.
@@ -130,12 +206,16 @@ pub struct NodeRuntime {
 
     /// Node startup time
     startup_time: Option<std::time::Instant>,
+
+    /// Shared services used across subsystems
+    shared: Arc<NodeSharedResources>,
 }
 
 impl NodeRuntime {
     /// Create a new node runtime instance
     pub fn new(config_manager: ConfigurationManager) -> Self {
         let (event_tx, _) = broadcast::channel(1000);
+        let shared = Arc::new(NodeSharedResources::new());
 
         Self {
             state: Arc::new(RwLock::new(NodeState::Uninitialized)),
@@ -144,6 +224,7 @@ impl NodeRuntime {
             subsystems: Arc::new(RwLock::new(SubsystemHandles::default())),
             shutdown_tx: None,
             startup_time: None,
+            shared,
         }
     }
 
@@ -187,11 +268,13 @@ impl NodeRuntime {
         let mut subsystems = self.subsystems.write().await;
         let config_manager = self.config_manager.clone();
         let event_tx = self.event_tx.clone();
+        let shared = self.shared.clone();
 
         // Start consensus subsystem
         info!("Starting consensus subsystem");
         subsystems.consensus_handle = Some(tokio::spawn(Self::run_consensus_subsystem(
             config_manager.clone(),
+            shared.clone(),
             event_tx.clone(),
             shutdown_rx.resubscribe(),
         )));
@@ -216,6 +299,7 @@ impl NodeRuntime {
         info!("Starting API subsystem");
         subsystems.api_handle = Some(tokio::spawn(Self::run_api_subsystem(
             config_manager.clone(),
+            shared.clone(),
             event_tx.clone(),
             shutdown_rx.resubscribe(),
         )));
@@ -508,23 +592,304 @@ impl NodeRuntime {
     /// Consensus subsystem runner
     #[instrument(skip_all)]
     async fn run_consensus_subsystem(
-        _config_manager: Arc<RwLock<ConfigurationManager>>,
+        config_manager: Arc<RwLock<ConfigurationManager>>,
+        shared: Arc<NodeSharedResources>,
         event_tx: broadcast::Sender<NodeEvent>,
         mut shutdown_rx: broadcast::Receiver<()>,
     ) -> Result<()> {
         info!("Consensus subsystem started");
+        let (node_config, block_producer_config) = {
+            let cfg = config_manager.read().await;
+            (
+                cfg.get_config().clone(),
+                cfg.get_config().block_producer.clone(),
+            )
+        };
 
-        loop {
-            tokio::select! {
-                _ = shutdown_rx.recv() => {
-                    info!("Consensus subsystem received shutdown signal");
-                    break;
+        let chain_backend = Arc::new(MemoryBackend::default());
+        chain_backend
+            .init()
+            .await
+            .context("Failed to initialize chain database backend")?;
+        let ledger_backend = Arc::new(MemoryBackend::default());
+        ledger_backend
+            .init()
+            .await
+            .context("Failed to initialize ledger database backend")?;
+        let chain_db = Arc::new(ChainDatabaseImpl::new(Arc::clone(&chain_backend)));
+        let ledger_db = Arc::new(LedgerDatabaseImpl::new(Arc::clone(&ledger_backend)));
+
+        let protocol_params = determine_protocol_parameters(&node_config);
+        let (current_epoch, epoch_nonce, current_slot) = derive_chain_position(&chain_db).await;
+
+        let genesis_time =
+            determine_genesis_time(&node_config, current_slot, protocol_params.slot_length);
+
+        let slot_config = SlotNotifierConfig {
+            slot_length_secs: protocol_params.slot_length,
+            genesis_time,
+            max_drift_ms: 250,
+            channel_size: 256,
+        };
+        let slot_notifier = Arc::new(SlotNotifier::new(slot_config));
+
+        let (task_outcome_tx, mut task_outcome_rx) =
+            mpsc::unbounded_channel::<(ConsensusTaskKind, anyhow::Error)>();
+
+        let slot_notifier_handle = {
+            let notifier = Arc::clone(&slot_notifier);
+            let outcome_tx = task_outcome_tx.clone();
+            tokio::spawn(async move {
+                if let Err(err) = notifier.run().await {
+                    let _ = outcome_tx.send((
+                        ConsensusTaskKind::SlotNotifier,
+                        anyhow!("Slot notifier failed: {}", err),
+                    ));
                 }
-                _ = sleep(Duration::from_secs(30)) => {
-                    // Simulate periodic consensus activity
-                    let _ = event_tx.send(NodeEvent::BlockReceived);
+            })
+        };
+
+        let forging_enabled = block_producer_config
+            .as_ref()
+            .map_or(false, |cfg| cfg.enabled);
+
+        let mut block_service_handle: Option<tokio::task::JoinHandle<()>> = None;
+        let mut block_broadcaster_handle: Option<tokio::task::JoinHandle<()>> = None;
+        let mut block_forward_handle: Option<tokio::task::JoinHandle<()>> = None;
+        let mut broadcast_event_handle: Option<tokio::task::JoinHandle<()>> = None;
+        let mut block_event_handle: Option<tokio::task::JoinHandle<()>> = None;
+        let mut mempool_handle: Option<tokio::task::JoinHandle<()>> = None;
+        let mut auto_refresh_handle: Option<tokio::task::JoinHandle<()>> = None;
+        let mut mempool_tx_opt: Option<mpsc::Sender<Vec<Transaction>>> = None;
+
+        if forging_enabled {
+            let block_producer_cfg = block_producer_config.expect("checked above");
+
+            let auto_refresh = AutoRefreshIntegrator::new(
+                Arc::clone(&chain_db),
+                Arc::clone(&ledger_db),
+                Duration::from_secs(20),
+            );
+            let integrator = auto_refresh.integrator();
+
+            let pool_id = resolve_pool_id(&block_producer_cfg);
+            let pool_stake = determine_pool_stake(&block_producer_cfg);
+            let total_stake = determine_total_stake(&block_producer_cfg);
+            let stake_distribution = build_stake_distribution(&pool_id, pool_stake, total_stake);
+
+            let vrf_key = load_or_default_vrf_key(&block_producer_cfg.vrf_key);
+            let kes_key = load_or_default_kes_key(&block_producer_cfg.kes_key);
+            let operational_cert =
+                load_or_default_operational_certificate(&block_producer_cfg.operational_cert);
+
+            let forging_config = build_forging_config(&block_producer_cfg, &node_config);
+            let leadership_calculator = LeadershipCalculator::new(
+                stake_distribution,
+                protocol_params.clone(),
+                epoch_nonce,
+                current_epoch,
+            );
+
+            let block_production_config = BlockProductionConfig {
+                pool_id: pool_id.clone(),
+                pool_stake,
+                total_stake,
+                active_slot_coeff: protocol_params.active_slot_coefficient,
+                epoch: current_epoch,
+                epoch_nonce,
+                forging_config: forging_config.clone(),
+            };
+
+            let forger = BlockForger::new(
+                pool_id.clone(),
+                vrf_key,
+                kes_key,
+                operational_cert,
+                pool_stake,
+                leadership_calculator,
+            )
+            .with_config(forging_config);
+
+            let mut block_service = BlockProductionService::new(block_production_config, forger);
+            integrator
+                .wire_to_service(&mut block_service)
+                .await
+                .map_err(|err| {
+                    anyhow!(
+                        "Failed to wire block production service to storage: {}",
+                        err
+                    )
+                })?;
+
+            let block_service = Arc::new(block_service);
+
+            auto_refresh_handle = Some(auto_refresh.start_auto_refresh());
+
+            let mut production_events = block_service.subscribe();
+            let event_tx_clone = event_tx.clone();
+            block_event_handle = Some(tokio::spawn(async move {
+                while let Ok(event) = production_events.recv().await {
+                    match event {
+                        BlockProductionEvent::BlockForged { .. } => {
+                            let _ = event_tx_clone.send(NodeEvent::BlockReceived);
+                        }
+                        BlockProductionEvent::KesApproachingExpiration { .. } => {
+                            let _ = event_tx_clone.send(NodeEvent::HealthUpdate);
+                        }
+                        BlockProductionEvent::KesExpired { .. } => {
+                            let _ = event_tx_clone.send(NodeEvent::Error(
+                                "KES key expired during block production".to_string(),
+                            ));
+                        }
+                        BlockProductionEvent::ForgingFailed { error, .. } => {
+                            let _ = event_tx_clone.send(NodeEvent::Error(error));
+                        }
+                        _ => {}
+                    }
+                }
+            }));
+
+            let block_broadcaster =
+                Arc::new(BlockBroadcaster::new(BlockBroadcasterConfig::default()));
+            let mut broadcast_events = block_broadcaster.subscribe();
+            let event_tx_clone = event_tx.clone();
+            broadcast_event_handle = Some(tokio::spawn(async move {
+                while let Ok(event) = broadcast_events.recv().await {
+                    match event {
+                        BroadcastEvent::BlockBroadcast { .. } => {
+                            let _ = event_tx_clone.send(NodeEvent::BlockReceived);
+                        }
+                        BroadcastEvent::BroadcastFailed { error, .. } => {
+                            let _ = event_tx_clone.send(NodeEvent::Error(error));
+                        }
+                        _ => {}
+                    }
+                }
+            }));
+
+            let (mempool_tx, mempool_rx) = mpsc::channel::<Vec<Transaction>>(16);
+            mempool_tx_opt = Some(mempool_tx.clone());
+
+            let (block_tx, block_rx) = mpsc::channel::<ForgedBlock>(16);
+            let (broadcast_tx, broadcast_rx) = mpsc::channel::<ForgedBlock>(16);
+
+            let mempool_bridge = Arc::new(MempoolBridge::new(
+                shared.mempool_bridge_config(),
+                shared.mempool(),
+            ));
+
+            let bridge_for_forward = Arc::clone(&mempool_bridge);
+            let mut block_rx_for_forward = block_rx;
+            block_forward_handle = Some(tokio::spawn(async move {
+                while let Some(block) = block_rx_for_forward.recv().await {
+                    let tx_ids: Vec<String> = block
+                        .body
+                        .transactions
+                        .iter()
+                        .map(|tx| hex::encode(tx.tx_id.as_bytes()))
+                        .collect();
+
+                    if !tx_ids.is_empty() {
+                        if let Err(err) = bridge_for_forward.remove_transactions(&tx_ids).await {
+                            warn!(%err, "Failed to remove forged transactions from API mempool");
+                        }
+                    }
+
+                    if broadcast_tx.send(block).await.is_err() {
+                        debug!("Block forwarder output channel closed; stopping forward loop");
+                        break;
+                    }
+                }
+            }));
+
+            let outcome_tx_clone = task_outcome_tx.clone();
+            let notifier_for_service = Arc::clone(&slot_notifier);
+            block_service_handle = Some(tokio::spawn(async move {
+                if let Err(err) = block_service
+                    .run(notifier_for_service, mempool_rx, block_tx)
+                    .await
+                {
+                    let _ = outcome_tx_clone.send((
+                        ConsensusTaskKind::BlockProductionService,
+                        anyhow!("Block production service failed: {}", err),
+                    ));
+                }
+            }));
+
+            let outcome_tx_clone = task_outcome_tx.clone();
+            block_broadcaster_handle = Some(tokio::spawn(async move {
+                if let Err(err) = block_broadcaster.run(broadcast_rx).await {
+                    let _ = outcome_tx_clone.send((
+                        ConsensusTaskKind::BlockBroadcaster,
+                        anyhow!("Block broadcaster failed: {}", err),
+                    ));
+                }
+            }));
+
+            let shutdown_for_mempool = shutdown_rx.resubscribe();
+            let mempool_sender = mempool_tx;
+            let bridge_for_feeder = Arc::clone(&mempool_bridge);
+            mempool_handle = Some(tokio::spawn(async move {
+                run_mempool_feeder(bridge_for_feeder, mempool_sender, shutdown_for_mempool).await;
+            }));
+        } else {
+            info!("Block production disabled – running consensus subsystem in observer mode");
+        }
+
+        drop(task_outcome_tx);
+
+        let mut failure: Option<(ConsensusTaskKind, anyhow::Error)> = None;
+
+        tokio::select! {
+            _ = shutdown_rx.recv() => {
+                info!("Consensus subsystem received shutdown signal");
+            }
+            outcome = task_outcome_rx.recv() => {
+                if let Some(outcome) = outcome {
+                    failure = Some(outcome);
                 }
             }
+        }
+
+        if let Some(sender) = mempool_tx_opt.take() {
+            drop(sender);
+        }
+
+        if let Some(handle) = block_service_handle.take() {
+            handle.abort();
+            let _ = handle.await;
+        }
+        if let Some(handle) = block_broadcaster_handle.take() {
+            handle.abort();
+            let _ = handle.await;
+        }
+        if let Some(handle) = block_forward_handle.take() {
+            handle.abort();
+            let _ = handle.await;
+        }
+        if let Some(handle) = block_event_handle.take() {
+            handle.abort();
+            let _ = handle.await;
+        }
+        if let Some(handle) = broadcast_event_handle.take() {
+            handle.abort();
+            let _ = handle.await;
+        }
+        if let Some(handle) = mempool_handle.take() {
+            handle.abort();
+            let _ = handle.await;
+        }
+        if let Some(handle) = auto_refresh_handle.take() {
+            handle.abort();
+            let _ = handle.await;
+        }
+
+        slot_notifier_handle.abort();
+        let _ = slot_notifier_handle.await;
+
+        if let Some((task, err)) = failure {
+            error!("Consensus task {:?} terminated unexpectedly: {}", task, err);
+            return Err(err.context(format!("Consensus task {:?} terminated unexpectedly", task)));
         }
 
         info!("Consensus subsystem terminated");
@@ -697,10 +1062,14 @@ impl NodeRuntime {
     #[instrument(skip_all)]
     async fn run_api_subsystem(
         _config_manager: Arc<RwLock<ConfigurationManager>>,
+        shared: Arc<NodeSharedResources>,
         event_tx: broadcast::Sender<NodeEvent>,
         mut shutdown_rx: broadcast::Receiver<()>,
     ) -> Result<()> {
         info!("API subsystem started");
+
+        // Keep the shared submit API service alive for future REST/local socket servers
+        let _api_service = shared.submit_api();
 
         loop {
             tokio::select! {
@@ -768,6 +1137,216 @@ impl NodeRuntime {
 
         info!("Health monitor terminated");
         Ok(())
+    }
+}
+
+const DEFAULT_TOTAL_STAKE: u64 = 45_000_000_000_000_000;
+const DEFAULT_POOL_STAKE: u64 = 1_000_000_000_000;
+
+#[derive(Debug, Clone, Copy)]
+enum ConsensusTaskKind {
+    SlotNotifier,
+    BlockProductionService,
+    BlockBroadcaster,
+}
+
+fn determine_protocol_parameters(config: &NodeConfiguration) -> ProtocolParameters {
+    match config.requires_network_magic.as_ref().map(String::as_str) {
+        Some("RequiresMagic") => ProtocolParameters::testnet(),
+        _ => ProtocolParameters::mainnet(),
+    }
+}
+
+async fn derive_chain_position<B>(
+    chain_db: &Arc<ChainDatabaseImpl<B>>,
+) -> (EpochNo, Blake2b256Hash, u64)
+where
+    B: StorageBackend + 'static,
+{
+    match chain_db.get_chain_metadata().await {
+        Ok(Some(metadata)) => (
+            EpochNo(metadata.current_epoch),
+            metadata.tip_hash,
+            metadata.current_slot,
+        ),
+        Ok(None) => {
+            warn!("Chain metadata unavailable; defaulting to genesis state");
+            (EpochNo(0), Blake2b256Hash::hash(b"cardano-rust-node"), 0)
+        }
+        Err(err) => {
+            warn!(%err, "Failed to read chain metadata; defaulting to genesis state");
+            (EpochNo(0), Blake2b256Hash::hash(b"cardano-rust-node"), 0)
+        }
+    }
+}
+
+fn determine_genesis_time(
+    _config: &NodeConfiguration,
+    current_slot: u64,
+    slot_length_secs: u64,
+) -> SystemTime {
+    let now = SystemTime::now();
+    let elapsed = StdDuration::from_secs(current_slot.saturating_mul(slot_length_secs));
+    now.checked_sub(elapsed).unwrap_or(now)
+}
+
+fn resolve_pool_id(config: &BlockProducerConfig) -> PoolId {
+    if let Some(ref pool_id_str) = config.pool_id {
+        let normalized = pool_id_str.trim();
+        let hex_candidate = normalized.strip_prefix("0x").unwrap_or(normalized);
+        if let Ok(bytes) = hex::decode(hex_candidate) {
+            if bytes.len() == 32 {
+                if let Ok(hash) = Blake2b256Hash::from_bytes(&bytes) {
+                    return PoolId(hash);
+                }
+            }
+        }
+        PoolId(Blake2b256Hash::hash(normalized.as_bytes()))
+    } else {
+        PoolId(Blake2b256Hash::hash(b"default-pool-id"))
+    }
+}
+
+fn determine_pool_stake(_config: &BlockProducerConfig) -> u64 {
+    DEFAULT_POOL_STAKE
+}
+
+fn determine_total_stake(_config: &BlockProducerConfig) -> u64 {
+    DEFAULT_TOTAL_STAKE
+}
+
+fn build_stake_distribution(
+    pool_id: &PoolId,
+    pool_stake: u64,
+    total_stake: u64,
+) -> StakeDistribution {
+    let mut pools = HashMap::new();
+    pools.insert(pool_id.clone(), pool_stake);
+    StakeDistribution { pools, total_stake }
+}
+
+fn load_or_default_vrf_key(config: &VrfKeyConfig) -> VrfKey {
+    match keys::load_vrf_signing_key(&config.signing_key_file, config.format) {
+        Ok(signing_key) => VrfKey {
+            public_key: signing_key.public_key,
+            private_key: signing_key.private_key,
+        },
+        Err(err) => {
+            warn!(
+                "Failed to load VRF signing key from {:?}: {}. Using ephemeral key.",
+                config.signing_key_file, err
+            );
+            VrfKey::new()
+        }
+    }
+}
+
+fn load_or_default_kes_key(config: &KesKeyConfig) -> KesKey {
+    match keys::load_kes_signing_key(&config.signing_key_file, config.format, config.kes_period) {
+        Ok(signing_key) => {
+            match KesSecretKey::from_bytes(&signing_key.key_data, signing_key.period) {
+                Ok(mut secret_key) => {
+                    if config.start_kes_period > signing_key.period {
+                        if let Err(err) = secret_key.evolve_in_place(config.start_kes_period) {
+                            warn!(
+                                %err,
+                                "Failed to evolve KES key to requested start period {}; continuing with current period",
+                                config.start_kes_period
+                            );
+                        }
+                    }
+
+                    let effective_max = config
+                        .start_kes_period
+                        .saturating_add(config.max_kes_evolutions)
+                        .min(KesSecretKey::MAX_PERIOD);
+
+                    KesKey {
+                        secret_key,
+                        max_period: effective_max,
+                    }
+                }
+                Err(err) => {
+                    warn!(
+                    "Failed to deserialize KES signing key from {:?}: {}. Generating ephemeral key.",
+                    config.signing_key_file, err
+                );
+                    KesKey::new()
+                }
+            }
+        }
+        Err(err) => {
+            warn!(
+                "Failed to load KES signing key from {:?}: {}. Generating ephemeral key.",
+                config.signing_key_file, err
+            );
+            KesKey::new()
+        }
+    }
+}
+
+fn load_or_default_operational_certificate(
+    config: &OperationalCertConfig,
+) -> BlockProductionOperationalCertificate {
+    match keys::load_operational_certificate(&config.cert_file) {
+        Ok(cert) => {
+            let hot_vkey = Ed25519KeyHash::from_test_data(&cert.kes_vkey_hash);
+            let sigma = Blake2b256Hash::hash(&cert.signature);
+            BlockProductionOperationalCertificate {
+                hot_vkey,
+                sequence_number: cert.issue_number,
+                kes_period: cert.kes_period,
+                sigma,
+            }
+        }
+        Err(err) => {
+            warn!(
+                "Failed to load operational certificate from {:?}: {}. Using placeholder certificate.",
+                config.cert_file, err
+            );
+            BlockProductionOperationalCertificate {
+                hot_vkey: Ed25519KeyHash::from_test_data(b"placeholder-hot-vkey"),
+                sequence_number: config.issue_counter,
+                kes_period: 0,
+                sigma: Blake2b256Hash::hash(b"placeholder-op-cert"),
+            }
+        }
+    }
+}
+
+fn build_forging_config(
+    config: &BlockProducerConfig,
+    node_config: &NodeConfiguration,
+) -> ForgingConfig {
+    let mut forging_config = ForgingConfig::default();
+    forging_config.max_block_size = config
+        .forging_behavior
+        .max_block_size_bytes
+        .min(u32::MAX as usize) as u32;
+    forging_config.max_transactions = config.forging_behavior.max_txs_per_block;
+    forging_config.protocol_magic = node_config
+        .network_magic
+        .unwrap_or(forging_config.protocol_magic);
+    forging_config.kes_period_length = 129_600; // TODO: derive from genesis configuration
+    forging_config
+}
+
+async fn run_mempool_feeder(
+    bridge: Arc<MempoolBridge>,
+    tx: mpsc::Sender<Vec<Transaction>>,
+    mut shutdown_rx: broadcast::Receiver<()>,
+) {
+    tokio::select! {
+        res = bridge.run(tx) => {
+            if let Err(err) = res {
+                warn!(%err, "Mempool bridge terminated with error");
+            } else {
+                debug!("Mempool bridge completed gracefully");
+            }
+        }
+        _ = shutdown_rx.recv() => {
+            debug!("Mempool feeder received shutdown signal");
+        }
     }
 }
 

@@ -5,14 +5,10 @@
 #[cfg(feature = "legacy")]
 pub mod lmdb;
 pub mod memory;
-#[cfg(feature = "legacy")]
-pub mod rocksdb;
 
 #[cfg(feature = "legacy")]
 pub use lmdb::{LmdbBackend, LmdbConfig};
 pub use memory::MemoryBackend;
-#[cfg(feature = "legacy")]
-pub use rocksdb::{RocksDbBackend, RocksDbConfig};
 
 use crate::Result;
 use async_trait::async_trait;
@@ -46,6 +42,17 @@ pub trait StorageBackend: Send + Sync {
 
     /// Get backend statistics
     async fn stats(&self) -> Result<BackendStats>;
+
+    /// Scan and return key-value pairs that start with the provided prefix.
+    ///
+    /// The returned vector preserves the backend's natural key order. When
+    /// `limit` is provided, iteration stops once that many entries have been
+    /// collected.
+    async fn scan_prefix(
+        &self,
+        prefix: &[u8],
+        limit: Option<usize>,
+    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>>;
 }
 
 /// Batch operation types

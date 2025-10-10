@@ -7,12 +7,11 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Cardano blockchain and ledger state storage backends"
-keywords = ["cardano", "storage", "database", "lmdb", "rocksdb"]
+keywords = ["cardano", "storage", "database", "lmdb"]
 
 [dependencies]
 # OLD Database backends (to be phased out - made optional)
 lmdb = { workspace = true, optional = true }
-rocksdb = { workspace = true, optional = true }
 
 # NEW: Pure Rust dependencies from cardano-base-rust
 cardano-slotting = { git = "https://github.com/FractionEstate/cardano-base-rust", branch = "master" }
@@ -68,7 +67,7 @@ harness = false
 [features]
 default = ["cardanodb"]
 cardanodb = []               # New pure-Rust storage engine
-legacy = ["lmdb", "rocksdb"] # Legacy C/C++ backends
+legacy = ["lmdb"] # Legacy C/C++ backend
 
 # Uncomment when benchmarks are ready
 # [[bench]]

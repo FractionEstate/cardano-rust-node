@@ -1,4 +1,4 @@
-# Haskell Compatibility Gaps (last reviewed: 2025-10-05)
+# Haskell Compatibility Gaps (last reviewed: 2025-10-10)
 
 ## Purpose
 
@@ -11,9 +11,17 @@ This document catalogues the verified differences between this Rust node and the
   - `crates/cardano-consensus/src/block_production_service.rs` manages slot notifications, mempool intake, KES expiry warnings, and event broadcasting.
   - `crates/cardano-consensus/src/leadership.rs` provides the Praos VRF threshold calculations consumed by the forger and service.
   - `crates/cardano-consensus/src/block_production_integration.rs` ships an integration layer ready to hook `ChainDatabase` and `LedgerDatabase` into the forging service.
+- **Runtime consensus wiring**
+  - `crates/cardano-node/src/run/mod.rs` now instantiates `SlotNotifier`, wires `BlockProductionService` through `AutoRefreshIntegrator`, runs the broadcaster, and coordinates shutdown/health reporting instead of the previous stub loop.
+- **Mempool bridging**
+  - `crates/cardano-node/src/run/mod.rs` now constructs a `MempoolBridge` tied to the shared `SubmitApiService` mempool, and `crates/cardano-api/src/mempool_bridge.rs` converts API transactions into consensus `Transaction` batches with deduplication and back-pressure handling.
+- **Ledger state extraction**
+  - `crates/cardano-consensus/src/block_production_integration.rs` loads real UTxO snapshots, treasury, and reserve metrics from the `LedgerDatabase`, replacing the previous placeholder ledger state wiring.
+- **Cryptography alignment**
+  - `external/cardano-base-rust/cardano-crypto-class/src/kes/sum.rs` now stores `SumKes` verification keys as `PackedBytes<[u8; 32]>`, matching Haskell serialization and removing heap allocations.
 - **Storage layer foundations**
   - `crates/cardano-storage/src/chaindb/mod.rs` persists blocks, transactions, and chain metadata via the `ChainDatabase` trait and the `ChainDatabaseImpl` adapter.
-  - `crates/cardano-storage/src/ledgerdb/mod.rs` exposes APIs for UTxOs, stake pools, delegations, rewards, snapshots, and protocol parameters with an in-memory `MemoryBackend` and optional LMDB/RocksDB backends (behind the `legacy` feature).
+  - `crates/cardano-storage/src/ledgerdb/mod.rs` exposes APIs for UTxOs, stake pools, delegations, rewards, snapshots, and protocol parameters with an in-memory `MemoryBackend` and an optional LMDB backend (behind the `legacy` feature).
 - **Epoch transitions**
   - `crates/cardano-consensus/src/epoch_transition.rs` implements nonce evolution, stake snapshotting, reward calculation, and snapshot persistence hooks; it is wired against `LedgerDatabase` but not yet invoked by the runtime.
 
@@ -21,19 +29,15 @@ This document catalogues the verified differences between this Rust node and the
 
 | Area | Current behaviour | Evidence |
 | --- | --- | --- |
-| Consensus runtime integration | The node runtime still runs a stub; `run_consensus_subsystem` in `crates/cardano-node/src/run/mod.rs` simply sleeps and emits `NodeEvent::BlockReceived` with the comment `// Simulate periodic consensus activity`. No code path there instantiates `BlockProductionService`, `SlotNotifier`, or the storage integrator. | `crates/cardano-node/src/run/mod.rs` |
-| Block production data sources | Without wiring, `BlockProductionService::build_forging_context` falls back to mock data, printing `[WARN] ... using mock data` and hard-coding `Blake2b256Hash::hash(b"prev_block")`. Outside of the integrator module nothing calls `set_chain_tip_provider` or `set_ledger_state_provider`, so the mock path is always taken today. | `crates/cardano-consensus/src/block_production_service.rs` |
-| Ledger data supplied to block production | `BlockProductionIntegrator::get_ledger_state_impl` currently returns an empty `utxo_set` plus constant supply/treasury/reserve values because full UTxO extraction is marked TODO. The auto-refresh wrapper therefore keeps refreshing placeholder data. | `crates/cardano-consensus/src/block_production_integration.rs` |
 | Stake snapshot inputs | The epoch transition logic requests active pools via `LedgerDatabase::list_active_pools()`, but the default implementation returns `Ok(Vec::new())`, and `ChainDatabaseImpl::get_blocks_range` is likewise a stub returning `Vec::new()`. This prevents real stake and chain data from flowing into snapshots. | `crates/cardano-storage/src/ledgerdb/mod.rs`, `crates/cardano-storage/src/chaindb/mod.rs` |
 | Integration test realism | The long-running integration tests under `tests/integration/` simulate network and consensus behaviour instead of talking to the real node. Example: `tests/integration/mainnet_sync_test.rs` states `// Mock implementation - in production this would connect to real mainnet nodes` and just increments counters in a loop. | `tests/integration/mainnet_sync_test.rs` |
 | Plutus execution | Plutus assets are parsed, but execution is stubbed: `validate_plutus_script` in `tests/consensus/test_block_validation.rs` only checks script size/version and never interprets bytecode. There is no Plutus interpreter in `crates/cardano-ledger`. | `tests/consensus/test_block_validation.rs` |
 
 ## Suggested next steps
 
-- Replace the consensus runtime stub with a real pipeline that creates `SlotNotifier`, `BlockProductionService`, and `AutoRefreshIntegrator`, then feeds forged blocks into the network broadcaster ([Roadmap R1-R3](../development/ROADMAP.md#2-consensus-runtime-integration)).
-- Extend `BlockProductionIntegrator` to populate `SimplifiedLedgerState` with real UTxO snapshots (consider a paginated fetch from `LedgerDatabase`) and refresh on new blocks instead of fixed intervals ([Roadmap L1](../development/ROADMAP.md#3-ledger--plutus-execution)).
+- Extend `BlockProductionIntegrator` to populate `SimplifiedLedgerState` with actual UTxOs and dynamic supply metrics, refreshing on new blocks rather than fixed timers ([Roadmap L1](../development/ROADMAP.md#3-ledger--plutus-execution)).
 - Implement pool iteration in `LedgerDatabase::list_active_pools` and block range queries in `ChainDatabaseImpl::get_blocks_range` so that epoch transitions and chain sync operate on real data ([Roadmap L2](../development/ROADMAP.md#3-ledger--plutus-execution)).
-- Gradually convert the mocked integration tests into end-to-end tests that exercise the actual networking and storage stacks once the runtime pipeline exists ([Roadmap N1-N2](../development/ROADMAP.md#4-network--storage-robustness)).
+- Gradually convert the mocked integration tests into end-to-end tests that exercise the actual networking and storage stacks now that the runtime pipeline exists ([Roadmap N1-N2](../development/ROADMAP.md#4-network--storage-robustness)).
 - Introduce a Plutus execution bridge (via bindings or a Rust interpreter) and move the current structural checks into preflight validation ([Roadmap L3](../development/ROADMAP.md#3-ledger--plutus-execution)).
 
 ## Verification checklist

@@ -116,6 +116,28 @@ impl StorageBackend for MemoryBackend {
             memory_usage: total_size as u64, // Approximate
         })
     }
+
+    async fn scan_prefix(
+        &self,
+        prefix: &[u8],
+        limit: Option<usize>,
+    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+        let store = self.store.read().unwrap();
+        let mut results = Vec::new();
+
+        for (key, value) in store.iter() {
+            if key.starts_with(prefix) {
+                results.push((key.clone(), value.clone()));
+                if let Some(limit) = limit {
+                    if results.len() >= limit {
+                        break;
+                    }
+                }
+            }
+        }
+
+        Ok(results)
+    }
 }
 
 #[cfg(test)]

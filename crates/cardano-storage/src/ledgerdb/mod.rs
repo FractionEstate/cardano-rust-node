@@ -97,7 +97,9 @@ pub struct ProtocolParameters {
 }
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
+use std::convert::TryInto;
 use std::sync::Arc;
+use tracing::warn;
 
 /// Ledger database interface for UTxO and stake state management
 #[async_trait]
@@ -114,6 +116,20 @@ pub trait LedgerDatabase: Send + Sync {
         consumed: &[TransactionInput],
         produced: &[(TransactionInput, TransactionOutput)],
     ) -> Result<()>;
+
+    /// Export UTxO entries for snapshotting or analysis.
+    ///
+    /// Implementations may override this to provide an efficient streaming
+    /// export. The default implementation returns an error indicating that the
+    /// operation is unsupported.
+    async fn export_utxos(
+        &self,
+        _limit: Option<usize>,
+    ) -> Result<Vec<(TransactionInput, TransactionOutput)>> {
+        Err(StorageError::DatabaseError(
+            "export_utxos not implemented for this backend".to_string(),
+        ))
+    }
 
     /// Stake Pool Management
     async fn store_pool(&self, pool_id: &PoolId, pool_params: &PoolParameters) -> Result<()>;
@@ -232,6 +248,10 @@ pub struct LedgerDatabaseStats {
     pub total_stake: Coin,
     /// Database size in bytes
     pub database_size: u64,
+    /// Treasury balance calculated from outstanding rewards
+    pub treasury: Coin,
+    /// Remaining reserves based on max ADA supply
+    pub reserves: Coin,
 }
 
 /// Implementation of LedgerDatabase using a storage backend
@@ -268,10 +288,53 @@ fn utxo_key(input: &TransactionInput) -> Vec<u8> {
     key
 }
 
+fn parse_utxo_key(key: &[u8]) -> Result<TransactionInput> {
+    if !key.starts_with(UTXO_PREFIX) {
+        return Err(StorageError::SerializationError(
+            "UTxO key missing expected prefix".to_string(),
+        ));
+    }
+
+    let payload = &key[UTXO_PREFIX.len()..];
+    if payload.len() != 32 + 4 {
+        return Err(StorageError::SerializationError(format!(
+            "Invalid UTxO key length: expected {} bytes, got {}",
+            32 + 4,
+            payload.len()
+        )));
+    }
+
+    let (hash_bytes, index_bytes) = payload.split_at(32);
+    let transaction_id = Blake2b256Hash::from_bytes(hash_bytes).map_err(|e| {
+        StorageError::SerializationError(format!("Failed to decode UTxO hash: {}", e))
+    })?;
+    let index_bytes: [u8; 4] = index_bytes
+        .try_into()
+        .map_err(|_| StorageError::SerializationError("Invalid index bytes".to_string()))?;
+    let index = u32::from_be_bytes(index_bytes);
+
+    Ok(TransactionInput {
+        transaction_id,
+        index,
+    })
+}
+
 fn pool_key(pool_id: &PoolId) -> Vec<u8> {
     let mut key = POOL_PREFIX.to_vec();
     key.extend_from_slice(pool_id.as_bytes());
     key
+}
+
+fn parse_pool_key(key: &[u8]) -> Result<PoolId> {
+    if !key.starts_with(POOL_PREFIX) {
+        return Err(StorageError::SerializationError(
+            "Pool key missing expected prefix".to_string(),
+        ));
+    }
+
+    let payload = &key[POOL_PREFIX.len()..];
+    Blake2b256Hash::from_bytes(payload)
+        .map_err(|e| StorageError::SerializationError(format!("Failed to decode pool ID: {}", e)))
 }
 
 fn delegation_key(stake_credential: &StakeCredential) -> Vec<u8> {
@@ -364,6 +427,26 @@ impl<B: StorageBackend> LedgerDatabase for LedgerDatabaseImpl<B> {
         self.backend.batch(operations).await
     }
 
+    async fn export_utxos(
+        &self,
+        limit: Option<usize>,
+    ) -> Result<Vec<(TransactionInput, TransactionOutput)>> {
+        let entries = self.backend.scan_prefix(UTXO_PREFIX, limit).await?;
+        let mut utxos = Vec::with_capacity(entries.len());
+
+        for (key, value) in entries {
+            match parse_utxo_key(&key) {
+                Ok(input) => match minicbor::decode::<TransactionOutput>(&value) {
+                    Ok(output) => utxos.push((input, output)),
+                    Err(e) => warn!("Failed to decode UTxO value: {}", e),
+                },
+                Err(e) => warn!("Failed to decode UTxO key: {}", e),
+            }
+        }
+
+        Ok(utxos)
+    }
+
     async fn store_pool(&self, pool_id: &PoolId, pool_params: &PoolParameters) -> Result<()> {
         let key = pool_key(pool_id);
         let data = minicbor::to_vec(pool_params).map_err(|e| {
@@ -394,9 +477,17 @@ impl<B: StorageBackend> LedgerDatabase for LedgerDatabaseImpl<B> {
     }
 
     async fn list_active_pools(&self) -> Result<Vec<PoolId>> {
-        // TODO: Implement efficient pool iteration
-        // This would require additional indexing
-        Ok(Vec::new())
+        let entries = self.backend.scan_prefix(POOL_PREFIX, None).await?;
+        let mut pools = Vec::with_capacity(entries.len());
+
+        for (key, _value) in entries {
+            match parse_pool_key(&key) {
+                Ok(pool_id) => pools.push(pool_id),
+                Err(e) => warn!("Failed to decode pool key: {}", e),
+            }
+        }
+
+        Ok(pools)
     }
 
     async fn store_delegation(
@@ -551,15 +642,58 @@ impl<B: StorageBackend> LedgerDatabase for LedgerDatabaseImpl<B> {
     }
 
     async fn get_ledger_stats(&self) -> Result<LedgerDatabaseStats> {
-        // TODO: Implement efficient statistics collection
-        // This should be cached and updated incrementally
+        const MAX_ADA_SUPPLY: u128 = 45_000_000_000_000_000u128;
+
+        let utxos = self.export_utxos(None).await?;
+        let total_utxos = utxos.len() as u64;
+        let total_value: u128 = utxos.iter().fold(0u128, |acc, (_, output)| {
+            acc.saturating_add(output.amount as u128)
+        });
+
+        let active_pools = self.list_active_pools().await?.len() as u64;
+        let delegations = self
+            .backend
+            .scan_prefix(DELEGATION_PREFIX, None)
+            .await?
+            .len() as u64;
+
+        let stake_entries = self.backend.scan_prefix(STAKE_PREFIX, None).await?;
+        let total_stake: u128 = stake_entries.into_iter().fold(0u128, |acc, (_, value)| {
+            match minicbor::decode::<Coin>(&value) {
+                Ok(stake) => acc.saturating_add(stake as u128),
+                Err(e) => {
+                    warn!("Failed to decode stake entry: {}", e);
+                    acc
+                }
+            }
+        });
+
+        let reward_entries = self.backend.scan_prefix(REWARDS_PREFIX, None).await?;
+        let treasury_value: u128 = reward_entries.into_iter().fold(0u128, |acc, (_, value)| {
+            match minicbor::decode::<Coin>(&value) {
+                Ok(reward) => acc.saturating_add(reward as u128),
+                Err(e) => {
+                    warn!("Failed to decode rewards entry: {}", e);
+                    acc
+                }
+            }
+        });
+
+        let reserves_value = MAX_ADA_SUPPLY
+            .saturating_sub(total_value)
+            .saturating_sub(treasury_value);
+
+        let backend_stats = self.backend.stats().await?;
+
         Ok(LedgerDatabaseStats {
-            total_utxos: 0,
-            total_value: CoinExt::zero(),
-            active_pools: 0,
-            delegations: 0,
-            total_stake: CoinExt::zero(),
-            database_size: 0,
+            total_utxos,
+            total_value: total_value.min(u64::MAX as u128) as u64,
+            active_pools,
+            delegations,
+            total_stake: total_stake.min(u64::MAX as u128) as u64,
+            database_size: backend_stats.total_size,
+            treasury: treasury_value.min(u64::MAX as u128) as u64,
+            reserves: reserves_value.min(u64::MAX as u128) as u64,
         })
     }
 

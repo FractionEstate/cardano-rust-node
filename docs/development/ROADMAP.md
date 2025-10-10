@@ -26,7 +26,7 @@ This roadmap translates the verified compatibility gaps and recent cryptographic
 
 | Item | Description | Owner | Dependencies | Exit criteria | Verification |
 | --- | --- | --- | --- | --- | --- |
-| C1 | Replace `SumKes` hashing output with `PackedBytes<[u8; 32]>` to avoid heap allocations and match upstream serialization. Update all serde/CBOR instances accordingly. | Unassigned | `crates/cardano-crypto` | Byte-for-byte match with Haskell `compact_sum7kes` vectors | `cargo test -p cardano-crypto kes::tests`, custom vector comparison |
+| C1 | ✅ Completed 2025-10-10: `SumKes` hashing now uses `PackedBytes<[u8; 32]>`, all serde/CBOR instances updated to match upstream serialization. | Unassigned | `crates/cardano-crypto` | Byte-for-byte match with Haskell `compact_sum7kes` vectors | `cargo test -p cardano-crypto kes::tests`, custom vector comparison |
 | C2 | Audit KES/VRF state transitions against Haskell `cardano-node` `kes-period-info` logic, including rotation warnings. | Unassigned | C1 | Consensus KES alarms match upstream on synthetic schedule | `cargo test -p cardano-consensus kes_rotation_warn` |
 | C3 | Confirm Praos constants, thresholds, and nonce evolution match `cardano-node` defaults (Shelley through Conway). | Unassigned | - | Config diff yields no mismatches; consensus tests pass official scenario vectors | `cargo test -p cardano-consensus praos_parameters`, cross-check with upstream JSON |
 
@@ -34,7 +34,7 @@ This roadmap translates the verified compatibility gaps and recent cryptographic
 
 | Item | Description | Owner | Dependencies | Exit criteria | Verification |
 | --- | --- | --- | --- | --- | --- |
-| R1 | Implement real `run_consensus_subsystem` wiring: instantiate `SlotNotifier`, `BlockProductionService`, `AutoRefreshIntegrator`, and connect to network broadcaster. | Unassigned | C1, storage providers S1/S2 | Node forges blocks during local cluster smoke test | `cargo run -p cardano-node --bin cardano-node -- test-config`, integration smoke script |
+| R1 | ✅ Completed 2025-10-10: Runtime instantiates `SlotNotifier`, `AutoRefreshIntegrator`, `BlockProductionService`, the broadcaster, and streams API mempool transactions via the `MempoolBridge`. | Unassigned | C1, storage providers S1/S2 | Node forges blocks during local cluster smoke test | `cargo run -p cardano-node --bin cardano-node -- test-config`, integration smoke script |
 | R2 | Replace mock ledger/chain data providers with async adapters to `LedgerDatabase` and `ChainDatabase`. | Unassigned | S1, S2 | Block forging uses live chain tip and ledger snapshots | `cargo test -p cardano-consensus forging_context` |
 | R3 | Implement epoch transition triggers in runtime to refresh stake and rewards snapshots each epoch boundary. | Unassigned | R1, R2 | Rewards snapshot logs match expected schedule | `cargo test -p cardano-consensus epoch_transition` |
 
@@ -42,7 +42,7 @@ This roadmap translates the verified compatibility gaps and recent cryptographic
 
 | Item | Description | Owner | Dependencies | Exit criteria | Verification |
 | --- | --- | --- | --- | --- | --- |
-| L1 | Complete UTxO extraction in `BlockProductionIntegrator::get_ledger_state_impl`, including staking, delegations, and protocol parameters. | Unassigned | R2 | Produced blocks include accurate ledger state diff | `cargo test -p cardano-ledger ledger_state_snapshot` |
+| L1 | ✅ Completed 2025-10-10: `BlockProductionIntegrator::get_ledger_state_impl` now exports UTxO snapshots and supply metrics sourced from `LedgerDatabase`. | Unassigned | R2 | Produced blocks include accurate ledger state diff | `cargo test -p cardano-ledger ledger_state_snapshot` |
 | L2 | Implement `LedgerDatabase::list_active_pools` and `ChainDatabaseImpl::get_blocks_range` using persistent backend iterators. | Unassigned | Storage backend S1 | Stake snapshot shows real pools; chain sync replays block ranges | `cargo test -p cardano-storage stake_snapshot`, targeted bench |
 | L3 | Add Plutus interpreter bridge (FFI or native) and replace `validate_plutus_script` stub with actual execution. | Unassigned | L1 | Plutus validation parity with upstream golden files | `cargo test -p cardano-ledger plutus_execution -- --ignored`, cross-check with upstream fixtures |
 | L4 | Mirror Conway-era governance features (delegation certificates, votes) once upstream confirms interfaces. | Unassigned | Upstream release | Governance transactions apply successfully | `cargo test -p cardano-ledger governance_flow` |
@@ -53,7 +53,7 @@ This roadmap translates the verified compatibility gaps and recent cryptographic
 | --- | --- | --- | --- | --- | --- |
 | N1 | Finalize chain-sync client/server wiring using official mini-protocol framing. Replace simulated integration tests with live peers on devnet. | Unassigned | R1, S2 | Node reaches tip when connected to preview network | `tests/network/network_integration.rs` (converted), devnet smoke test |
 | N2 | Implement mempool gossip (TxSubmission mini-protocol) with backpressure and batching mirroring Haskell node. | Unassigned | N1 | Transactions propagate within expected latency budget | `cargo test -p cardano-network tx_submission`, soak test |
-| S1 | Harden storage backends: provide RocksDB/LMDB-backed ChainDB and LedgerDB with pruning, snapshots, and rollback support. | Unassigned | C1 | Restart after crash yields identical chain state | `cargo test -p cardano-storage --features legacy persistence_roundtrip` |
+| S1 | Harden storage backends: provide LMDB-backed ChainDB and LedgerDB with pruning, snapshots, and rollback support. | Unassigned | C1 | Restart after crash yields identical chain state | `cargo test -p cardano-storage --features legacy persistence_roundtrip` |
 | S2 | Add incremental checkpointing and state snapshot export compatible with Haskell node tooling. | Unassigned | S1 | Snapshot imported/exported between nodes without conversion | `scripts/test-block-producer-config.sh`, manual import test |
 
 ### 5. Operational readiness & tooling

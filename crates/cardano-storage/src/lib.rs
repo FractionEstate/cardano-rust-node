@@ -4,8 +4,8 @@
 //!
 //! # Storage Backends
 //!
-//! ## Legacy Backends (to be phased out)
-//! - LMDB and RocksDB wrappers (C/C++ dependencies)
+//! ## Legacy Backend (to be phased out)
+//! - LMDB wrapper (C/C++ dependency)
 //!
 //! ## CardanoDB (NEW - Pure Rust)
 //! - ImmutableDB: Chunk-based storage for ancient blocks
@@ -36,10 +36,7 @@ pub type Result<T> = std::result::Result<T, StorageError>;
 
 // Re-export commonly used types
 #[cfg(feature = "legacy")]
-pub use backends::{
-    BackendStats, BatchOperation, LmdbBackend, LmdbConfig, RocksDbBackend, RocksDbConfig,
-    StorageBackend,
-};
+pub use backends::{BackendStats, BatchOperation, LmdbBackend, LmdbConfig, StorageBackend};
 pub use chaindb::{ChainDatabase, ChainDatabaseImpl, ChainDatabaseStats, ChainMetadata};
 pub use ledgerdb::{
     EpochInfo, LedgerDatabase, LedgerDatabaseImpl, LedgerDatabaseStats, PoolParameters,

@@ -24,7 +24,7 @@ This guide shows how to assemble these pieces today so that the node runtime can
 
 ## Wiring example
 
-The snippet below lives inside an async context (e.g. a Tokio task). It uses the in-memory storage backend for clarity; swap in the LMDB or RocksDB backends once the `legacy` feature is enabled.
+The snippet below lives inside an async context (e.g. a Tokio task). It uses the in-memory storage backend for clarity; swap in the LMDB backend once the `legacy` feature is enabled.
 
 ```rust
 use std::collections::HashMap;
@@ -191,7 +191,7 @@ async fn run_block_production_example() -> Result<()> {
 
 ### Key points from the example
 
-1. **Storage** – `MemoryBackend` keeps the example self-contained. For production, enable the `legacy` feature and instantiate `LmdbBackend` or `RocksDbBackend`, or switch to the new CardanoDB backend once it exposes the same traits.
+1. **Storage** – `MemoryBackend` keeps the example self-contained. For production, enable the `legacy` feature and instantiate `LmdbBackend`, or switch to the new CardanoDB backend once it exposes the same traits.
 2. **Stake data** – all stake figures are placeholders; the epoch transition handler should populate snapshots inside `LedgerDatabase`, which you can query here instead of constants.
 3. **Keys and certificates** – replace the `from_test_data` helpers with real pool credentials and hot/cold key material loaded from disk.
 4. **Slot clock** – the notifier uses `SystemTime::now()` for genesis. Load `systemStart` and slot length from the configuration JSON so slots align with network time.

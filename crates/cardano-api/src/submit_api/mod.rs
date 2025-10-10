@@ -95,6 +95,11 @@ impl SubmitApiService {
         }
     }
 
+    /// Get a handle to the underlying mempool manager
+    pub fn mempool(&self) -> Arc<dyn MempoolManager> {
+        Arc::clone(&self.mempool)
+    }
+
     /// Submit a transaction for validation and inclusion
     pub async fn submit_transaction(&self, tx_data: &Value) -> Result<SubmissionResult> {
         let timestamp = std::time::SystemTime::now()

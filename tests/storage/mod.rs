@@ -1,21 +1,21 @@
 //! Storage layer integration tests
 //!
 //! This module contains comprehensive tests for storage backends including LMDB,
-//! RocksDB, and storage interface compatibility testing.
+//! CardanoDB, and storage interface compatibility testing.
 
-pub mod test_lmdb_backend;
-pub mod test_storage_interface;
 pub mod test_chaindb;
 pub mod test_ledgerdb;
+pub mod test_lmdb_backend;
+pub mod test_storage_interface;
 
 // Additional test modules (moved from tests root)
+pub mod integration_storage;
 pub mod test_lmdb_backend_standalone;
 pub mod test_lmdb_integration;
 pub mod test_storage_interface_standalone;
-pub mod integration_storage;
 
 // Common test utilities for storage tests
-use cardano_storage::{StorageError, Result};
+use cardano_storage::{Result, StorageError};
 use std::path::PathBuf;
 use tempfile::TempDir;
 
@@ -64,8 +64,12 @@ pub mod generators {
 pub fn assert_storage_error_type(result: Result<()>, expected_contains: &str) {
     match result {
         Err(StorageError::DatabaseError(msg)) => {
-            assert!(msg.contains(expected_contains),
-                "Expected error message to contain '{}', got '{}'", expected_contains, msg);
+            assert!(
+                msg.contains(expected_contains),
+                "Expected error message to contain '{}', got '{}'",
+                expected_contains,
+                msg
+            );
         }
         Err(other) => panic!("Expected DatabaseError, got: {:?}", other),
         Ok(_) => panic!("Expected error but got Ok"),

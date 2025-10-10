@@ -1,7 +1,7 @@
 //! Storage Interface Compatibility Tests
 //!
 //! This module tests storage interface compatibility across different backends
-//! (LMDB, RocksDB) to ensure consistent behavior and interoperability.
+//! (LMDB, CardanoDB) to ensure consistent behavior and interoperability.
 //! Based on the Cardano Haskell node storage patterns and requirements.
 
 use super::{create_test_dir, generators, assert_storage_error_type};
@@ -183,14 +183,14 @@ impl StorageBackend for MockLMDBBackend {
     }
 }
 
-/// Mock RocksDB backend implementation for testing
-pub struct MockRocksDBBackend {
+/// Mock CardanoDB backend implementation for testing
+pub struct MockCardanoDbBackend {
     data: Arc<Mutex<HashMap<Vec<u8>, Vec<u8>>>>,
     path: std::path::PathBuf,
     _temp_dir: TempDir,
 }
 
-impl MockRocksDBBackend {
+impl MockCardanoDbBackend {
     pub fn new() -> Result<Self> {
         let (temp_dir, path) = create_test_dir();
         Ok(Self {
@@ -201,11 +201,11 @@ impl MockRocksDBBackend {
     }
 }
 
-impl StorageBackend for MockRocksDBBackend {
+impl StorageBackend for MockCardanoDbBackend {
     fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
-        // RocksDB is more permissive with empty keys in some contexts
+        // CardanoDB is more permissive with empty keys in some contexts
         if value.len() > 64 * 1024 * 1024 {
-            return Err(StorageError::DatabaseError("Value exceeds RocksDB limits".to_string()));
+            return Err(StorageError::DatabaseError("Value exceeds CardanoDB limits".to_string()));
         }
 
         let mut data = self.data.lock().unwrap();
@@ -232,12 +232,12 @@ impl StorageBackend for MockRocksDBBackend {
     fn batch_write(&self, operations: &[BatchOperation]) -> Result<()> {
         let mut data = self.data.lock().unwrap();
 
-        // Simulate RocksDB WriteBatch behavior
+        // Simulate CardanoDB WriteBatch behavior
         for op in operations {
             match op {
                 BatchOperation::Put { key, value } => {
                     if value.len() > 64 * 1024 * 1024 {
-                        return Err(StorageError::DatabaseError("Value exceeds RocksDB limits".to_string()));
+                        return Err(StorageError::DatabaseError("Value exceeds CardanoDB limits".to_string()));
                     }
                     data.insert(key.clone(), value.clone());
                 }
@@ -251,7 +251,7 @@ impl StorageBackend for MockRocksDBBackend {
     }
 
     fn backend_name(&self) -> &str {
-        "MockRocksDB"
+        "MockCardanoDB"
     }
 
     fn sync(&self) -> Result<()> {
@@ -268,7 +268,7 @@ impl StorageBackend for MockRocksDBBackend {
             .sum();
 
         let mut backend_specific = HashMap::new();
-        backend_specific.insert("rocksdb_version".to_string(), "8.7.3".to_string());
+        backend_specific.insert("cardanodb_version".to_string(), "8.7.3".to_string());
         backend_specific.insert("compression".to_string(), "lz4".to_string());
 
         Ok(StorageStats {
@@ -289,10 +289,10 @@ where
     std::panic::catch_unwind(|| test_fn(&lmdb_backend))
         .unwrap_or_else(|_| panic!("Test failed for LMDB backend"));
 
-    // Test with RocksDB backend
-    let rocksdb_backend = MockRocksDBBackend::new().expect("Failed to create RocksDB backend");
-    std::panic::catch_unwind(|| test_fn(&rocksdb_backend))
-        .unwrap_or_else(|_| panic!("Test failed for RocksDB backend"));
+    // Test with CardanoDB backend
+    let cardanodb_backend = MockCardanoDbBackend::new().expect("Failed to create CardanoDB backend");
+    std::panic::catch_unwind(|| test_fn(&cardanodb_backend))
+        .unwrap_or_else(|_| panic!("Test failed for CardanoDB backend"));
 }
 
 #[cfg(test)]
@@ -366,18 +366,18 @@ mod tests {
     fn test_empty_key_handling() {
         // Note: Different backends may have different behaviors for empty keys
         let lmdb_backend = MockLMDBBackend::new().expect("Failed to create LMDB backend");
-        let rocksdb_backend = MockRocksDBBackend::new().expect("Failed to create RocksDB backend");
+        let cardanodb_backend = MockCardanoDbBackend::new().expect("Failed to create CardanoDB backend");
 
         // LMDB should reject empty keys
         let lmdb_result = lmdb_backend.put(b"", b"value");
         assert!(lmdb_result.is_err());
 
-        // RocksDB might be more permissive (implementation dependent)
-        let rocksdb_result = rocksdb_backend.put(b"", b"value");
+        // CardanoDB might be more permissive (implementation dependent)
+        let cardanodb_result = cardanodb_backend.put(b"", b"value");
         // For this test, we'll allow both behaviors but document the difference
-        match rocksdb_result {
-            Ok(()) => println!("RocksDB allows empty keys"),
-            Err(_) => println!("RocksDB rejects empty keys"),
+        match cardanodb_result {
+            Ok(()) => println!("CardanoDB allows empty keys"),
+            Err(_) => println!("CardanoDB rejects empty keys"),
         }
     }
 
@@ -393,7 +393,7 @@ mod tests {
             // Different backends have different limits
             let large_value = match backend.backend_name() {
                 "MockLMDB" => vec![0u8; 20 * 1024 * 1024], // Exceeds 16MB limit
-                "MockRocksDB" => vec![0u8; 70 * 1024 * 1024], // Exceeds 64MB limit
+                "MockCardanoDB" => vec![0u8; 70 * 1024 * 1024], // Exceeds 64MB limit
                 _ => vec![0u8; 100 * 1024 * 1024], // Very large
             };
 
@@ -611,9 +611,9 @@ pub async fn test_storage_interface_lmdb_basic_operations() {
     test_backend_basic_operations(&lmdb).await;
 }
 
-pub async fn test_storage_interface_rocksdb_basic_operations() {
-    let rocksdb = MockRocksDBBackend::new();
-    test_backend_basic_operations(&rocksdb).await;
+pub async fn test_storage_interface_cardanodb_basic_operations() {
+    let cardanodb = MockCardanoDbBackend::new();
+    test_backend_basic_operations(&cardanodb).await;
 }
 
 pub async fn test_storage_interface_lmdb_concurrent_access() {
@@ -621,9 +621,9 @@ pub async fn test_storage_interface_lmdb_concurrent_access() {
     test_backend_concurrent_access(&lmdb).await;
 }
 
-pub async fn test_storage_interface_rocksdb_concurrent_access() {
-    let rocksdb = MockRocksDBBackend::new();
-    test_backend_concurrent_access(&rocksdb).await;
+pub async fn test_storage_interface_cardanodb_concurrent_access() {
+    let cardanodb = MockCardanoDbBackend::new();
+    test_backend_concurrent_access(&cardanodb).await;
 }
 
 pub async fn test_storage_interface_lmdb_batch_operations() {
@@ -631,9 +631,9 @@ pub async fn test_storage_interface_lmdb_batch_operations() {
     test_backend_batch_operations(&lmdb).await;
 }
 
-pub async fn test_storage_interface_rocksdb_batch_operations() {
-    let rocksdb = MockRocksDBBackend::new();
-    test_backend_batch_operations(&rocksdb).await;
+pub async fn test_storage_interface_cardanodb_batch_operations() {
+    let cardanodb = MockCardanoDbBackend::new();
+    test_backend_batch_operations(&cardanodb).await;
 }
 
 pub async fn test_storage_interface_lmdb_cardano_patterns() {
@@ -641,9 +641,9 @@ pub async fn test_storage_interface_lmdb_cardano_patterns() {
     test_backend_cardano_patterns(&lmdb).await;
 }
 
-pub async fn test_storage_interface_rocksdb_cardano_patterns() {
-    let rocksdb = MockRocksDBBackend::new();
-    test_backend_cardano_patterns(&rocksdb).await;
+pub async fn test_storage_interface_cardanodb_cardano_patterns() {
+    let cardanodb = MockCardanoDbBackend::new();
+    test_backend_cardano_patterns(&cardanodb).await;
 }
 
 pub async fn test_storage_interface_lmdb_error_handling() {
@@ -651,21 +651,21 @@ pub async fn test_storage_interface_lmdb_error_handling() {
     test_backend_error_handling(&lmdb).await;
 }
 
-pub async fn test_storage_interface_rocksdb_error_handling() {
-    let rocksdb = MockRocksDBBackend::new();
-    test_backend_error_handling(&rocksdb).await;
+pub async fn test_storage_interface_cardanodb_error_handling() {
+    let cardanodb = MockCardanoDbBackend::new();
+    test_backend_error_handling(&cardanodb).await;
 }
 
 pub async fn test_storage_interface_backend_statistics() {
     let lmdb = MockLMDBBackend::new();
-    let rocksdb = MockRocksDBBackend::new();
+    let cardanodb = MockCardanoDbBackend::new();
     test_backend_statistics(&lmdb).await;
-    test_backend_statistics(&rocksdb).await;
+    test_backend_statistics(&cardanodb).await;
 }
 
 pub async fn test_storage_interface_haskell_compatibility() {
     let lmdb = MockLMDBBackend::new();
-    let rocksdb = MockRocksDBBackend::new();
+    let cardanodb = MockCardanoDbBackend::new();
     test_backend_haskell_compatibility(&lmdb).await;
-    test_backend_haskell_compatibility(&rocksdb).await;
+    test_backend_haskell_compatibility(&cardanodb).await;
 }

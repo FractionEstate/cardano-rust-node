@@ -121,6 +121,11 @@ impl KesKey {
     }
 }
 
+// SAFETY: All mutations happen via the enclosing `BlockForger`'s async RwLock,
+// so the underlying KES secret key never sees concurrent access across threads.
+unsafe impl Send for KesKey {}
+unsafe impl Sync for KesKey {}
+
 /// Operational certificate for block production
 #[derive(Debug, Clone)]
 pub struct OperationalCertificate {

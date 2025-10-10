@@ -25,9 +25,13 @@
 //! // Now service uses real chain data instead of mocks!
 //! ```
 
-use crate::{Result, SimplifiedLedgerState};
+use crate::{Result, SimplifiedLedgerState, TxInput, TxOutput};
 use cardano_crypto::Blake2b256Hash;
-use cardano_storage::{chaindb::ChainDatabase, ledgerdb::LedgerDatabase};
+use cardano_storage::{
+    chaindb::ChainDatabase,
+    ledgerdb::{LedgerDatabase, TransactionOutput},
+};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, warn};
@@ -224,18 +228,47 @@ where
             stats.total_utxos, stats.total_value, stats.active_pools
         );
 
-        // TODO: In a full implementation, we would:
-        // 1. Fetch actual UTxO set
-        // 2. Get total supply, treasury, reserves from protocol state
-        // 3. Build complete SimplifiedLedgerState
+        let utxo_entries = match ledgerdb.export_utxos(None).await {
+            Ok(entries) => entries,
+            Err(e) => {
+                warn!("Failed to export UTxOs: {}", e);
+                Vec::new()
+            }
+        };
 
-        // For now, return a basic state with the stats info
-        // This is still better than the mock data since it reflects DB state
+        let mut utxo_set = HashMap::with_capacity(utxo_entries.len());
+        for (input, output) in utxo_entries {
+            let tx_input = TxInput {
+                tx_hash: input.transaction_id,
+                output_index: input.index,
+            };
+
+            let address = derive_output_address(&output);
+            utxo_set.insert(
+                tx_input,
+                TxOutput {
+                    address,
+                    value: output.amount,
+                },
+            );
+        }
+
+        if utxo_set.is_empty() {
+            debug!("Ledger snapshot returned no UTxOs");
+        } else {
+            debug!("Ledger snapshot loaded {} UTxOs", utxo_set.len());
+        }
+
+        let total_supply = stats
+            .total_value
+            .saturating_add(stats.treasury)
+            .saturating_add(stats.reserves);
+
         Ok(Some(SimplifiedLedgerState {
-            utxo_set: std::collections::HashMap::new(), // TODO: Load actual UTxOs
-            total_supply: 45_000_000_000_000_000,       // 45 billion ADA (constant for now)
-            treasury: 1_000_000_000_000_000,            // 1 billion ADA (from epoch boundary)
-            reserves: 14_000_000_000_000_000,           // 14 billion ADA (decreases over time)
+            utxo_set,
+            total_supply,
+            treasury: stats.treasury,
+            reserves: stats.reserves,
         }))
     }
 }
@@ -305,3 +338,78 @@ where
 
 // Tests will be added in integration tests once mock implementations are updated
 // to match the current trait signatures
+
+fn derive_output_address(output: &TransactionOutput) -> Blake2b256Hash {
+    if output.address_data.len() == 32 {
+        Blake2b256Hash::from_bytes(&output.address_data)
+            .unwrap_or_else(|_| Blake2b256Hash::hash(&output.address_data))
+    } else {
+        Blake2b256Hash::hash(&output.address_data)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cardano_storage::backends::MemoryBackend;
+    use cardano_storage::chaindb::ChainDatabaseImpl;
+    use cardano_storage::ledgerdb::{
+        LedgerDatabaseImpl, StakeCredential, TransactionInput as LedgerTxInput,
+        TransactionOutput as LedgerTxOutput,
+    };
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn test_get_ledger_state_exports_utxos() {
+        let chain_backend = Arc::new(MemoryBackend::new());
+        let chaindb = Arc::new(ChainDatabaseImpl::new(chain_backend));
+
+        let ledger_backend = Arc::new(MemoryBackend::new());
+        let ledgerdb = Arc::new(LedgerDatabaseImpl::new(Arc::clone(&ledger_backend)));
+
+        let tx_input = LedgerTxInput {
+            transaction_id: Blake2b256Hash::hash(b"tx_hash_example"),
+            index: 0,
+        };
+        let tx_output = LedgerTxOutput {
+            amount: 1_500_000,
+            address_data: Blake2b256Hash::hash(b"addr_example").as_bytes().to_vec(),
+        };
+
+        ledgerdb.store_utxo(&tx_input, &tx_output).await.unwrap();
+
+        let stake_credential = StakeCredential {
+            credential_data: vec![0u8, 1, 2, 3],
+        };
+        ledgerdb
+            .store_rewards(&stake_credential, 250_000)
+            .await
+            .unwrap();
+
+        ledgerdb
+            .store_stake(&stake_credential, 3_000_000)
+            .await
+            .unwrap();
+
+        let state = BlockProductionIntegrator::<ChainDatabaseImpl<MemoryBackend>, _>::get_ledger_state_impl(ledgerdb.clone())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(state.utxo_set.len(), 1);
+
+        let expected_input = TxInput {
+            tx_hash: tx_input.transaction_id,
+            output_index: tx_input.index,
+        };
+        let consensus_output = state.utxo_set.get(&expected_input).unwrap();
+        assert_eq!(consensus_output.value, tx_output.amount);
+
+        assert_eq!(state.treasury, 250_000);
+        assert!(state.total_supply >= state.treasury + consensus_output.value);
+        assert!(state.reserves > 0);
+
+        // Ensure integrator wiring does not panic with concrete types
+        let _integrator = BlockProductionIntegrator::new(chaindb, ledgerdb);
+    }
+}

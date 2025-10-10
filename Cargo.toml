@@ -63,7 +63,6 @@ cardano-crypto-class = { git = "https://github.com/FractionEstate/cardano-base-r
 
 # Database and storage
 lmdb = "0.8"
-rocksdb = "0.21"
 
 # Networking
 socket2 = "0.5"
