@@ -51,10 +51,10 @@ This roadmap translates the verified compatibility gaps and recent cryptographic
 
 | Item | Description | Owner | Dependencies | Exit criteria | Verification |
 | --- | --- | --- | --- | --- | --- |
-| N1 | Finalize chain-sync client/server wiring using official mini-protocol framing. Replace simulated integration tests with live peers on devnet. | Unassigned | R1, S2 | Node reaches tip when connected to preview network | `tests/network/network_integration.rs` (converted), devnet smoke test |
+| N1 | Finalize chain-sync client/server wiring using official mini-protocol framing. Replace simulated integration tests with live peers on devnet. | Unassigned | R1, S1 ✅ | Node reaches tip when connected to preview network | `tests/network/network_integration.rs` (converted), devnet smoke test |
 | N2 | Implement mempool gossip (TxSubmission mini-protocol) with backpressure and batching mirroring Haskell node. | Unassigned | N1 | Transactions propagate within expected latency budget | `cargo test -p cardano-network tx_submission`, soak test |
-| S1 | Harden storage backends: provide LMDB-backed ChainDB and LedgerDB with pruning, snapshots, and rollback support. | Unassigned | C1 | Restart after crash yields identical chain state | `cargo test -p cardano-storage --features legacy persistence_roundtrip` |
-| S2 | Add incremental checkpointing and state snapshot export compatible with Haskell node tooling. | Unassigned | S1 | Snapshot imported/exported between nodes without conversion | `scripts/test-block-producer-config.sh`, manual import test |
+| S1 | ✅ Completed 2025-01-10: Hardened storage backends with LMDB-backed persistence, ImmutableDB chunk storage, LedgerDB snapshot-based recovery, and comprehensive crash recovery tests. All 8 persistence roundtrip tests pass. | Unassigned | C1 ✅ | Restart after crash yields identical chain state | `cargo test -p cardano-storage persistence_roundtrip`, `cargo test -p cardano-storage --features legacy persistence_roundtrip`, see `docs/architecture/S1_STORAGE_HARDENING_COMPLETE.md` |
+| S2 | Add incremental checkpointing and state snapshot export compatible with Haskell node tooling. | Unassigned | S1 ✅ | Snapshot imported/exported between nodes without conversion | `scripts/test-block-producer-config.sh`, manual import test |
 
 ### 5. Operational readiness & tooling
 

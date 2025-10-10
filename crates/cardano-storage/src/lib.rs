@@ -50,3 +50,7 @@ pub use ledgerdb::{
 // T066: LMDB Backend Tests Module
 #[cfg(test)]
 mod lmdb_tests;
+
+// S1 Roadmap: Persistence roundtrip tests
+#[cfg(test)]
+mod tests;
