@@ -4,12 +4,12 @@
 //! Haskell implementation using cardano-base-rust. All signature operations
 //! produce identical results to the Haskell node for consensus safety.
 
-use crate::{CryptoError, Result};
-use cardano_crypto_class::dsign::ed25519::{
+use crate::vendor::crypto_class::dsign::ed25519::{
     Ed25519, Ed25519Signature as CardanoEd25519Signature, Ed25519SigningKey as CardanoSigningKey,
     Ed25519VerificationKey as CardanoVerificationKey,
 };
-use cardano_crypto_class::dsign::DsignAlgorithm;
+use crate::vendor::crypto_class::dsign::DsignAlgorithm;
+use crate::{CryptoError, Result};
 
 pub mod mod_rs {
     //! Ed25519 module exports

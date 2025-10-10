@@ -15,8 +15,6 @@ lmdb = { workspace = true, optional = true }
 
 # NEW: Pure Rust dependencies from cardano-base-rust
 cardano-slotting = { git = "https://github.com/FractionEstate/cardano-base-rust", branch = "master" }
-cardano-binary = { git = "https://github.com/FractionEstate/cardano-base-rust", branch = "master" }
-cardano-crypto-class = { git = "https://github.com/FractionEstate/cardano-base-rust", branch = "master" }
 
 # NEW: Pure Rust storage engine dependencies
 memmap2 = "0.9" # Memory-mapped I/O for zero-copy reads

@@ -15,6 +15,9 @@ pub mod hash;
 pub mod kes;
 pub mod vrf;
 
+// Vendored cryptographic implementations from cardano-base-rust
+pub mod vendor;
+
 pub use bls::*;
 pub use ed25519::*;
 pub use hash::*;

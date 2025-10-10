@@ -1,7 +1,7 @@
 # KES Rotation Alignment with Haskell Node (C2 Audit)
 
-**Date**: 2025-10-10  
-**Status**: ✅ VERIFIED  
+**Date**: 2025-10-10
+**Status**: ✅ VERIFIED
 **Roadmap Item**: C2 - Audit KES/VRF state transitions
 
 ## Summary
@@ -25,6 +25,7 @@ severityFor (Namespace _ _) (Just forgeStateInfo) = Just $
 ```
 
 **Threshold Summary:**
+
 - **Info**: `> 7` periods remaining
 - **Warning**: `2-7` periods remaining
 - **Alert**: `<= 1` period remaining
@@ -69,6 +70,7 @@ if forger.is_kes_approaching_expiration(10) {
 ```
 
 **Threshold Summary:**
+
 - **Warning**: `<= 10` periods remaining (more conservative than Haskell)
 - **Periodic info**: Every 10 periods when `<= 50` remaining
 
@@ -85,15 +87,18 @@ if forger.is_kes_approaching_expiration(10) {
 ## Verification Results
 
 ### ✅ **Core Functionality Aligned**
+
 1. KES period tracking is implemented correctly
 2. Warning emissions occur before expiration
 3. Operators receive adequate notice for key rotation
 
 ### ✅ **Rust Implementation is More Conservative**
+
 - Warning at 10 periods vs. Haskell's 7 gives operators more lead time
 - This is **beneficial** and aligns with operational best practices
 
 ### ✅ **Additional Features in Rust**
+
 1. Structured event system (`BlockProductionEvent`)
 2. Periodic status logs for long-running operations
 3. Explicit current/max period reporting
@@ -103,6 +108,7 @@ if forger.is_kes_approaching_expiration(10) {
 ### Optional Enhancements (Not Required for Compatibility)
 
 1. **Add Alert Level** (Nice-to-have)
+
    ```rust
    if remaining == 1 {
        error!("🚨 CRITICAL: KES key expires in 1 period!");
@@ -120,6 +126,7 @@ if forger.is_kes_approaching_expiration(10) {
 ### Decision: Keep Current Implementation
 
 **Rationale:**
+
 - Current thresholds (10 periods) are **more conservative** than Haskell (7 periods), providing better operator safety
 - Structured events enable programmatic monitoring (not available in Haskell)
 - Log format provides more diagnostic information
@@ -128,11 +135,13 @@ if forger.is_kes_approaching_expiration(10) {
 ## Integration Test Coverage
 
 Existing tests validate KES rotation logic:
+
 ```bash
 cargo test -p cardano-consensus kes_rotation_warn
 ```
 
 **Test Scenarios:**
+
 - [x] Warning emitted when approaching expiration
 - [x] Event contains correct period information
 - [x] No warning when plenty of periods remain
@@ -144,12 +153,14 @@ cargo test -p cardano-consensus kes_rotation_warn
 The Rust node's KES rotation warning system is **fully compatible** with the Haskell node's operational behavior. The more conservative threshold (10 vs. 7 periods) provides **enhanced safety** for stake pool operators without introducing compatibility issues.
 
 ### Exit Criteria Met
+
 - [x] KES rotation warnings match upstream logic structure
 - [x] Warning thresholds are adequate for operator awareness
 - [x] Test coverage validates expiration detection
 - [x] No discrepancies that affect block production
 
 ### References
+
 - Haskell implementation: `cardano-node/src/Cardano/Node/Tracing/Tracers/KESInfo.hs`
 - Rust implementation: `crates/cardano-consensus/src/block_production_service.rs`
 - Test suite: `cargo test -p cardano-consensus kes_rotation_warn`

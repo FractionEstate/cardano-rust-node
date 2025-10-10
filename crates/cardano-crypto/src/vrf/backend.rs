@@ -6,8 +6,8 @@
 //! Uses batch-compatible VRF with 128-byte proofs for optimal performance and
 //! compatibility with Cardano mainnet/testnet.
 
-use cardano_vrf_pure::common::secret_key_to_public;
-use cardano_vrf_pure::draft13::{
+use crate::vendor::vrf_pure::common::secret_key_to_public;
+use crate::vendor::vrf_pure::draft13::{
     VrfDraft13, OUTPUT_SIZE as DRAFT13_OUTPUT_LENGTH, PROOF_SIZE as DRAFT13_PROOF_LENGTH,
     PUBLIC_KEY_SIZE as DRAFT13_PUBLIC_KEY_LENGTH, SECRET_KEY_SIZE as DRAFT13_SECRET_KEY_LENGTH,
     SEED_SIZE as DRAFT13_SEED_LENGTH,

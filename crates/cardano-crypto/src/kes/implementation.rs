@@ -1,11 +1,11 @@
 //! CompactSum7KES-backed implementation for Cardano KES keys.
 
-use crate::{CryptoError, Result};
-use cardano_crypto_class::direct_serialise::{
+use crate::vendor::crypto_class::direct_serialise::{
     direct_deserialise_buf_checked, direct_serialise_buf_checked,
 };
-use cardano_crypto_class::kes::{CompactSum7Kes, KesAlgorithm, KesError, KesMError};
-use cardano_crypto_class::seed::Seed;
+use crate::vendor::crypto_class::kes::{CompactSum7Kes, KesAlgorithm, KesError, KesMError};
+use crate::vendor::crypto_class::seed::Seed;
+use crate::{CryptoError, Result};
 use hex::{decode as hex_decode, encode as hex_encode};
 use minicbor::{decode::Decoder, encode::Encoder};
 use rand_core::{OsRng, RngCore};
