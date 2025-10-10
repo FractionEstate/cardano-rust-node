@@ -57,6 +57,7 @@ From `cardano-vrf-pure` crate:
 ## Test Vectors
 
 Official Cardano VRF test vectors are stored in `crates/cardano-crypto/test-vectors/`:
+
 - `vrf_ver03_standard_*` - Standard test vectors for VRF version 03
 - `vrf_ver03_generated_*` - Generated test vectors for VRF version 03
 - `vrf_ver13_standard_*` - Standard test vectors for Draft-13 VRF
@@ -90,6 +91,7 @@ The vendored crypto code requires:
 - `num-traits` - Numeric trait abstractions
 
 Cryptographic backends:
+
 - `ed25519-dalek = "2.2"` - Ed25519 signatures
 - `curve25519-dalek = "4.0"` - Curve25519 operations
 - `blake2 = "0.10"` - Blake2b hashing
@@ -112,23 +114,27 @@ The vendored code has been adapted to work with **rand_core 0.6** instead of 0.9
 ### Path Updates
 
 All internal imports have been updated:
+
 - `crate::something` → `crate::vendor::crypto_class::something`
 - `crate::util` → `crate::vendor::crypto_class::util`
 
 ### Removed Modules
 
 The following modules were removed as they're not used by Cardano:
+
 - `dsign/ecdsa_secp256k1.rs` - ECDSA signatures (Bitcoin/Ethereum)
 - `dsign/schnorr_secp256k1.rs` - Schnorr signatures (Bitcoin)
 
 ## Testing
 
 All 131 tests pass:
+
 - Unit tests from the original cardano-base-rust modules
 - Official Cardano test vectors
 - Property-based tests using `proptest`
 
 Run tests:
+
 ```bash
 cargo test -p cardano-crypto --lib
 ```
@@ -163,6 +169,7 @@ If upstream cardano-base-rust has critical fixes:
 ### Attribution
 
 All vendored code maintains original copyright headers:
+
 ```rust
 // Vendored from cardano-base-rust (https://github.com/FractionEstate/cardano-base-rust)
 // Licensed under Apache-2.0

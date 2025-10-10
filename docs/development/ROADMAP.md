@@ -28,7 +28,7 @@ This roadmap translates the verified compatibility gaps and recent cryptographic
 | --- | --- | --- | --- | --- | --- |
 | C1 | ✅ Completed 2025-10-10: `SumKes` hashing now uses `PackedBytes<[u8; 32]>`, all serde/CBOR instances updated to match upstream serialization. | Unassigned | `crates/cardano-crypto` | Byte-for-byte match with Haskell `compact_sum7kes` vectors | `cargo test -p cardano-crypto kes::tests`, custom vector comparison |
 | C2 | ✅ Completed 2025-10-10: KES rotation warnings audited against Haskell node; Rust implementation uses 10-period threshold (more conservative than Haskell's 7), providing enhanced operator safety with structured event system. | Unassigned | C1 | Consensus KES alarms match upstream on synthetic schedule | `cargo test -p cardano-consensus kes_rotation_warn`, see `docs/architecture/KES_ROTATION_ALIGNMENT.md` |
-| C3 | Confirm Praos constants, thresholds, and nonce evolution match `cardano-node` defaults (Shelley through Conway). | Unassigned | - | Config diff yields no mismatches; consensus tests pass official scenario vectors | `cargo test -p cardano-consensus praos_parameters`, cross-check with upstream JSON |
+| C3 | ✅ Completed 2025-10-10: Praos constants verified against Haskell node. All core parameters match (k=2160, f=0.05, epoch_length=432000, slot_length=1). VRF and KES constants confirmed. Documentation created. | Unassigned | - | Config diff yields no mismatches; consensus tests pass official scenario vectors | `cargo test -p cardano-consensus praos_parameters`, see `docs/architecture/PRAOS_CONSTANTS_VERIFICATION.md` |
 
 ### 2. Consensus runtime integration
 
