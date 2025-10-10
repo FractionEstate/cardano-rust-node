@@ -18,6 +18,7 @@ pub mod block_production_integration;
 pub mod block_production_service;
 pub mod chain_selection;
 pub mod epoch_transition;
+pub mod epoch_transition_service;
 pub mod leadership;
 pub mod ledger_state;
 pub mod metrics;
@@ -46,6 +47,7 @@ pub use chain_selection::{
 pub use epoch_transition::{
     EpochRewards, EpochTransitionHandler, PoolRewardDistribution, StakeSnapshot,
 };
+pub use epoch_transition_service::EpochTransitionService;
 pub use leadership::{
     min_stake_for_expected_blocks, vrf_output_to_probability, LeadershipCalculator,
     LeadershipCheck, LeadershipProof,

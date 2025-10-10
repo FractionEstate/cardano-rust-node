@@ -20,6 +20,7 @@ blake2.workspace = true
 
 # Serialization
 serde.workspace = true
+serde_json.workspace = true
 minicbor.workspace = true
 hex.workspace = true
 bytes.workspace = true
@@ -28,6 +29,7 @@ bytes.workspace = true
 cardano-crypto = { path = "../cardano-crypto" }
 cardano-ledger = { path = "../cardano-ledger" }
 cardano-consensus = { path = "../cardano-consensus" }
+cardano-storage = { path = "../cardano-storage" }
 
 # Error handling and logging
 thiserror.workspace = true

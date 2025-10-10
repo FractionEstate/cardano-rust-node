@@ -3,7 +3,7 @@
 //! Provides real-time slot notifications for block production and other
 //! time-sensitive consensus operations.
 
-use crate::{ConsensusError, Result, SlotNo};
+use crate::{ConsensusError, EpochNo, Result, SlotNo};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::broadcast;
@@ -21,6 +21,10 @@ pub struct SlotEvent {
     pub expected_time: SystemTime,
     /// Drift from expected time (positive = late, negative = early)
     pub drift_ms: i64,
+    /// Current epoch number
+    pub epoch: EpochNo,
+    /// True if this slot marks an epoch boundary
+    pub is_epoch_boundary: bool,
 }
 
 /// Configuration for slot notifications
@@ -34,6 +38,8 @@ pub struct SlotNotifierConfig {
     pub max_drift_ms: i64,
     /// Size of the broadcast channel
     pub channel_size: usize,
+    /// Number of slots per epoch
+    pub epoch_length: u64,
 }
 
 impl Default for SlotNotifierConfig {
@@ -43,6 +49,7 @@ impl Default for SlotNotifierConfig {
             genesis_time: UNIX_EPOCH, // Will be overridden with actual genesis
             max_drift_ms: 100,        // Warn if drift exceeds 100ms
             channel_size: 100,
+            epoch_length: 432000, // Cardano mainnet epoch length (5 days)
         }
     }
 }
@@ -80,6 +87,26 @@ impl SlotNotifier {
 
         let slot = elapsed.as_secs() / self.config.slot_length_secs;
         Ok(SlotNo(slot))
+    }
+
+    /// Calculate the epoch number for a given slot
+    pub fn slot_to_epoch(&self, slot: SlotNo) -> EpochNo {
+        EpochNo(slot.0 / self.config.epoch_length)
+    }
+
+    /// Check if a slot is at an epoch boundary
+    pub fn is_epoch_boundary(&self, slot: SlotNo) -> bool {
+        slot.0 % self.config.epoch_length == 0 && slot.0 > 0
+    }
+
+    /// Get the first slot of an epoch
+    pub fn epoch_first_slot(&self, epoch: EpochNo) -> SlotNo {
+        SlotNo(epoch.0 * self.config.epoch_length)
+    }
+
+    /// Get the last slot of an epoch
+    pub fn epoch_last_slot(&self, epoch: EpochNo) -> SlotNo {
+        SlotNo((epoch.0 + 1) * self.config.epoch_length - 1)
     }
 
     /// Get the expected start time for a slot
@@ -130,6 +157,18 @@ impl SlotNotifier {
             let expected_time = self.slot_start_time(current_slot);
             let drift_ms = self.calculate_drift(actual_time, expected_time);
 
+            // Calculate epoch information
+            let epoch = self.slot_to_epoch(current_slot);
+            let is_epoch_boundary = self.is_epoch_boundary(current_slot);
+
+            // Log epoch transitions
+            if is_epoch_boundary {
+                info!(
+                    "Epoch boundary detected! Transitioning to epoch {} at slot {}",
+                    epoch.0, current_slot.0
+                );
+            }
+
             // Log drift warnings
             if drift_ms.abs() > self.config.max_drift_ms {
                 warn!(
@@ -144,9 +183,14 @@ impl SlotNotifier {
                 timestamp: actual_time,
                 expected_time,
                 drift_ms,
+                epoch,
+                is_epoch_boundary,
             };
 
-            debug!("Slot {} start (drift: {}ms)", current_slot.0, drift_ms);
+            debug!(
+                "Slot {} start (epoch: {}, drift: {}ms, boundary: {})",
+                current_slot.0, epoch.0, drift_ms, is_epoch_boundary
+            );
 
             // Send to all subscribers
             match self.sender.send(event) {
@@ -273,6 +317,72 @@ mod tests {
 
         let stats = notifier.stats();
         assert_eq!(stats.active_subscribers, 2);
+    }
+
+    #[test]
+    fn test_epoch_calculation() {
+        let config = SlotNotifierConfig {
+            epoch_length: 100, // 100 slots per epoch for testing
+            ..Default::default()
+        };
+        let notifier = SlotNotifier::new(config);
+
+        // Slot 0 is in epoch 0
+        assert_eq!(notifier.slot_to_epoch(SlotNo(0)).0, 0);
+
+        // Slot 99 is still in epoch 0
+        assert_eq!(notifier.slot_to_epoch(SlotNo(99)).0, 0);
+
+        // Slot 100 is in epoch 1
+        assert_eq!(notifier.slot_to_epoch(SlotNo(100)).0, 1);
+
+        // Slot 250 is in epoch 2
+        assert_eq!(notifier.slot_to_epoch(SlotNo(250)).0, 2);
+    }
+
+    #[test]
+    fn test_epoch_boundary_detection() {
+        let config = SlotNotifierConfig {
+            epoch_length: 100, // 100 slots per epoch for testing
+            ..Default::default()
+        };
+        let notifier = SlotNotifier::new(config);
+
+        // Slot 0 is NOT a boundary (genesis)
+        assert!(!notifier.is_epoch_boundary(SlotNo(0)));
+
+        // Slot 99 is NOT a boundary
+        assert!(!notifier.is_epoch_boundary(SlotNo(99)));
+
+        // Slot 100 IS a boundary (first slot of epoch 1)
+        assert!(notifier.is_epoch_boundary(SlotNo(100)));
+
+        // Slot 200 IS a boundary (first slot of epoch 2)
+        assert!(notifier.is_epoch_boundary(SlotNo(200)));
+
+        // Slot 201 is NOT a boundary
+        assert!(!notifier.is_epoch_boundary(SlotNo(201)));
+    }
+
+    #[test]
+    fn test_epoch_slot_ranges() {
+        let config = SlotNotifierConfig {
+            epoch_length: 100,
+            ..Default::default()
+        };
+        let notifier = SlotNotifier::new(config);
+
+        // Epoch 0: slots 0-99
+        assert_eq!(notifier.epoch_first_slot(EpochNo(0)).0, 0);
+        assert_eq!(notifier.epoch_last_slot(EpochNo(0)).0, 99);
+
+        // Epoch 1: slots 100-199
+        assert_eq!(notifier.epoch_first_slot(EpochNo(1)).0, 100);
+        assert_eq!(notifier.epoch_last_slot(EpochNo(1)).0, 199);
+
+        // Epoch 5: slots 500-599
+        assert_eq!(notifier.epoch_first_slot(EpochNo(5)).0, 500);
+        assert_eq!(notifier.epoch_last_slot(EpochNo(5)).0, 599);
     }
 
     #[tokio::test]

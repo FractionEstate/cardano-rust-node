@@ -41,6 +41,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let slot_config = SlotNotifierConfig {
         slot_length_secs: 1,
         genesis_time: std::time::SystemTime::now(),
+        epoch_length: 432000, // Cardano mainnet: 5 days
         max_drift_ms: 100,
         channel_size: 100,
     };
