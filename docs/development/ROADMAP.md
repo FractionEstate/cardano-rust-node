@@ -43,7 +43,7 @@ This roadmap translates the verified compatibility gaps and recent cryptographic
 | Item | Description | Owner | Dependencies | Exit criteria | Verification |
 | --- | --- | --- | --- | --- | --- |
 | L1 | ✅ Completed 2025-10-10: `BlockProductionIntegrator::get_ledger_state_impl` now exports UTxO snapshots and supply metrics sourced from `LedgerDatabase`. | Unassigned | R2 | Produced blocks include accurate ledger state diff | `cargo test -p cardano-ledger ledger_state_snapshot` |
-| L2 | Implement `LedgerDatabase::list_active_pools` and `ChainDatabaseImpl::get_blocks_range` using persistent backend iterators. | Unassigned | Storage backend S1 | Stake snapshot shows real pools; chain sync replays block ranges | `cargo test -p cardano-storage stake_snapshot`, targeted bench |
+| L2 | ✅ Completed 2025-10-10: `LedgerDatabase::list_active_pools` scans pool prefix and returns real pool IDs; `ChainDatabaseImpl::get_blocks_range` walks block height index to return sequential ranges. | Unassigned | Storage backend S1 | Stake snapshot shows real pools; chain sync replays block ranges | `cargo test -p cardano-storage test_get_blocks_range_memory_backend`, `cargo test -p cardano-storage --lib list_active_pools` |
 | L3 | Add Plutus interpreter bridge (FFI or native) and replace `validate_plutus_script` stub with actual execution. | Unassigned | L1 | Plutus validation parity with upstream golden files | `cargo test -p cardano-ledger plutus_execution -- --ignored`, cross-check with upstream fixtures |
 | L4 | Mirror Conway-era governance features (delegation certificates, votes) once upstream confirms interfaces. | Unassigned | Upstream release | Governance transactions apply successfully | `cargo test -p cardano-ledger governance_flow` |
 

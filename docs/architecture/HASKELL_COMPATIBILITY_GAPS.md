@@ -29,14 +29,14 @@ This document catalogues the verified differences between this Rust node and the
 
 | Area | Current behaviour | Evidence |
 | --- | --- | --- |
-| Stake snapshot inputs | The epoch transition logic requests active pools via `LedgerDatabase::list_active_pools()`, but the default implementation returns `Ok(Vec::new())`, and `ChainDatabaseImpl::get_blocks_range` is likewise a stub returning `Vec::new()`. This prevents real stake and chain data from flowing into snapshots. | `crates/cardano-storage/src/ledgerdb/mod.rs`, `crates/cardano-storage/src/chaindb/mod.rs` |
+| ~~Stake snapshot inputs~~ | **CLOSED 2025-10-10**: `LedgerDatabase::list_active_pools()` now scans the pool prefix and returns real pool IDs, and `ChainDatabaseImpl::get_blocks_range()` walks the block height index to return sequential block ranges. | `crates/cardano-storage/src/ledgerdb/mod.rs` lines 479-491, `crates/cardano-storage/src/chaindb/mod.rs` lines 334-380 |
 | Integration test realism | The long-running integration tests under `tests/integration/` simulate network and consensus behaviour instead of talking to the real node. Example: `tests/integration/mainnet_sync_test.rs` states `// Mock implementation - in production this would connect to real mainnet nodes` and just increments counters in a loop. | `tests/integration/mainnet_sync_test.rs` |
 | Plutus execution | Plutus assets are parsed, but execution is stubbed: `validate_plutus_script` in `tests/consensus/test_block_validation.rs` only checks script size/version and never interprets bytecode. There is no Plutus interpreter in `crates/cardano-ledger`. | `tests/consensus/test_block_validation.rs` |
 
 ## Suggested next steps
 
 - Extend `BlockProductionIntegrator` to populate `SimplifiedLedgerState` with actual UTxOs and dynamic supply metrics, refreshing on new blocks rather than fixed timers ([Roadmap L1](../development/ROADMAP.md#3-ledger--plutus-execution)).
-- Implement pool iteration in `LedgerDatabase::list_active_pools` and block range queries in `ChainDatabaseImpl::get_blocks_range` so that epoch transitions and chain sync operate on real data ([Roadmap L2](../development/ROADMAP.md#3-ledger--plutus-execution)).
+- ~~Implement pool iteration in `LedgerDatabase::list_active_pools` and block range queries in `ChainDatabaseImpl::get_blocks_range` so that epoch transitions and chain sync operate on real data~~ **COMPLETED 2025-10-10** ~~([Roadmap L2](../development/ROADMAP.md#3-ledger--plutus-execution))~~.
 - Gradually convert the mocked integration tests into end-to-end tests that exercise the actual networking and storage stacks now that the runtime pipeline exists ([Roadmap N1-N2](../development/ROADMAP.md#4-network--storage-robustness)).
 - Introduce a Plutus execution bridge (via bindings or a Rust interpreter) and move the current structural checks into preflight validation ([Roadmap L3](../development/ROADMAP.md#3-ledger--plutus-execution)).
 
