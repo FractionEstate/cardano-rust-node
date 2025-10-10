@@ -477,4 +477,40 @@ mod tests {
 
         assert!(cli.validate().is_err());
     }
+
+    #[test]
+    fn test_admin_db_stats_command() {
+        let cli = CardanoNodeCli::try_parse_from([
+            "cardano-node",
+            "admin",
+            "db",
+            "stats",
+            "/var/lib/cardano",
+            "--format",
+            "json",
+            "--force-recompute",
+        ])
+        .unwrap();
+
+        if let Commands::Admin(admin_args) = cli.command {
+            match admin_args.command {
+                AdminCommands::Db { command } => match command {
+                    DbCommands::Stats {
+                        db_path,
+                        format,
+                        force_recompute,
+                        ..
+                    } => {
+                        assert_eq!(db_path, std::path::PathBuf::from("/var/lib/cardano"));
+                        assert_eq!(format, "json");
+                        assert!(force_recompute);
+                    }
+                    other => panic!("Expected stats command, got {:?}", other),
+                },
+                other => panic!("Expected DB subcommand, got {:?}", other),
+            }
+        } else {
+            panic!("Expected admin command");
+        }
+    }
 }

@@ -439,4 +439,23 @@ pub enum DbCommands {
         #[arg(long, help = "Target database directory")]
         db_path: PathBuf,
     },
+
+    /// Show chain database statistics
+    Stats {
+        /// Database path
+        #[arg(help = "Database directory path")]
+        db_path: PathBuf,
+
+        /// Output format (plain, json)
+        #[arg(long, default_value = "plain", help = "Output format")]
+        format: String,
+
+        /// Force recomputation of statistics from storage
+        #[arg(long, help = "Recompute statistics directly from storage")]
+        force_recompute: bool,
+
+        /// Output file
+        #[arg(long, help = "Write output to file")]
+        out_file: Option<PathBuf>,
+    },
 }

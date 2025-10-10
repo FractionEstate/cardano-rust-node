@@ -62,6 +62,9 @@ pub trait ChainDatabase: Send + Sync {
 
     /// Get database statistics
     async fn get_chain_stats(&self) -> Result<ChainDatabaseStats>;
+
+    /// Force recomputation of chain statistics from storage
+    async fn recalculate_chain_stats(&self) -> Result<ChainDatabaseStats>;
 }
 
 /// Chain metadata stored in the database
@@ -115,6 +118,81 @@ impl<B: StorageBackend> ChainDatabaseImpl<B> {
     pub fn backend(&self) -> &Arc<B> {
         &self.backend
     }
+
+    async fn load_persisted_stats(&self) -> Result<Option<PersistedChainStats>> {
+        match self.backend.get(CHAIN_STATS_KEY).await? {
+            Some(data) => {
+                let stats = minicbor::decode(&data).map_err(|e| {
+                    StorageError::SerializationError(format!(
+                        "Failed to deserialize chain stats: {}",
+                        e
+                    ))
+                })?;
+                Ok(Some(stats))
+            }
+            None => Ok(None),
+        }
+    }
+
+    async fn save_persisted_stats(&self, stats: &PersistedChainStats) -> Result<()> {
+        let data = minicbor::to_vec(stats).map_err(|e| {
+            StorageError::SerializationError(format!("Failed to serialize chain stats: {}", e))
+        })?;
+        self.backend.put(CHAIN_STATS_KEY, &data).await
+    }
+
+    async fn combine_stats_with_backend(
+        &self,
+        persisted: PersistedChainStats,
+    ) -> Result<ChainDatabaseStats> {
+        let backend_stats = self.backend.stats().await?;
+
+        Ok(ChainDatabaseStats {
+            total_blocks: persisted.total_blocks,
+            total_transactions: persisted.total_transactions,
+            chain_height: persisted.chain_height,
+            database_size: backend_stats.total_size,
+        })
+    }
+
+    async fn compute_stats_from_storage(&self) -> Result<PersistedChainStats> {
+        let block_index_entries = self.backend.scan_prefix(BLOCK_INDEX_PREFIX, None).await?;
+        let mut stats = PersistedChainStats::default();
+        stats.total_blocks = block_index_entries.len() as u64;
+        for (_, value) in block_index_entries {
+            let bytes: [u8; 8] = value.as_slice().try_into().map_err(|_| {
+                StorageError::SerializationError("Invalid block height entry in index".to_string())
+            })?;
+            let height = u64::from_be_bytes(bytes);
+            stats.chain_height = stats.chain_height.max(height);
+        }
+
+        let tx_entries = self.backend.scan_prefix(TX_PREFIX, None).await?;
+        stats.total_transactions = tx_entries.len() as u64;
+
+        Ok(stats)
+    }
+
+    async fn update_chain_stats(
+        &self,
+        height: u64,
+        is_new_block: bool,
+        new_tx_count: u64,
+    ) -> Result<()> {
+        let mut stats = self.load_persisted_stats().await?.unwrap_or_default();
+
+        if is_new_block {
+            stats.total_blocks = stats.total_blocks.saturating_add(1);
+        }
+
+        if new_tx_count > 0 {
+            stats.total_transactions = stats.total_transactions.saturating_add(new_tx_count);
+        }
+
+        stats.chain_height = stats.chain_height.max(height);
+
+        self.save_persisted_stats(&stats).await
+    }
 }
 
 // Key prefixes for different data types
@@ -124,6 +202,17 @@ const METADATA_KEY: &[u8] = b"chain:metadata";
 const BLOCK_TXS_PREFIX: &[u8] = b"block_txs:";
 const BLOCK_HEIGHT_PREFIX: &[u8] = b"block_height:";
 const BLOCK_INDEX_PREFIX: &[u8] = b"block_index:";
+const CHAIN_STATS_KEY: &[u8] = b"chain:stats";
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, minicbor::Encode, minicbor::Decode)]
+struct PersistedChainStats {
+    #[n(0)]
+    total_blocks: u64,
+    #[n(1)]
+    total_transactions: u64,
+    #[n(2)]
+    chain_height: u64,
+}
 
 fn block_height_prefix(height: u64) -> Vec<u8> {
     let mut prefix = BLOCK_HEIGHT_PREFIX.to_vec();
@@ -170,13 +259,22 @@ impl<B: StorageBackend> ChainDatabase for ChainDatabaseImpl<B> {
         block_data: &[u8],
         tx_data: &[(Blake2b256Hash, Vec<u8>)],
     ) -> Result<()> {
-        // Store block
-        self.backend.put(&block_key(block_hash), block_data).await?;
+        let block_key_vec = block_key(block_hash);
+        let is_new_block = !self.backend.exists(&block_key_vec).await?;
+
+        // Store block content
+        self.backend.put(&block_key_vec, block_data).await?;
 
         // Store transactions and collect hashes
         let mut tx_hashes = Vec::new();
+        let mut new_tx_count = 0u64;
         for (tx_hash, data) in tx_data {
-            self.backend.put(&tx_key(tx_hash), data).await?;
+            let tx_key_vec = tx_key(tx_hash);
+            let is_new_tx = !self.backend.exists(&tx_key_vec).await?;
+            self.backend.put(&tx_key_vec, data).await?;
+            if is_new_tx {
+                new_tx_count = new_tx_count.saturating_add(1);
+            }
             tx_hashes.push(*tx_hash);
         }
 
@@ -193,6 +291,9 @@ impl<B: StorageBackend> ChainDatabase for ChainDatabaseImpl<B> {
             .await?;
         self.backend
             .put(&block_height_key(block_hash, height), block_hash.as_ref())
+            .await?;
+
+        self.update_chain_stats(height, is_new_block, new_tx_count)
             .await?;
 
         Ok(())
@@ -341,14 +442,17 @@ impl<B: StorageBackend> ChainDatabase for ChainDatabaseImpl<B> {
     }
 
     async fn get_chain_stats(&self) -> Result<ChainDatabaseStats> {
-        // TODO: Implement efficient statistics collection
-        // This could be cached and updated incrementally
-        Ok(ChainDatabaseStats {
-            total_blocks: 0,
-            total_transactions: 0,
-            chain_height: 0,
-            database_size: 0,
-        })
+        if let Some(persisted) = self.load_persisted_stats().await? {
+            self.combine_stats_with_backend(persisted).await
+        } else {
+            self.recalculate_chain_stats().await
+        }
+    }
+
+    async fn recalculate_chain_stats(&self) -> Result<ChainDatabaseStats> {
+        let computed = self.compute_stats_from_storage().await?;
+        self.save_persisted_stats(&computed).await?;
+        self.combine_stats_with_backend(computed).await
     }
 }
 
@@ -516,5 +620,72 @@ mod memory_backend_tests {
             .await;
 
         assert!(matches!(result, Err(StorageError::DatabaseError(_))));
+    }
+
+    #[tokio::test]
+    async fn test_get_chain_stats_memory_backend() {
+        let backend = Arc::new(MemoryBackend::new());
+        let chaindb = ChainDatabaseImpl::new(backend);
+
+        let hash0 = make_hash(b"block0-stats");
+        let hash1 = make_hash(b"block1-stats");
+        let hash2 = make_hash(b"block2-stats");
+
+        let tx0 = make_hash(b"tx0");
+        let tx1 = make_hash(b"tx1");
+        let tx2 = make_hash(b"tx2");
+
+        let block0_txs = vec![(tx0, b"tx0".to_vec())];
+        chaindb
+            .store_block(&hash0, 0, b"block0".as_ref(), &block0_txs)
+            .await
+            .unwrap();
+
+        let block1_txs = vec![(tx1, b"tx1".to_vec()), (tx2, b"tx2".to_vec())];
+        chaindb
+            .store_block(&hash1, 1, b"block1".as_ref(), &block1_txs)
+            .await
+            .unwrap();
+
+        let empty_txs: Vec<(Blake2b256Hash, Vec<u8>)> = Vec::new();
+        chaindb
+            .store_block(&hash2, 2, b"block2".as_ref(), &empty_txs)
+            .await
+            .unwrap();
+
+        let stats = chaindb.get_chain_stats().await.unwrap();
+
+        assert_eq!(stats.total_blocks, 3);
+        assert_eq!(stats.chain_height, 2);
+        assert_eq!(stats.total_transactions, 3);
+        assert!(stats.database_size > 0);
+
+        let tx3 = make_hash(b"tx3");
+        let mut block1_updated = block1_txs.clone();
+        block1_updated.push((tx3, b"tx3".to_vec()));
+        chaindb
+            .store_block(&hash1, 1, b"block1".as_ref(), &block1_updated)
+            .await
+            .unwrap();
+
+        let stats_after_update = chaindb.get_chain_stats().await.unwrap();
+        assert_eq!(stats_after_update.total_blocks, 3);
+        assert_eq!(stats_after_update.total_transactions, 4);
+        assert_eq!(stats_after_update.chain_height, 2);
+
+        chaindb.backend().delete(CHAIN_STATS_KEY).await.unwrap();
+
+        let stats_recomputed = chaindb.get_chain_stats().await.unwrap();
+        assert_eq!(stats_recomputed.total_blocks, 3);
+        assert_eq!(stats_recomputed.total_transactions, 4);
+        assert_eq!(stats_recomputed.chain_height, 2);
+        assert!(stats_recomputed.database_size > 0);
+        assert!(chaindb.backend().exists(CHAIN_STATS_KEY).await.unwrap());
+
+        let stats_forced = chaindb.recalculate_chain_stats().await.unwrap();
+        assert_eq!(stats_forced.total_blocks, 3);
+        assert_eq!(stats_forced.total_transactions, 4);
+        assert_eq!(stats_forced.chain_height, 2);
+        assert!(stats_forced.database_size > 0);
     }
 }

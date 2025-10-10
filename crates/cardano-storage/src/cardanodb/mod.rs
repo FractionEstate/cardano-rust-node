@@ -45,11 +45,33 @@ pub use config::{CardanoDBConfig, ImmutableDBConfig, LedgerDBConfig, VolatileDBC
 pub use immutable::ImmutableDB;
 pub use ledger::{LedgerDB, LedgerState};
 pub use migration::{BlockMigrationService, MigrationConfig, MigrationStats};
+use std::path::Path;
 use std::sync::Arc;
 pub use types::{
     Blake2b256Hash, BlockLocation, BlockNo, ChainTip, ChunkNo, EpochNo, ImmutableTip, SlotNo,
 };
 pub use volatile::VolatileDB;
+
+/// Aggregate statistics about a CardanoDB instance.
+#[derive(Debug, Clone)]
+pub struct CardanoDBStats {
+    /// Total number of blocks stored across immutable and volatile segments
+    pub total_blocks: u64,
+    /// Number of blocks resident in immutable storage
+    pub immutable_blocks: u64,
+    /// Number of blocks resident in volatile storage
+    pub volatile_blocks: u64,
+    /// Highest block number observed (chain height)
+    pub chain_height: u64,
+    /// Slot number associated with the current tip
+    pub tip_slot: u64,
+    /// Total number of UTxO entries tracked in the live ledger state
+    pub utxo_entries: u64,
+    /// Number of ledger snapshots currently on disk
+    pub ledger_snapshot_count: u64,
+    /// Approximate on-disk footprint in bytes
+    pub database_size_bytes: u64,
+}
 
 /// CardanoDB - Pure Rust storage engine for Cardano
 ///
@@ -141,6 +163,37 @@ impl CardanoDB {
     /// Get the number of blocks currently in VolatileDB
     pub async fn get_volatile_block_count(&self) -> usize {
         self.volatile.block_count().await
+    }
+
+    /// Collect aggregate statistics about the database
+    pub async fn collect_stats(&self) -> Result<CardanoDBStats> {
+        let immutable_blocks = self.immutable.block_count().await as u64;
+        let volatile_blocks = self.volatile.block_count().await as u64;
+        let total_blocks = immutable_blocks + volatile_blocks;
+
+        let tip = self.get_chain_tip().await?;
+        let (chain_height, tip_slot) = tip
+            .map(|tip| (tip.block_no.0, tip.slot_no.0))
+            .unwrap_or((0, 0));
+
+        let ledger_state = self.ledger.get_current_state().await;
+        let utxo_entries = ledger_state.utxo_count() as u64;
+
+        let snapshot_stats = self.ledger.snapshot_stats().await?;
+        let ledger_snapshot_count = snapshot_stats.snapshot_count as u64;
+
+        let database_size_bytes = calculate_directory_size(self.config.base_path.as_path())?;
+
+        Ok(CardanoDBStats {
+            total_blocks,
+            immutable_blocks,
+            volatile_blocks,
+            chain_height,
+            tip_slot,
+            utxo_entries,
+            ledger_snapshot_count,
+            database_size_bytes,
+        })
     }
 
     /// Start the block migration service if configured
@@ -254,6 +307,28 @@ impl CardanoDB {
 
     // TODO: Add block storage/retrieval methods in Phase 2
     // pub async fn rollback_to(&self, block_no: BlockNo) -> Result<()> { ... }
+}
+
+fn calculate_directory_size(path: &Path) -> Result<u64> {
+    if !path.exists() {
+        return Ok(0);
+    }
+
+    let metadata = std::fs::metadata(path)?;
+    if metadata.is_file() {
+        return Ok(metadata.len());
+    }
+
+    if metadata.is_dir() {
+        let mut total = 0u64;
+        for entry in std::fs::read_dir(path)? {
+            let entry = entry?;
+            total += calculate_directory_size(&entry.path())?;
+        }
+        return Ok(total);
+    }
+
+    Ok(0)
 }
 
 #[cfg(test)]

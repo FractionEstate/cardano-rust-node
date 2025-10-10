@@ -75,6 +75,10 @@ tempfile.workspace = true
 futures.workspace = true
 tokio-test.workspace = true
 
+[features]
+default = []
+storage-legacy = ["cardano-storage/legacy"]
+
 [[test]]
 name = "t082_node_lifecycle"
 path = "../../tests/node_lifecycle.rs"

@@ -19,6 +19,11 @@ pub mod cardanodb; // NEW: Pure Rust storage engine
 pub mod chaindb;
 pub mod ledgerdb;
 
+pub use cardanodb::{
+    CardanoDB, CardanoDBConfig, CardanoDBStats, ImmutableDB, LedgerDB as CardanoLedgerDB,
+    LedgerState as CardanoLedgerState, VolatileDB,
+};
+
 /// Storage error types
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {

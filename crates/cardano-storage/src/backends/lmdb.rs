@@ -442,27 +442,19 @@ impl StorageBackend for LmdbBackend {
             })?;
 
             let mut collected = Vec::new();
-            let mut iter = cursor.iter_from(&prefix);
-            while let Some(result) = iter.next() {
-                match result {
-                    Ok((key, value)) => {
-                        if !key.starts_with(&prefix) {
+            let mut iter = cursor.iter();
+            let mut seen_prefix = false;
+            while let Some((key, value)) = iter.next() {
+                if key.starts_with(&prefix) {
+                    seen_prefix = true;
+                    collected.push((key.to_vec(), value.to_vec()));
+                    if let Some(limit) = limit {
+                        if collected.len() >= limit {
                             break;
                         }
-                        collected.push((key.to_vec(), value.to_vec()));
-                        if let Some(limit) = limit {
-                            if collected.len() >= limit {
-                                break;
-                            }
-                        }
                     }
-                    Err(lmdb::Error::NotFound) => break,
-                    Err(e) => {
-                        return Err(StorageError::DatabaseError(format!(
-                            "Failed to iterate during scan: {}",
-                            e
-                        )));
-                    }
+                } else if seen_prefix {
+                    break;
                 }
             }
 

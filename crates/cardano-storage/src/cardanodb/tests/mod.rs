@@ -12,3 +12,6 @@ mod proptest_ring_buffer;
 
 #[cfg(test)]
 mod proptest_snapshot;
+
+#[cfg(test)]
+mod basic;
