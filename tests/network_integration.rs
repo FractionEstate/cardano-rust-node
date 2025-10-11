@@ -3,6 +3,7 @@
 //! End-to-end tests for network functionality
 
 pub mod integration;
+pub mod network;
 
 // Handshake integration tests
 use bytes::Bytes;

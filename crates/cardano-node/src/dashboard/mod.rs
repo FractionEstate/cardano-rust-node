@@ -2,6 +2,7 @@
 ///
 /// Provides comprehensive real-time monitoring and management interface
 use anyhow::Result;
+use cardano_consensus::SyncMonitor;
 use chrono::{DateTime, Local};
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
@@ -24,6 +25,7 @@ use std::{
     collections::VecDeque,
     io,
     path::PathBuf,
+    sync::Arc,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
@@ -65,6 +67,8 @@ pub struct Dashboard {
     should_quit: bool,
     /// Show help modal
     show_help: bool,
+    /// Optional sync monitor for real-time sync metrics
+    sync_monitor: Option<Arc<SyncMonitor>>,
 }
 
 #[derive(Default, Clone)]
@@ -242,6 +246,14 @@ impl MetricsHistory {
 
 impl Dashboard {
     pub fn new(socket_path: Option<PathBuf>, refresh_interval: u64) -> Self {
+        Self::with_sync_monitor(socket_path, refresh_interval, None)
+    }
+
+    pub fn with_sync_monitor(
+        socket_path: Option<PathBuf>,
+        refresh_interval: u64,
+        sync_monitor: Option<Arc<SyncMonitor>>,
+    ) -> Self {
         // Wallet data should be loaded from:
         // 1. Configuration file
         // 2. Node query via socket
@@ -271,6 +283,7 @@ impl Dashboard {
             input_buffer: String::new(),
             should_quit: false,
             show_help: false,
+            sync_monitor,
         }
     }
 
@@ -1150,54 +1163,71 @@ impl Dashboard {
     }
 
     async fn update_stats(&mut self) -> Result<()> {
-        // NOTE: This currently uses mock/simulated data for demonstration
-        // In production, this would connect to the running node via:
-        // - Unix domain socket (default: /tmp/cardano-node.socket)
-        // - REST API endpoint
-        // - Direct IPC channel
-        // The node would provide real-time metrics from the ledger state
+        // If SyncMonitor is available, use real metrics
+        if let Some(ref sync_monitor) = self.sync_monitor {
+            let sync_metrics = sync_monitor.get_metrics().await;
 
-        // ============================================================================
-        // PRODUCTION NOTE: This section uses placeholder incrementing for demonstration
-        // In production, ALL data should come from:
-        // 1. Unix socket queries to running node (chain-tip, blocks, sync)
-        // 2. Network layer queries (peer count, network traffic)
-        // 3. System metrics (CPU via sysinfo crate, memory, disk)
-        // 4. Mempool queries via node socket
-        //
-        // NO random data or hardcoded values should be used in production!
-        // ============================================================================
+            // Convert SyncMetrics to NodeStats
+            self.stats = crate::metrics::sync_metrics_to_node_stats(&sync_metrics);
 
-        // Minimal incrementing for demonstration (not real data)
-        self.stats.chain_tip += 1;
-        self.stats.total_blocks = self.stats.chain_tip + 100;
-        self.stats.sync_progress =
-            (self.stats.chain_tip as f64 / self.stats.total_blocks as f64).min(1.0);
-        self.stats.uptime += self.refresh_interval;
+            // Add log message for significant progress
+            if sync_metrics.current_slot % 1000 == 0 && sync_metrics.current_slot > 0 {
+                let now = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
+                let hours = (now / 3600) % 24;
+                let minutes = (now / 60) % 60;
+                let seconds = now % 60;
 
-        // These should come from actual queries:
-        // self.stats.peer_count = node_client.get_peer_count().await?;
-        // self.stats.tx_processed = node_client.get_tx_count().await?;
-        // self.stats.mempool_size = node_client.get_mempool_size().await?;
-        // self.stats.cpu_usage = system.cpu_usage();
-        // self.stats.memory_usage = system.memory_usage();
-        // self.stats.disk_usage = system.disk_usage();
+                let eta_msg = if let Some(eta) = sync_metrics.eta {
+                    format!(" | ETA: {}", crate::metrics::format_eta(Some(eta)))
+                } else {
+                    String::new()
+                };
 
-        // Placeholder - no fake logging in production
-        if self.stats.chain_tip % 10 == 0 {
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_secs();
-            let hours = (now / 3600) % 24;
-            let minutes = (now / 60) % 60;
-            let seconds = now % 60;
-            self.logs.push(format!(
-                "[{:02}:{:02}:{:02}] Awaiting node connection",
-                hours, minutes, seconds
-            ));
-            if self.logs.len() > 100 {
-                self.logs.remove(0);
+                self.logs.push(format!(
+                    "[{:02}:{:02}:{:02}] Syncing: slot {} ({:.1}% complete, {} behind){} | {} blocks/s | {} peers",
+                    hours,
+                    minutes,
+                    seconds,
+                    sync_metrics.current_slot,
+                    sync_metrics.sync_percentage,
+                    sync_metrics.slots_behind,
+                    eta_msg,
+                    crate::metrics::format_rate(sync_metrics.blocks_per_second),
+                    sync_metrics.connected_peers
+                ));
+
+                if self.logs.len() > 100 {
+                    self.logs.remove(0);
+                }
+            }
+        } else {
+            // Fallback to placeholder incrementing when no SyncMonitor available
+            // NOTE: This is for demonstration only - production should always use SyncMonitor
+            self.stats.chain_tip += 1;
+            self.stats.total_blocks = self.stats.chain_tip + 100;
+            self.stats.sync_progress =
+                (self.stats.chain_tip as f64 / self.stats.total_blocks as f64).min(1.0);
+            self.stats.uptime += self.refresh_interval;
+
+            // Placeholder logging
+            if self.stats.chain_tip % 10 == 0 {
+                let now = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
+                let hours = (now / 3600) % 24;
+                let minutes = (now / 60) % 60;
+                let seconds = now % 60;
+                self.logs.push(format!(
+                    "[{:02}:{:02}:{:02}] Awaiting node connection",
+                    hours, minutes, seconds
+                ));
+                if self.logs.len() > 100 {
+                    self.logs.remove(0);
+                }
             }
         }
 

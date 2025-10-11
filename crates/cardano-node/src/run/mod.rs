@@ -630,6 +630,7 @@ impl NodeRuntime {
             genesis_time,
             max_drift_ms: 250,
             channel_size: 256,
+            epoch_length: protocol_params.epoch_length,
         };
         let slot_notifier = Arc::new(SlotNotifier::new(slot_config));
 

@@ -16,6 +16,7 @@ pub mod block_forging;
 pub mod block_production;
 pub mod block_production_integration;
 pub mod block_production_service;
+pub mod block_validator;
 pub mod chain_selection;
 pub mod epoch_transition;
 pub mod epoch_transition_service;
@@ -25,6 +26,7 @@ pub mod metrics;
 pub mod ouroboros;
 pub mod slot_notifier;
 pub mod slots;
+pub mod sync_monitor;
 pub mod validation;
 
 pub use block_broadcaster::{
@@ -40,6 +42,7 @@ pub use block_production_integration::{AutoRefreshIntegrator, BlockProductionInt
 pub use block_production_service::{
     BlockProductionConfig, BlockProductionEvent, BlockProductionService, BlockProductionStats,
 };
+pub use block_validator::{BlockValidator, ValidationError as BlockValidationError};
 pub use chain_selection::{
     BlockSummary, ChainCandidate, ChainOrdering, ChainSelectionConfig, ChainSelector, ChainTip,
     SelectionChainQuality, VrfTiebreakerFlavor,
@@ -64,6 +67,7 @@ pub use ouroboros::{
 };
 pub use slot_notifier::{SlotEvent, SlotNotifier, SlotNotifierConfig, SlotNotifierStats};
 pub use slots::*;
+pub use sync_monitor::{SyncMetrics, SyncMonitor, SyncMonitorConfig, SyncState};
 pub use validation::*;
 
 use std::fmt;

@@ -19,6 +19,13 @@ pub use commands::*;
 pub mod dashboard;
 pub use dashboard::Dashboard;
 
+// Metrics conversion utilities
+pub mod metrics;
+
+// Sync integration service
+pub mod sync_integration;
+pub use sync_integration::SyncIntegrationService;
+
 // Re-export configuration components from the config module
 pub mod config;
 pub use config::{

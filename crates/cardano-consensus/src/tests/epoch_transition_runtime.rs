@@ -140,8 +140,9 @@ async fn test_slot_event_includes_epoch_info() {
         .expect("Should receive event within timeout")
         .expect("Channel should not be closed");
 
-    // Verify event has epoch fields
-    assert!(event.epoch.0 >= 0, "Event has epoch field");
+    // Verify event has epoch fields (epoch is unsigned, so just checking it exists)
+    let _epoch = event.epoch;
+    assert!(_epoch.0 < 1000000, "Epoch number is reasonable");
 
     // Verify event boundary flag is present (may or may not be a boundary)
     let _ = event.is_epoch_boundary; // Just checking it exists
