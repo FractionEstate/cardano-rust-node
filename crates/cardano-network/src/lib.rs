@@ -34,10 +34,10 @@
 
 pub mod connection;
 pub mod diffusion;
+pub mod discovery;
 pub mod protocols;
 pub mod services;
 pub mod topology;
-pub mod discovery;
 
 /// Network error types
 #[derive(Debug, thiserror::Error)]

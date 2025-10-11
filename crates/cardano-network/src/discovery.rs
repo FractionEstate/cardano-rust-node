@@ -174,9 +174,7 @@ impl PeerDiscovery {
         // Convert to ResolvedPeer instances (default trustable = false)
         let peers = socket_addrs
             .into_iter()
-            .map(|socket_addr| {
-                ResolvedPeer::new(access_point.clone(), socket_addr, false)
-            })
+            .map(|socket_addr| ResolvedPeer::new(access_point.clone(), socket_addr, false))
             .collect();
 
         Ok(peers)
@@ -249,7 +247,9 @@ impl PeerDiscovery {
     }
 
     /// Separate peers by IP version (IPv4 vs IPv6)
-    pub fn separate_by_ip_version(peers: &[ResolvedPeer]) -> (Vec<ResolvedPeer>, Vec<ResolvedPeer>) {
+    pub fn separate_by_ip_version(
+        peers: &[ResolvedPeer],
+    ) -> (Vec<ResolvedPeer>, Vec<ResolvedPeer>) {
         let mut ipv4_peers = Vec::new();
         let mut ipv6_peers = Vec::new();
 
